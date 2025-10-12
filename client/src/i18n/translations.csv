@@ -28,6 +28,35 @@ Widget {status},Widget {status},ဝီဂျက် {status}
 Enabled,Enabled,ဖွင့်ထားသည်
 Disabled,Disabled,ပိတ်ထားသည်
 Portal name synced as {name},Portal name synced as {name},ပေါ်တယ်အမည်ကို {name} ဟုသတ်မှတ်ထားသည်
+Welcome to {name},Welcome to {name},{name} သို့ ကြိုဆိုပါသည်
+Patient Portal,Patient Portal,လူနာဝန်ဆောင်မှု ပေါ်တယ်
+Return to staff login,Return to staff login,ဝန်ထမ်း ဝင်ရောက်မှုသို့ ပြန်သွားရန်
+Care that revolves around you,Care that revolves around you,သင့်ကို ဗဟိုထားသော ပြုစုံစောင့်ရှောက်မှု
+"A simple, patient-friendly portal to check in, request visits, and stay informed.","A simple, patient-friendly portal to check in, request visits, and stay informed.",လူနာအတွက် မိတ်ဆက်လွယ်ကူပြီး ဝင်ရောက်မှတ်ပုံတင်ရန်၊ ချိန်းတင်ရန်နှင့် သတင်းအချက်အလက်များ သိရှိစေရန် အလွယ်တကူ အသုံးပြုနိုင်သော ပေါ်တယ် ဖြစ်ပါသည်။
+Book visits in minutes,Book visits in minutes,မိနစ်အနည်းငယ်အတွင်း ချိန်းတင်ပါ
+"Pick a time that works for you and our staff will confirm shortly.","Pick a time that works for you and our staff will confirm shortly.",သင့်အတွက် သင့်တော်သော အချိန်ကို ရွေးချယ်ပါ၊ ဝန်ထမ်းများက မကြာခင်အတည်ပြုပေးပါမည်။
+Stay connected,Stay connected,ဆက်သွယ်မိနေပါ
+"Receive reminders and helpful updates once your request is confirmed.","Receive reminders and helpful updates once your request is confirmed.",သင်တင်ထားသော တောင်းဆိုမှုကို အတည်ပြုပြီးစွာမှတ်တမ်းတင်ထားပါက သတိပေးချက်များနှင့် အသုံးဝင်သော အပ်ဒိတ်များကို လက်ခံရရှိပါမည်။
+Personalized care,Personalized care,ပုဂ္ဂိုလ်လိုက် ပြုစုပျိုးထောင်မှု
+"Share the reason for your visit so our care team can prepare in advance.","Share the reason for your visit so our care team can prepare in advance.",သင့်လည်ပတ်ရသည့် အကြောင်းရင်းကို တင်ပြပေးပါက ကျွန်ုပ်တို့၏ ပြုစုံအဖွဲ့က ကြိုတင်ပြင်ဆင်ပေးပါမည်။
+Request an appointment,Request an appointment,ချိန်းတင်ရန် တောင်းဆိုပါ
+"We'll confirm your request within one business day.","We'll confirm your request within one business day.",သင်တင်ထားသော တောင်းဆိုမှုကို လုပ်ငန်းနေ့တစ်ရက်အတွင်း အတည်ပြုပေးပါမည်။
+Full name,Full name,အမည်အပြည့်အစုံ
+Contact details (phone or email),Contact details (phone or email),ဆက်သွယ်ရန် အချက်အလက် (ဖုန်း၊ အီးမေးလ်)
+Preferred date,Preferred date,ကြိုက်နှစ်သက်သော ရက်စွဲ
+Preferred time,Preferred time,ကြိုက်နှစ်သက်သော အချိန်
+Reason for visit,Reason for visit,လာရောက်သည့် အကြောင်းရင်း
+Additional notes (optional),Additional notes (optional),ထပ်ဆောင်း မှတ်ချက်များ (ရွေးချယ်ခွင့်)
+Submitting...,Submitting...,တင်ပြနေသည်...
+Submit request,Submit request,တောင်းဆိုမှုကို တင်ပြပါ
+Request received!,Request received!,တောင်းဆိုမှုကို လက်ခံရရှိပါပြီ!
+Thank you for reaching out. A coordinator will get in touch soon.,Thank you for reaching out. A coordinator will get in touch soon.,ဆက်သွယ်ပေးသည့်အတွက် ကျေးဇူးတင်ပါသည်။ ကိုဌာနဆိုင်ရာ ပူးတွဲရေးမှူးတစ်ဦးက မကြာမီ ဆက်သွယ်ပေးပါမည်။
+Chat with our digital assistant,Chat with our digital assistant,အိုင်အီ အကူအညီသူနှင့် စကားပြောပါ
+"Have a quick question? Our assistant can help anytime, and a team member will follow up when needed.","Have a quick question? Our assistant can help anytime, and a team member will follow up when needed.",မေးချင်သေးသည့် ချက်ခြင်းမေးခွန်း ရှိပါသလား။ ကျွန်ုပ်တို့၏ အကူအညီသူသည် မည်သည့်အချိန်မဆို ကူညီပေးနိုင်ပြီး လိုအပ်ပါက အသင်းဝင်တစ်ဦးက ဆက်လက် ဆက်သွယ်ပေးပါမည်။
+Patient assistant chat,Patient assistant chat,လူနာအကူအညီ စကားစမြေး
+All rights reserved.,All rights reserved.,မူပိုင်ခွင့်အားလုံးကို ထိန်းသိမ်းထားသည်။
+Contact support,Contact support,အထောက်အကူပေးရေးနှင့် ဆက်သွယ်ပါ
+Explore services,Explore services,ဝန်ဆောင်မှုများကို ရှာဖွေပါ
 Organization Settings,Organization Settings,အဖွဲ့အစည်း ချိန်ညှိမှုများ
 "Manage branding, staff accounts, and patient-facing tools.","Manage branding, staff accounts, and patient-facing tools.",အသင်းအမှတ်တံဆိပ်၊ ဝန်ထမ်းအကောင့်များနှင့် လူနာဆိုင်ရာ ကိရိယာများကို စီမံပါ။
 Review lab results for A. Jones,Review lab results for A. Jones,A. Jones ၏ သွေးစမ်းသပ်ရလဒ်များကို ပြန်လည်သုံးသပ်ပါ
