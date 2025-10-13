@@ -4,9 +4,179 @@ import { PrismaClient, type AppointmentStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { validate } from '../../middleware/validate.js';
+import { requireAuth, requireRole, type AuthRequest } from '../auth/index.js';
 
 const prisma = new PrismaClient();
 const router = Router();
+
+const staffRouter = Router();
+
+const portalAccountSelect = {
+  accountId: true,
+  patientId: true,
+  email: true,
+  status: true,
+  lastLoginAt: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+const portalPatientParams = z.object({
+  patientId: z.string().uuid(),
+});
+
+const portalAccountParams = z.object({
+  accountId: z.string().uuid(),
+});
+
+const portalAccountCreateSchema = z.object({
+  patientId: z.string().uuid(),
+  email: z.string().trim().email(),
+  password: z.string().min(8),
+});
+
+const portalAccountUpdateSchema = z.object({
+  email: z.string().trim().email().optional(),
+  password: z.string().min(8).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+});
+
+staffRouter.use(requireAuth);
+staffRouter.use(requireRole('AdminAssistant', 'ITAdmin'));
+
+staffRouter.get(
+  '/:patientId',
+  validate({ params: portalPatientParams }),
+  async (req: AuthRequest, res: Response) => {
+    const { patientId } = req.params as z.infer<typeof portalPatientParams>;
+
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: { patientId: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const account = await prisma.patientPortalAccount.findUnique({
+      where: { patientId },
+      select: portalAccountSelect,
+    });
+
+    res.json({ account });
+  },
+);
+
+staffRouter.post(
+  '/',
+  validate({ body: portalAccountCreateSchema }),
+  async (req: AuthRequest, res: Response) => {
+    const { patientId, email, password } = req.body as z.infer<typeof portalAccountCreateSchema>;
+    const normalizedEmail = email.toLowerCase();
+
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: { patientId: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const existingByPatient = await prisma.patientPortalAccount.findUnique({
+      where: { patientId },
+      select: { accountId: true },
+    });
+
+    if (existingByPatient) {
+      return res.status(409).json({ error: 'Patient already has a portal account' });
+    }
+
+    const existingByEmail = await prisma.patientPortalAccount.findUnique({
+      where: { email: normalizedEmail },
+      select: { accountId: true },
+    });
+
+    if (existingByEmail) {
+      return res.status(409).json({ error: 'Email is already in use' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const account = await prisma.patientPortalAccount.create({
+      data: {
+        patientId,
+        email: normalizedEmail,
+        passwordHash,
+        status: 'active',
+      },
+      select: portalAccountSelect,
+    });
+
+    res.status(201).json({ account });
+  },
+);
+
+staffRouter.patch(
+  '/:accountId',
+  validate({ params: portalAccountParams, body: portalAccountUpdateSchema }),
+  async (req: AuthRequest, res: Response) => {
+    const { accountId } = req.params as z.infer<typeof portalAccountParams>;
+    const { email, password, status } = req.body as z.infer<typeof portalAccountUpdateSchema>;
+
+    const existing = await prisma.patientPortalAccount.findUnique({
+      where: { accountId },
+      select: portalAccountSelect,
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Portal account not found' });
+    }
+
+    const updates: Record<string, unknown> = {};
+
+    if (typeof email === 'string') {
+      const normalizedEmail = email.toLowerCase();
+      if (normalizedEmail !== existing.email) {
+        const conflict = await prisma.patientPortalAccount.findFirst({
+          where: {
+            email: normalizedEmail,
+            NOT: { accountId },
+          },
+          select: { accountId: true },
+        });
+
+        if (conflict) {
+          return res.status(409).json({ error: 'Email is already in use' });
+        }
+
+        updates.email = normalizedEmail;
+      }
+    }
+
+    if (typeof status === 'string' && status !== existing.status) {
+      updates.status = status;
+    }
+
+    if (typeof password === 'string') {
+      updates.passwordHash = await bcrypt.hash(password, 10);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No changes supplied' });
+    }
+
+    const account = await prisma.patientPortalAccount.update({
+      where: { accountId },
+      data: updates,
+      select: portalAccountSelect,
+    });
+
+    res.json({ account });
+  },
+);
+
+router.use('/accounts', staffRouter);
 
 // Helper functions for JWT
 function createAccessToken(account: { accountId: string; patientId: string; email: string }) {

@@ -160,3 +160,25 @@ Drug allergies,Drug allergies,ဆေးအလွန်မတုံ့ပြန�
 No known allergies,No known allergies,မသိရှိရသေးသော အလွန်မတုံ့ပြန်မှုများ
 Document medications to avoid during care.,Document medications to avoid during care.,ကုသမှုတွင် မသုံးသင့်သော ဆေးဝါးများကို မှတ်တမ်းတင်ပါ။
 e.g. Penicillin, Ibuprofen,e.g. Penicillin, Ibuprofen,ဥပမာ- ပီနစ်ဆီလင်း၊ အိုင်ဘူပရိုဖင်
+Patient Portal Access,Patient Portal Access,လူနာ Portal ဝင်ရောက်ခွင့်
+Link this patient's record to their portal login.,Link this patient's record to their portal login.,လူနာ၏ မှတ်တမ်းကို portal ဝင်ရောက်မှုနှင့် ဆက်သွယ်ပါ။
+Manage how this patient signs in to their portal experience.,Manage how this patient signs in to their portal experience.,ဤလူနာသည် portal တွင် မည်သို့ ဝင်ရောက်မည်ကို စီမံခန့်ခွဲပါ။
+Unable to load patient portal account.,Unable to load patient portal account.,လူနာ portal အကောင့်ကို ဖွင့်ယူမရပါ။
+Checking for an existing portal account...,Checking for an existing portal account...,ရှိပြီးသား portal အကောင့်ရှိမရှိ စစ်ဆေးနေပါသည်...
+Portal email address,Portal email address,Portal အီးမေးလ် လိပ်စာ
+Temporary password (optional),Temporary password (optional),ယာယီ စကားဝှက် (ရွေးချယ်စရာ)
+Leave blank to keep the current password.,Leave blank to keep the current password.,လက်ရှိစကားဝှက်ကို ဆက်လက်အသုံးပြုရန် လပ်ထားပါ။
+Last sign-in: {value},Last sign-in: {value},နောက်ဆုံး ဝင်ရောက်မှု: {value}
+Saving...,Saving...,သိမ်းဆည်းနေသည်...
+Temporary password,Temporary password,ယာယီ စကားဝှက်
+Share this password with the patient and ask them to update it after signing in.,Share this password with the patient and ask them to update it after signing in.,ဤစကားဝှက်ကို လူနာနှင့် မျှဝေပြီး ဝင်ရောက်ပြီးနောက် ပြန်လည်ပြင်ဆင်ရန် သတင်းပို့ပါ။
+Create portal account,Create portal account,Portal အကောင့် ဖန်တီးပါ
+Portal account created successfully.,Portal account created successfully.,Portal အကောင့်ကို အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ။
+Enter a valid email and a password with at least 8 characters.,Enter a valid email and a password with at least 8 characters.,မှန်ကန်သော အီးမေးလ်နှင့် အနည်းဆုံး အက္ခရာ ၈ လုံးပါဝင်သည့် စကားဝှက်ကို ထည့်ပါ။
+Unable to create patient portal account.,Unable to create patient portal account.,လူနာ portal အကောင့်ကို ဖန်တီး၍မရပါ။
+Portal account updated.,Portal account updated.,Portal အကောင့်ကို ပြင်ဆင်ပြီးပါပြီ။
+Temporary passwords must be at least 8 characters long.,Temporary passwords must be at least 8 characters long.,ယာယီစကားဝှက်သည် အနည်းဆုံး အက္ခရာ ၈ လုံးရှိရပါမည်။
+Unable to update patient portal account.,Unable to update patient portal account.,လူနာ portal အကောင့်ကို ပြင်ဆင်၍မရပါ။
+Update portal account,Update portal account,Portal အကောင့်ကို ပြင်ဆင်ပါ
+No changes to update.,No changes to update.,ပြင်ဆင်စရာအကြောင်းအရာ မရှိပါ။
+Never,Never,မရှိသေးပါ။

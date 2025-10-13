@@ -1,13 +1,17 @@
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { PatientsIcon, SearchIcon } from '../components/icons';
 import VitalsCard from '../components/VitalsCard';
 import { useAuth } from '../context/AuthProvider';
 import {
+  createPatientPortalAccount,
   getPatient,
+  getPatientPortalAccount,
   listPatientVisits,
+  updatePatientPortalAccount,
+  type PatientPortalAccount,
   type PatientSummary,
   type Visit,
 } from '../api/client';
@@ -23,6 +27,10 @@ function calculateAge(dob: string) {
     age -= 1;
   }
   return age;
+}
+
+function normalizePortalStatus(status?: string | null): 'active' | 'inactive' {
+  return status === 'inactive' ? 'inactive' : 'active';
 }
 
 export default function PatientDetail() {
@@ -43,6 +51,18 @@ export default function PatientDetail() {
   const [visits, setVisits] = useState<Visit[] | null>(null);
   const [visitsLoading, setVisitsLoading] = useState(false);
   const [visitsError, setVisitsError] = useState<string | null>(null);
+  const [portalAccount, setPortalAccount] = useState<PatientPortalAccount | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [portalLoadError, setPortalLoadError] = useState<string | null>(null);
+  const [portalAlert, setPortalAlert] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [portalSubmitting, setPortalSubmitting] = useState(false);
+  const [portalForm, setPortalForm] = useState<{ email: string; password: string; status: 'active' | 'inactive' }>(
+    {
+      email: '',
+      password: '',
+      status: 'active',
+    },
+  );
 
   const formatDateValue = useCallback((value: string | Date | null | undefined) => {
     if (!value) return '—';
@@ -117,6 +137,51 @@ export default function PatientDetail() {
   }, [id]);
 
   useEffect(() => {
+    if (!canManagePortalAccount || !id) {
+      setPortalAccount(null);
+      setPortalLoadError(null);
+      setPortalAlert(null);
+      setPortalForm({ email: '', password: '', status: 'active' });
+      return;
+    }
+
+    let cancelled = false;
+    setPortalLoading(true);
+    setPortalLoadError(null);
+    setPortalAlert(null);
+
+    getPatientPortalAccount(id)
+      .then((account) => {
+        if (cancelled) return;
+        setPortalAccount(account);
+        if (account) {
+          setPortalForm({
+            email: account.email,
+            password: '',
+            status: normalizePortalStatus(account.status),
+          });
+        } else {
+          setPortalForm({ email: '', password: '', status: 'active' });
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPortalLoadError(
+          err instanceof Error ? err.message : t('Unable to load patient portal account.'),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setPortalLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, canManagePortalAccount, t]);
+
+  useEffect(() => {
     const patientId = id;
     if (activeTab !== 'visits' || !patientId || visits !== null) {
       return;
@@ -151,6 +216,107 @@ export default function PatientDetail() {
     };
   }, [activeTab, id, visits]);
 
+  function handlePortalFormChange(field: 'email' | 'password' | 'status', value: string) {
+    setPortalAlert(null);
+    setPortalForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function handleCreatePortalAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!id) return;
+
+    const email = portalForm.email.trim();
+    const password = portalForm.password.trim();
+
+    if (!email || password.length < 8) {
+      setPortalAlert({
+        type: 'error',
+        message: t('Enter a valid email and a password with at least 8 characters.'),
+      });
+      return;
+    }
+
+    setPortalSubmitting(true);
+    setPortalAlert(null);
+
+    try {
+      const account = await createPatientPortalAccount({ patientId: id, email, password });
+      setPortalAccount(account);
+      setPortalForm({
+        email: account.email,
+        password: '',
+        status: normalizePortalStatus(account.status),
+      });
+      setPortalAlert({ type: 'success', message: t('Portal account created successfully.') });
+    } catch (err) {
+      setPortalAlert({
+        type: 'error',
+        message:
+          err instanceof Error ? err.message : t('Unable to create patient portal account.'),
+      });
+    } finally {
+      setPortalSubmitting(false);
+    }
+  }
+
+  async function handleUpdatePortalAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!portalAccount) return;
+
+    const email = portalForm.email.trim();
+    const password = portalForm.password.trim();
+    const status = portalForm.status;
+    const currentStatus = normalizePortalStatus(portalAccount.status);
+
+    const patch: { email?: string; password?: string; status?: 'active' | 'inactive' } = {};
+
+    if (email && email !== portalAccount.email) {
+      patch.email = email;
+    }
+
+    if (status !== currentStatus) {
+      patch.status = status;
+    }
+
+    if (password) {
+      if (password.length < 8) {
+        setPortalAlert({
+          type: 'error',
+          message: t('Temporary passwords must be at least 8 characters long.'),
+        });
+        return;
+      }
+      patch.password = password;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      setPortalAlert({ type: 'error', message: t('No changes to update.') });
+      return;
+    }
+
+    setPortalSubmitting(true);
+    setPortalAlert(null);
+
+    try {
+      const account = await updatePatientPortalAccount(portalAccount.accountId, patch);
+      setPortalAccount(account);
+      setPortalForm({
+        email: account.email,
+        password: '',
+        status: normalizePortalStatus(account.status),
+      });
+      setPortalAlert({ type: 'success', message: t('Portal account updated.') });
+    } catch (err) {
+      setPortalAlert({
+        type: 'error',
+        message:
+          err instanceof Error ? err.message : t('Unable to update patient portal account.'),
+      });
+    } finally {
+      setPortalSubmitting(false);
+    }
+  }
+
   function handleTabChange(tab: 'summary' | 'visits') {
     setActiveTab(tab);
     const params = new URLSearchParams(location.search);
@@ -168,6 +334,7 @@ export default function PatientDetail() {
     );
   }
 
+  const canManagePortalAccount = Boolean(user && ['AdminAssistant', 'ITAdmin'].includes(user.role));
   const canViewProblems = user && ['Doctor', 'Nurse', 'ITAdmin'].includes(user.role);
 
   const headerActions = (
@@ -205,11 +372,162 @@ export default function PatientDetail() {
         ? t(error)
         : t('Patient details unavailable.');
 
+  function renderPortalAccess() {
+    if (!canManagePortalAccount) {
+      return null;
+    }
+
+    const lastLoginLabel = portalAccount?.lastLoginAt
+      ? formatDateTimeValue(portalAccount.lastLoginAt)
+      : t('Never');
+
+    return (
+      <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">{t('Patient Portal Access')}</h3>
+            <p className="mt-1 text-sm text-gray-600">
+              {portalAccount
+                ? t('Manage how this patient signs in to their portal experience.')
+                : t("Link this patient's record to their portal login.")}
+            </p>
+          </div>
+        </div>
+
+        {portalLoadError ? (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {portalLoadError}
+          </div>
+        ) : portalLoading ? (
+          <div className="mt-6 flex items-center gap-3 text-sm text-gray-600">
+            <SearchIcon className="h-5 w-5 animate-spin text-blue-500" />
+            {t('Checking for an existing portal account...')}
+          </div>
+        ) : (
+          <>
+            {portalAlert && (
+              <div
+                className={`mt-4 rounded-xl px-4 py-3 text-sm ${
+                  portalAlert.type === 'success'
+                    ? 'border border-green-200 bg-green-50 text-green-700'
+                    : 'border border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                {portalAlert.message}
+              </div>
+            )}
+
+            {portalAccount ? (
+              <form onSubmit={handleUpdatePortalAccount} className="mt-6 space-y-5">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700" htmlFor="portal-email">
+                      {t('Portal email address')}
+                    </label>
+                    <input
+                      id="portal-email"
+                      type="email"
+                      value={portalForm.email}
+                      onChange={(event) => handlePortalFormChange('email', event.target.value)}
+                      className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700" htmlFor="portal-status">
+                      {t('Status')}
+                    </label>
+                    <select
+                      id="portal-status"
+                      value={portalForm.status}
+                      onChange={(event) =>
+                        handlePortalFormChange('status', event.target.value as 'active' | 'inactive')
+                      }
+                      className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                    >
+                      <option value="active">{t('Active')}</option>
+                      <option value="inactive">{t('Inactive')}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium text-gray-700" htmlFor="portal-password">
+                    {t('Temporary password (optional)')}
+                  </label>
+                  <input
+                    id="portal-password"
+                    type="password"
+                    value={portalForm.password}
+                    placeholder="********"
+                    onChange={(event) => handlePortalFormChange('password', event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">{t('Leave blank to keep the current password.')}</p>
+                </div>
+
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs font-medium text-gray-500">
+                    {t('Last sign-in: {value}', { value: lastLoginLabel })}
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={portalSubmitting}
+                    className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {portalSubmitting ? t('Saving...') : t('Update portal account')}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleCreatePortalAccount} className="mt-6 space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-700" htmlFor="new-portal-email">
+                    {t('Portal email address')}
+                  </label>
+                  <input
+                    id="new-portal-email"
+                    type="email"
+                    value={portalForm.email}
+                    onChange={(event) => handlePortalFormChange('email', event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700" htmlFor="new-portal-password">
+                    {t('Temporary password')}
+                  </label>
+                  <input
+                    id="new-portal-password"
+                    type="password"
+                    value={portalForm.password}
+                    onChange={(event) => handlePortalFormChange('password', event.target.value)}
+                    className="mt-2 w-full rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">
+                    {t('Share this password with the patient and ask them to update it after signing in.')}
+                  </p>
+                </div>
+                <button
+                  type="submit"
+                  disabled={portalSubmitting}
+                  className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {portalSubmitting ? t('Saving...') : t('Create portal account')}
+                </button>
+              </form>
+            )}
+          </>
+        )}
+      </section>
+    );
+  }
+
   function renderSummary(p: PatientSummary) {
     const latestVisitId = p.visits && p.visits.length > 0 ? p.visits[0].visitId : '';
 
     return (
       <div className="space-y-6">
+        {renderPortalAccess()}
         <VitalsCard patientId={p.patientId} defaultVisitId={latestVisitId} />
 
         {!p.visits || p.visits.length === 0 ? (
