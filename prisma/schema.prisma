@@ -52,6 +52,7 @@ model Patient {
   observations Observation[]
   prescriptions Prescription[]
   invoices     Invoice[]
+  portalAccount PatientPortalAccount?
 }
 
 model Doctor {
@@ -207,6 +208,19 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   @@unique([doctorId])
+}
+
+model PatientPortalAccount {
+  accountId    String   @id @default(uuid()) @db.Uuid
+  patientId    String   @unique @db.Uuid
+  email        String   @unique
+  passwordHash String
+  status       String   @default("active")
+  lastLogin    DateTime?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  patient Patient @relation(fields: [patientId], references: [patientId])
 }
 
 model PasswordResetToken {
