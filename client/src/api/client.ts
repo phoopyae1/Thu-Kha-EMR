@@ -21,6 +21,18 @@ export interface Patient {
   drugAllergies?: string | null;
 }
 
+export type PortalAccountStatus = 'active' | 'inactive' | (string & {});
+
+export interface PatientPortalAccount {
+  accountId: string;
+  patientId: string;
+  email: string;
+  status: PortalAccountStatus;
+  lastLoginAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Doctor {
   doctorId: string;
   name: string;
@@ -249,6 +261,36 @@ export async function createPatient(payload: CreatePatientPayload): Promise<Pati
 
 export async function searchPatients(query: string): Promise<Patient[]> {
   return fetchJSON(`/patients?query=${encodeURIComponent(query)}`);
+}
+
+export async function getPatientPortalAccount(patientId: string): Promise<PatientPortalAccount | null> {
+  const response = await fetchJSON(`/patient-portal/accounts/${patientId}`);
+  return (response as { account: PatientPortalAccount | null }).account ?? null;
+}
+
+export async function createPatientPortalAccount(payload: {
+  patientId: string;
+  email: string;
+  password: string;
+}): Promise<PatientPortalAccount> {
+  const response = await fetchJSON('/patient-portal/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return (response as { account: PatientPortalAccount }).account;
+}
+
+export async function updatePatientPortalAccount(
+  accountId: string,
+  payload: { email?: string; password?: string; status?: 'active' | 'inactive' },
+): Promise<PatientPortalAccount> {
+  const response = await fetchJSON(`/patient-portal/accounts/${accountId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return (response as { account: PatientPortalAccount }).account;
 }
 
 export async function listDoctors(): Promise<Doctor[]> {

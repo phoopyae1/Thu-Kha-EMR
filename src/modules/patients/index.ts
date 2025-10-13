@@ -9,6 +9,10 @@ import { logDataChange } from '../audit/index.js';
 const prisma = new PrismaClient();
 const router = Router();
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(value);
+}
+
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MIN || '1') * 60 * 1000,
   limit: parseInt(process.env.RATE_LIMIT_MAX || '100'),
@@ -34,17 +38,61 @@ router.get(
     const q = req.query.query as string;
     const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
     const offset = parseInt(req.query.offset as string) || 0;
-    const lowerQ = q.toLowerCase();
-  const patients = await prisma.$queryRaw<Array<{ patientId: string; name: string; dob: Date; insurance: string | null }>>(
-    Prisma.sql`
-      SELECT "patientId", name, dob, insurance
-      FROM "Patient"
-      WHERE lower(name) % ${lowerQ}
-      ORDER BY similarity(lower(name), ${lowerQ}) DESC
-      LIMIT ${limit} OFFSET ${offset}
-    `
-  );
-  console.log('patient search', { q, count: patients.length });
+    const trimmed = q.trim();
+    const lowerQ = trimmed.toLowerCase();
+    const likeTerm = `%${trimmed}%`;
+
+    const filters = [
+      Prisma.sql`lower(name) % ${lowerQ}`,
+      Prisma.sql`"patientId"::text ILIKE ${likeTerm}`,
+      Prisma.sql`(insurance IS NOT NULL AND insurance ILIKE ${likeTerm})`,
+    ];
+
+    if (isUuid(trimmed)) {
+      filters.push(Prisma.sql`"patientId" = ${trimmed}`);
+    }
+
+    const whereClause = Prisma.join(filters, Prisma.sql` OR `);
+
+    type RawPatient = {
+      patientId: string;
+      name: string;
+      dob: Date;
+      insurance: string | null;
+      name_similarity: number;
+      id_match: number;
+      insurance_match: number;
+    };
+
+    const rawPatients = await prisma.$queryRaw<RawPatient[]>(
+      Prisma.sql`
+        SELECT
+          "patientId",
+          name,
+          dob,
+          insurance,
+          similarity(lower(name), ${lowerQ}) AS name_similarity,
+          CASE WHEN "patientId"::text ILIKE ${likeTerm} THEN 1 ELSE 0 END AS id_match,
+          CASE WHEN insurance ILIKE ${likeTerm} THEN 1 ELSE 0 END AS insurance_match
+        FROM "Patient"
+        WHERE ${whereClause}
+        ORDER BY
+          id_match DESC,
+          name_similarity DESC,
+          insurance_match DESC,
+          name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `,
+    );
+
+    const patients = rawPatients.map(({ patientId, name, dob, insurance }) => ({
+      patientId,
+      name,
+      dob,
+      insurance,
+    }));
+
+    console.log('patient search', { q: trimmed, count: patients.length });
     res.json(patients);
   }
 );

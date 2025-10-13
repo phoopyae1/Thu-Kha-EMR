@@ -65,6 +65,15 @@ describe('GET /api/patients search', () => {
     const names = res.body.map((p: any) => p.name);
     expect(names).toContain('John Doe');
   });
+
+  it('finds patient by identifier', async () => {
+    const res = await request(app)
+      .get('/api/patients')
+      .query({ query: patientId });
+    expect(res.status).toBe(200);
+    const ids = res.body.map((p: any) => p.patientId);
+    expect(ids).toContain(patientId);
+  });
 });
 
 describe('GET /api/patients/:id summary', () => {
