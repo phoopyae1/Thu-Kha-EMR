@@ -341,7 +341,7 @@ async function seedLabs() {
   const rows = loadCsv('./prisma/data/lab_results.csv');
   // expected: labId,visitId,testName,resultValue,unit,referenceRange,testDate
   for (const r of rows) {
-    await prisma.labResult.upsert({
+    await prisma.visitLabResult.upsert({  
       where: { labId: r.labId },
       update: {
         visitId: r.visitId, testName: r.testName,

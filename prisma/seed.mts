@@ -142,8 +142,9 @@ async function seedLabCatalog() {
 }
 
 async function main() {
-  // Run legacy seed first to ensure baseline data remains available.
-  await import('./seed.mjs');
+  // Import and execute the legacy seed
+  const { execSync } = await import('child_process');
+  execSync('tsx prisma/seed.mjs', { stdio: 'inherit' });
   await prisma.serviceCatalog.upsert({
     where: { code: 'CONSULT_OPD' },
     update: { name: 'OPD Consultation', defaultPrice: new Prisma.Decimal(8000) },

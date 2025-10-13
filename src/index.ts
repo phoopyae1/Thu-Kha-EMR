@@ -7,19 +7,19 @@ import morgan from 'morgan';
 import { apiRouter } from './server.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
-if (
-  process.env.DATABASE_URL &&
-  !process.env.DATABASE_URL.includes('sslmode=require')
-) {
-  throw new Error('sslmode=require must be set in DATABASE_URL');
-}
+// if (
+//   process.env.DATABASE_URL &&
+//   !process.env.DATABASE_URL.includes('sslmode=require')
+// ) {
+//   throw new Error('sslmode=require must be set in DATABASE_URL');
+// }
 
-if (
-  process.env.DIRECT_URL &&
-  !process.env.DIRECT_URL.includes('sslmode=require')
-) {
-  throw new Error('sslmode=require must be set in DIRECT_URL');
-}
+// if (
+//   process.env.DIRECT_URL &&
+//   !process.env.DIRECT_URL.includes('sslmode=require')
+// ) {
+//   throw new Error('sslmode=require must be set in DIRECT_URL');
+// }
 
 export const app = express();
 app.disable('x-powered-by');

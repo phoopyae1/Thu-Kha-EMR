@@ -12,7 +12,7 @@ const prisma = new PrismaClient();
 type Row = Record<string, string>;
 
 function readCsv(filename: string): Row[] {
-  const filePath = path.resolve(__dirname, '../data', filename);
+  const filePath = path.resolve(__dirname, '../prisma/data', filename);
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.trim().split(/\r?\n/);
   const headerLine = lines.shift();

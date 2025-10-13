@@ -381,7 +381,7 @@ model ServiceCatalog {
 }
 
 model PriceList {
-  priceId       String         @id @default(uuid())
+  priceId       String         @id @default(uuid()) @db.Uuid
   serviceId     String
   overridePrice Decimal?       @db.Decimal(12, 2)
   effectiveFrom DateTime?
@@ -389,10 +389,10 @@ model PriceList {
 }
 
 model Invoice {
-  invoiceId   String        @id @default(uuid())
+  invoiceId   String        @id @default(uuid()) @db.Uuid
   invoiceNo   String        @unique
-  visitId     String
-  patientId   String
+  visitId     String        @db.Uuid
+  patientId   String        @db.Uuid
   status      InvoiceStatus @default(DRAFT)
   currency    String        @default("MMK")
   note        String?
@@ -413,8 +413,8 @@ model Invoice {
 }
 
 model InvoiceItem {
-  itemId      String         @id @default(uuid())
-  invoiceId   String
+  itemId      String         @id @default(uuid()) @db.Uuid
+  invoiceId   String         @db.Uuid
   sourceType  ItemSourceType
   sourceRefId String?
   serviceId   String?
@@ -433,8 +433,8 @@ model InvoiceItem {
 }
 
 model Payment {
-  paymentId   String   @id @default(uuid())
-  invoiceId   String
+  paymentId   String   @id @default(uuid()) @db.Uuid
+  invoiceId   String   @db.Uuid
   method      PaymentMethod
   amount      Decimal  @db.Decimal(12, 2)
   paidAt      DateTime @default(now())
@@ -447,9 +447,9 @@ model Payment {
 }
 
 model PaymentAllocation {
-  allocationId String   @id @default(uuid())
-  paymentId    String
-  invoiceId    String
+  allocationId String   @id @default(uuid()) @db.Uuid
+  paymentId    String   @db.Uuid
+  invoiceId    String   @db.Uuid
   amount       Decimal  @db.Decimal(12, 2)
 
   Payment Payment @relation(fields: [paymentId], references: [paymentId], onDelete: Cascade)
