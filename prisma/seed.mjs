@@ -15,10 +15,12 @@ async function seedUsers() {
   const adminEmail = 'admin@example.com';
   const assistantEmail = 'assistant@example.com';
   const doctorEmail = 'drsmith@example.com';
+  const patientEmail = 'patient@example.com';
 
   const adminHash = await bcrypt.hash('AdminPass123!', 10);
   const assistantHash = await bcrypt.hash('AssistantPass123!', 10);
   const doctorHash = await bcrypt.hash('DoctorPass123!', 10);
+  const patientHash = await bcrypt.hash('PatientPass123!', 10);
 
   const doctorRecord = await prisma.doctor.findFirst({
     where: { name: { equals: 'Dr Smith', mode: 'insensitive' } },
@@ -64,6 +66,49 @@ async function seedUsers() {
     await prisma.user.update({ where: { email: doctorEmail }, data: doctorData });
   } else {
     await prisma.user.create({ data: doctorData });
+  }
+
+  let portalPatientId = null;
+  const existingPortalPatient = await prisma.patient.findFirst({
+    where: { name: { equals: 'Mary Lee', mode: 'insensitive' } },
+  });
+
+  if (existingPortalPatient) {
+    portalPatientId = existingPortalPatient.patientId;
+    await prisma.patient.update({
+      where: { patientId: existingPortalPatient.patientId },
+      data: {
+        contact: existingPortalPatient.contact || '98123456',
+        insurance: existingPortalPatient.insurance || 'Prudential',
+      },
+    });
+  } else {
+    const created = await prisma.patient.create({
+      data: {
+        name: 'Portal Patient',
+        dob: new Date('1990-01-15'),
+        gender: 'F',
+        contact: '09998887777',
+        insurance: 'Self-Pay',
+      },
+    });
+    portalPatientId = created.patientId;
+  }
+
+  const patientUser = await prisma.user.findUnique({ where: { email: patientEmail } });
+  const patientData = {
+    email: patientEmail,
+    passwordHash: patientHash,
+    role: 'Patient',
+    status: 'active',
+    doctorId: null,
+    patientId: portalPatientId,
+  };
+
+  if (patientUser) {
+    await prisma.user.update({ where: { email: patientEmail }, data: patientData });
+  } else {
+    await prisma.user.create({ data: patientData });
   }
 
   console.log('✅ Users seeded');

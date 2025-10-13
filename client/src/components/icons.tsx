@@ -176,3 +176,71 @@ export function CloseIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function MapPinIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M12 21c4.125-4.35 6.188-7.425 6.188-10.125C18.188 7.014 15.42 4.5 12 4.5S5.812 7.014 5.812 10.875C5.812 13.575 7.875 16.65 12 21z"
+      />
+      <circle cx={12} cy={10.5} r={1.875} />
+    </svg>
+  );
+}
+
+export function StethoscopeIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M6 4.5v4.875a3.75 3.75 0 007.5 0V4.5"
+      />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4.5 4.5H6M13.5 4.5H15M4.5 4.5v4.875a5.25 5.25 0 005.25 5.25h.75a5.25 5.25 0 005.25-5.25V4.5"
+      />
+      <circle cx={18.75} cy={9.75} r={2.25} />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 18a3 3 0 006 0v-6" />
+    </svg>
+  );
+}
+
+export function RadiologyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <circle cx={12} cy={12} r={7.5} />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 12h7.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8.25v7.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l6 6M15 9l-6 6" />
+    </svg>
+  );
+}
+
+export function VaccineIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 18.75l13.5-13.5" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 7.5l1.5 1.5M9.75 10.5l1.5 1.5M12.75 13.5l1.5 1.5" />
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M18.75 7.5h1.5V3.75A.75.75 0 0019.5 3h-3.75v1.5"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 19.5L7.5 22.5" />
+    </svg>
+  );
+}
+
+export function WalletIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <rect x={3.75} y={6} width={16.5} height={12} rx={2.25} />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12h2.25" />
+      <circle cx={15} cy={12} r={1.125} />
+    </svg>
+  );
+}
+
