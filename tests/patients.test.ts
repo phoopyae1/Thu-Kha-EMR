@@ -50,6 +50,7 @@ afterAll(async () => {
   await prisma.medication.deleteMany({});
   await prisma.diagnosis.deleteMany({});
   await prisma.visit.deleteMany({});
+  await prisma.patientPortalAccount.deleteMany({});
   await prisma.patient.deleteMany({});
   await prisma.doctor.deleteMany({});
   await prisma.user.deleteMany({});
