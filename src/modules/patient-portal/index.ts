@@ -1,59 +1,114 @@
-import { Router, type Response } from 'express';
+import { Router, type Response, type Request } from 'express';
+import bcrypt from 'bcrypt';
 import { PrismaClient, type AppointmentStatus } from '@prisma/client';
 import { z } from 'zod';
 
-import { requireAuth, requirePatient, type AuthRequest } from '../auth/index.js';
 import { validate } from '../../middleware/validate.js';
 
 const prisma = new PrismaClient();
 const router = Router();
 
+// Helper functions for JWT
+function createAccessToken(account: { accountId: string; patientId: string; email: string }) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({ sub: account.accountId, patientId: account.patientId, email: account.email })
+  ).toString('base64url');
+  return `${header}.${payload}.`;
+}
+
+// Patient Portal Login
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+router.post('/login', async (req: Request, res: Response) => {
+  const parsed = loginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const { email, password } = parsed.data;
+  const account = await prisma.patientPortalAccount.findFirst({
+    where: { email: email.toLowerCase() },
+    select: { accountId: true, patientId: true, email: true, passwordHash: true, status: true },
+  });
+
+  if (!account || account.status !== 'active') {
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
+  const passwordValid = await bcrypt.compare(password, account.passwordHash);
+  if (!passwordValid) {
+    return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
+  const token = createAccessToken(account);
+  await prisma.patientPortalAccount.update({
+    where: { accountId: account.accountId },
+    data: { lastLoginAt: new Date() },
+  });
+
+  const patient = await prisma.patient.findUnique({
+    where: { patientId: account.patientId },
+    select: { patientId: true, name: true },
+  });
+
+  res.json({
+    accessToken: token,
+    patient,
+  });
+});
+
 const facilityQuerySchema = z.object({
-  type: z.enum(['GPClinic', 'Hospital']).optional(),
+  type: z.enum(['HOSPITAL', 'GP_CLINIC', 'DIAGNOSTIC_CENTER']).optional(),
   search: z.string().trim().min(1).optional(),
 });
 
 type FacilityQuery = z.infer<typeof facilityQuerySchema>;
 
-router.get(
-  '/facilities',
-  validate({ query: facilityQuerySchema }),
-  async (req, res: Response) => {
-    const { type, search } = req.query as FacilityQuery;
-    const facilities = await prisma.facility.findMany({
-      where: {
-        ...(type ? { type } : {}),
-        ...(search
-          ? {
-              OR: [
-                { name: { contains: search, mode: 'insensitive' } },
-                { city: { contains: search, mode: 'insensitive' } },
-                { state: { contains: search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-    });
-
-    const enriched = facilities.map((facility) => {
-      const latitude = facility.latitude ? Number(facility.latitude) : null;
-      const longitude = facility.longitude ? Number(facility.longitude) : null;
-      const mapTarget = latitude && longitude
-        ? `${latitude},${longitude}`
-        : `${facility.name} ${facility.city} ${facility.state}`;
-
-      return {
-        ...facility,
-        latitude,
-        longitude,
-        mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapTarget)}`,
-      };
-    });
-
-    res.json(enriched);
+router.get('/facilities', async (req: Request, res: Response) => {
+  const query = facilityQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: query.error.flatten() });
   }
-);
+
+  const { type, search } = query.data;
+  const facilities = await prisma.facility.findMany({
+    where: {
+      ...(type ? { type } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { city: { contains: search, mode: 'insensitive' } },
+              { state: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  const enriched = facilities.map((facility: any) => {
+    const latitude = facility.latitude ? Number(facility.latitude) : null;
+    const longitude = facility.longitude ? Number(facility.longitude) : null;
+    const mapTarget =
+      latitude && longitude
+        ? `${latitude},${longitude}`
+        : `${facility.name} ${facility.city || ''} ${facility.state || ''}`.trim();
+
+    return {
+      ...facility,
+      latitude,
+      longitude,
+      mapUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapTarget)}`,
+    };
+  });
+
+  res.json(enriched);
+});
 
 const specialistQuerySchema = z.object({
   department: z.string().trim().min(1).optional(),
@@ -63,58 +118,49 @@ const specialistQuerySchema = z.object({
 
 type SpecialistQuery = z.infer<typeof specialistQuerySchema>;
 
-router.get(
-  '/specialists',
-  validate({ query: specialistQuerySchema }),
-  async (req, res: Response) => {
-    const { department, facilityId, search } = req.query as SpecialistQuery;
-    const doctors = await prisma.doctor.findMany({
-      where: {
-        ...(department ? { department: { contains: department, mode: 'insensitive' } } : {}),
-        ...(facilityId ? { facilityId } : {}),
-        ...(search
-          ? {
-              OR: [
-                { name: { contains: search, mode: 'insensitive' } },
-                { department: { contains: search, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-      },
-      orderBy: { name: 'asc' },
-      select: {
-        doctorId: true,
-        name: true,
-        department: true,
-        facility: {
-          select: {
-            facilityId: true,
-            name: true,
-            city: true,
-            state: true,
-            phone: true,
-          },
-        },
-        availabilities: {
-          orderBy: { dayOfWeek: 'asc' },
-          take: 5,
-          select: {
-            dayOfWeek: true,
-            startMin: true,
-            endMin: true,
-          },
-        },
-      },
-    });
-
-    res.json(doctors);
+router.get('/specialists', async (req: Request, res: Response) => {
+  const query = specialistQuerySchema.safeParse(req.query);
+  if (!query.success) {
+    return res.status(400).json({ error: query.error.flatten() });
   }
-);
 
-router.use(requireAuth);
-router.use(requirePatient);
+  const { department, search } = query.data;
+  const doctors = await prisma.doctor.findMany({
+    where: {
+      ...(department ? { department: { contains: department, mode: 'insensitive' } } : {}),
+      ...(search
+        ? {
+            OR: [
+              { name: { contains: search, mode: 'insensitive' } },
+              { department: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    },
+    orderBy: { name: 'asc' },
+    select: {
+      doctorId: true,
+      name: true,
+      department: true,
+      availabilities: {
+        orderBy: { dayOfWeek: 'asc' },
+        take: 5,
+        select: {
+          dayOfWeek: true,
+          startMin: true,
+          endMin: true,
+        },
+      },
+    },
+  });
+
+  res.json(doctors);
+});
+
+// Public endpoints for patient portal
 
 const appointmentCreateSchema = z.object({
+  patientId: z.string().uuid(),
   doctorId: z.string().uuid(),
   department: z.string().trim().min(1).optional(),
   date: z.coerce.date(),
@@ -158,8 +204,13 @@ function splitAppointments(
   };
 }
 
-router.get('/profile', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
+router.get('/profile/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
   const patient = await prisma.patient.findUnique({
     where: { patientId },
     select: {
@@ -170,60 +221,6 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
       contact: true,
       insurance: true,
       drugAllergies: true,
-      appointments: {
-        where: { status: { not: 'Cancelled' } },
-        orderBy: { date: 'asc' },
-        take: 10,
-        select: {
-          appointmentId: true,
-          date: true,
-          startTimeMin: true,
-          endTimeMin: true,
-          status: true,
-          department: true,
-          location: true,
-          reason: true,
-          doctor: {
-            select: {
-              doctorId: true,
-              name: true,
-              department: true,
-            },
-          },
-        },
-      },
-      visits: {
-        orderBy: { visitDate: 'desc' },
-        take: 3,
-        select: {
-          visitId: true,
-          visitDate: true,
-          department: true,
-          doctor: { select: { name: true } },
-        },
-      },
-      invoices: {
-        orderBy: { createdAt: 'desc' },
-        take: 5,
-        select: {
-          invoiceId: true,
-          invoiceNo: true,
-          status: true,
-          grandTotal: true,
-          amountPaid: true,
-          amountDue: true,
-          createdAt: true,
-        },
-      },
-      immunizations: {
-        orderBy: { administeredAt: 'desc' },
-        take: 1,
-        select: {
-          vaccineName: true,
-          administeredAt: true,
-          nextDueDate: true,
-        },
-      },
     },
   });
 
@@ -231,8 +228,69 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
     return res.status(404).json({ error: 'Patient not found' });
   }
 
-  const { upcoming, past } = splitAppointments(patient.appointments);
-  const invoiceSummary = patient.invoices.reduce(
+  const appointments = await prisma.appointment.findMany({
+    where: { patientId, status: { not: 'Cancelled' } },
+    orderBy: { date: 'asc' },
+    take: 10,
+    select: {
+      appointmentId: true,
+      date: true,
+      startTimeMin: true,
+      endTimeMin: true,
+      status: true,
+      department: true,
+      location: true,
+      reason: true,
+      doctor: {
+        select: {
+          doctorId: true,
+          name: true,
+          department: true,
+        },
+      },
+    },
+  });
+
+  const visits = await prisma.visit.findMany({
+    where: { patientId },
+    orderBy: { visitDate: 'desc' },
+    take: 3,
+    select: {
+      visitId: true,
+      visitDate: true,
+      department: true,
+      doctor: { select: { name: true } },
+    },
+  });
+
+  const invoices = await prisma.invoice.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 5,
+    select: {
+      invoiceId: true,
+      invoiceNo: true,
+      status: true,
+      grandTotal: true,
+      amountPaid: true,
+      amountDue: true,
+      createdAt: true,
+    },
+  });
+
+  const immunizations = await prisma.immunizationRecord.findMany({
+    where: { patientId },
+    orderBy: { administeredAt: 'desc' },
+    take: 1,
+    select: {
+      vaccineName: true,
+      administeredAt: true,
+      provider: true,
+    },
+  });
+
+  const { upcoming, past } = splitAppointments(appointments);
+  const invoiceSummary = invoices.reduce(
     (acc, invoice) => {
       const due = Number(invoice.amountDue);
       const total = Number(invoice.grandTotal);
@@ -260,14 +318,19 @@ router.get('/profile', async (req: AuthRequest, res: Response) => {
       upcoming,
       past,
     },
-    recentVisits: patient.visits,
+    recentVisits: visits,
     invoiceSummary,
-    latestImmunization: patient.immunizations[0] ?? null,
+    latestImmunization: immunizations[0] ?? null,
   });
 });
 
-router.get('/appointments', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
+router.get('/appointments/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
   const appointments = await prisma.appointment.findMany({
     where: { patientId },
     orderBy: { date: 'desc' },
@@ -297,9 +360,9 @@ router.get('/appointments', async (req: AuthRequest, res: Response) => {
 router.post(
   '/appointments',
   validate({ body: appointmentCreateSchema }),
-  async (req: AuthRequest, res: Response) => {
-    const patientId = req.user!.patientId!;
+  async (req: Request, res: Response) => {
     const body = req.body as AppointmentCreateInput;
+    const { patientId } = body;
     const endTimeMin = body.endTimeMin ?? body.startTimeMin + 30;
 
     if (endTimeMin <= body.startTimeMin) {
@@ -368,8 +431,13 @@ router.post(
   }
 );
 
-router.get('/labs', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
+router.get('/labs/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
   const labResults = await prisma.labResult.findMany({
     where: { patientId },
     orderBy: { resultedAt: 'desc' },
@@ -388,7 +456,7 @@ router.get('/labs', async (req: AuthRequest, res: Response) => {
         select: {
           labOrderId: true,
           status: true,
-          doctor: { select: { name: true } },
+          doctorId: true,
         },
       },
       LabOrderItem: {
@@ -410,21 +478,23 @@ router.get('/labs', async (req: AuthRequest, res: Response) => {
   res.json(formatted);
 });
 
-router.get('/immunizations', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
-  const immunizations = await prisma.immunization.findMany({
+router.get('/immunizations/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  const immunizations = await prisma.immunizationRecord.findMany({
     where: { patientId },
     orderBy: { administeredAt: 'desc' },
     take: 25,
     select: {
       immunizationId: true,
       vaccineName: true,
-      manufacturer: true,
       lotNumber: true,
-      doseNumber: true,
       administeredAt: true,
       provider: true,
-      nextDueDate: true,
       notes: true,
     },
   });
@@ -432,26 +502,30 @@ router.get('/immunizations', async (req: AuthRequest, res: Response) => {
   res.json(immunizations);
 });
 
-router.get('/radiology', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
+router.get('/radiology/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
   const reports = await prisma.radiologyReport.findMany({
     where: { patientId },
-    orderBy: { performedAt: 'desc' },
+    orderBy: { reportDate: 'desc' },
     take: 25,
     select: {
       reportId: true,
       modality: true,
-      bodyPart: true,
-      reportText: true,
-      impressions: true,
-      performedAt: true,
-      radiologist: true,
+      reportDate: true,
+      impression: true,
+      findings: true,
+      imageUrl: true,
       visit: {
         select: {
           visitId: true,
           visitDate: true,
           department: true,
-          doctor: { select: { name: true } },
+          doctor: { select: { name: true, department: true } },
         },
       },
     },
@@ -460,8 +534,13 @@ router.get('/radiology', async (req: AuthRequest, res: Response) => {
   res.json(reports);
 });
 
-router.get('/payments', async (req: AuthRequest, res: Response) => {
-  const patientId = req.user!.patientId!;
+router.get('/payments/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+  
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
   const invoices = await prisma.invoice.findMany({
     where: { patientId },
     orderBy: { createdAt: 'desc' },

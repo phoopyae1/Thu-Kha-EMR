@@ -28,6 +28,12 @@ enum Role {
   LabTech
 }
 
+enum FacilityType {
+  HOSPITAL
+  GP_CLINIC
+  DIAGNOSTIC_CENTER
+}
+
 enum AppointmentStatus {
   Scheduled
   CheckedIn
@@ -52,6 +58,9 @@ model Patient {
   observations Observation[]
   prescriptions Prescription[]
   invoices     Invoice[]
+  portalAccount PatientPortalAccount?
+  immunizations ImmunizationRecord[]
+  radiologyReports RadiologyReport[]
 }
 
 model Doctor {
@@ -132,6 +141,7 @@ model Visit {
   observations Observation[]
   prescriptions Prescription[]
   invoices     Invoice[]
+  radiologyReports RadiologyReport[]
 
   @@index([patientId, visitDate(sort: Desc)])
   @@index([doctorId, visitDate(sort: Desc)])
@@ -410,6 +420,69 @@ model Invoice {
   Patient     Patient       @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
 
   @@index([visitId, status])
+}
+
+model Facility {
+  facilityId String       @id @default(uuid()) @db.Uuid
+  name       String
+  type       FacilityType
+  address    String?
+  city       String?
+  state      String?
+  postalCode String?
+  country    String?
+  latitude   Decimal?     @db.Decimal(10, 7)
+  longitude  Decimal?     @db.Decimal(10, 7)
+  phone      String?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model ImmunizationRecord {
+  immunizationId String   @id @default(uuid()) @db.Uuid
+  patientId      String   @db.Uuid
+  vaccineName    String
+  administeredAt DateTime @db.Date
+  provider       String?
+  lotNumber      String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+
+  @@index([patientId, administeredAt(sort: Desc)])
+}
+
+model RadiologyReport {
+  reportId    String   @id @default(uuid()) @db.Uuid
+  patientId   String   @db.Uuid
+  visitId     String?  @db.Uuid
+  modality    String
+  reportDate  DateTime @db.Date
+  impression  String
+  findings    String?
+  imageUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  visit   Visit?  @relation(fields: [visitId], references: [visitId], onDelete: SetNull)
+
+  @@index([patientId, reportDate(sort: Desc)])
+}
+
+model PatientPortalAccount {
+  accountId    String   @id @default(uuid()) @db.Uuid
+  patientId    String   @unique @db.Uuid
+  email        String   @unique
+  passwordHash String
+  status       String   @default("active")
+  lastLoginAt  DateTime? @db.Timestamptz(6)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  patient Patient @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
 }
 
 model InvoiceItem {

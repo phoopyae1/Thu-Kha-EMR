@@ -24,12 +24,14 @@ import SettingsServices from './pages/SettingsServices';
 import ProblemList from './pages/ProblemList';
 import LabOrdersPage from './pages/LabOrders';
 import LabOrderDetailPage from './pages/LabOrderDetail';
+import PatientPortal from './pages/PatientPortal';
 import './styles/App.css';
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/patient-portal" element={<PatientPortal />} />
       <Route
         path="/patients"
         element={

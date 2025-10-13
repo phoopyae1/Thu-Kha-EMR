@@ -17,9 +17,17 @@ import reportsRouter from './modules/reports/index.js';
 import pharmacyRouter from './routes/pharmacy.js';
 import billingRouter from './routes/billing.js';
 import clinicalRouter from './routes/clinical.js';
+import patientPortalRouter from './modules/patient-portal/index.js';
 
 export const apiRouter = Router();
 
+// Mount patient portal first (public routes)
+apiRouter.use('/patient-portal', patientPortalRouter);
+
+// Auth routes (public login)
+apiRouter.use('/auth', authRouter);
+
+// Protected routes
 apiRouter.use(visitsRouter);
 apiRouter.use('/patients', patientsRouter);
 apiRouter.use('/doctors', doctorsRouter);
@@ -32,7 +40,6 @@ apiRouter.use('/labs', labsRouter);
 apiRouter.use(observationsRouter);
 apiRouter.use('/insights', insightsRouter);
 apiRouter.use('/audit', auditRouter);
-apiRouter.use('/auth', authRouter);
 apiRouter.use('/appointments', appointmentsRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/reports', reportsRouter);

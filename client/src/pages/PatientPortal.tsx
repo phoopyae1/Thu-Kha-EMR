@@ -7,11 +7,8 @@ import {
   AvatarIcon,
   ReportsIcon,
   SearchIcon,
-  MapPinIcon,
-  StethoscopeIcon,
-  RadiologyIcon,
-  VaccineIcon,
-  WalletIcon,
+  PatientsIcon,
+  PharmacyIcon,
 } from '../components/icons';
 import { useSettings } from '../context/SettingsProvider';
 import { useTranslation } from '../hooks/useTranslation';
@@ -129,7 +126,7 @@ export default function PatientPortal() {
 
     try {
       const response = await loginPatient(loginForm.email.trim(), loginForm.password.trim());
-      setSession({ token: response.accessToken, patientId: response.user.patientId!, email: response.user.email });
+      setSession({ token: response.accessToken, patientId: response.patient?.patientId!, email: loginForm.email.trim() });
       setLoginStatus('success');
       setPortalError(null);
     } catch (error) {
@@ -143,12 +140,12 @@ export default function PatientPortal() {
     setPortalError(null);
     try {
       const [profileData, appointmentData, labData, immunizationData, radiologyData, paymentData] = await Promise.all([
-        fetchPatientProfile(activeSession.token),
-        fetchPatientAppointments(activeSession.token),
-        fetchLabResults(activeSession.token),
-        fetchImmunizations(activeSession.token),
-        fetchRadiologyReports(activeSession.token),
-        fetchPayments(activeSession.token),
+        fetchPatientProfile(activeSession.token, activeSession.patientId),
+        fetchPatientAppointments(activeSession.token, activeSession.patientId),
+        fetchLabResults(activeSession.token, activeSession.patientId),
+        fetchImmunizations(activeSession.token, activeSession.patientId),
+        fetchRadiologyReports(activeSession.token, activeSession.patientId),
+        fetchPayments(activeSession.token, activeSession.patientId),
       ]);
 
       setProfile(profileData);
@@ -184,6 +181,7 @@ export default function PatientPortal() {
 
     try {
       await createPatientAppointment(session.token, {
+        patientId: session.patientId,
         doctorId: appointmentForm.doctorId,
         department: selectedDoctor?.department,
         date: appointmentForm.date,
@@ -341,7 +339,7 @@ export default function PatientPortal() {
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-gray-900">{t('Clinics and hospitals')}</h3>
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <MapPinIcon className="h-5 w-5 text-blue-600" />
+              <SearchIcon className="h-5 w-5 text-blue-600" />
               {t('Find a location and get directions instantly.')}
             </div>
           </div>
@@ -389,7 +387,7 @@ export default function PatientPortal() {
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-semibold text-gray-900">{t('Find a specialist')}</h3>
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <StethoscopeIcon className="h-5 w-5 text-blue-600" />
+              <PatientsIcon className="h-5 w-5 text-blue-600" />
               {t('See who is available by department and facility.')}
             </div>
           </div>
@@ -503,7 +501,7 @@ export default function PatientPortal() {
                   <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center justify-between">
                       <h4 className="text-lg font-semibold text-gray-900">{t('Book a new appointment')}</h4>
-                      <StethoscopeIcon className="h-5 w-5 text-blue-600" />
+                      <PatientsIcon className="h-5 w-5 text-blue-600" />
                     </div>
                     <form onSubmit={handleAppointmentSubmit} className="mt-4 space-y-4 text-sm">
                       <div>
@@ -590,7 +588,7 @@ export default function PatientPortal() {
                     <div className="rounded-3xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900 shadow-sm">
                       <div className="flex items-center justify-between">
                         <h4 className="text-lg font-semibold text-blue-900">{t('Billing summary')}</h4>
-                        <WalletIcon className="h-5 w-5 text-blue-700" />
+                        <PharmacyIcon className="h-5 w-5 text-blue-700" />
                       </div>
                       <div className="mt-4 grid gap-3">
                         <div>
@@ -645,7 +643,7 @@ export default function PatientPortal() {
                   <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center justify-between">
                       <h4 className="text-lg font-semibold text-gray-900">{t('Immunisations')}</h4>
-                      <VaccineIcon className="h-5 w-5 text-blue-600" />
+                      <PharmacyIcon className="h-5 w-5 text-blue-600" />
                     </div>
                     {immunizations.length === 0 ? (
                       <p className="mt-3 text-sm text-gray-500">{t('No immunisation records yet.')}</p>
@@ -671,7 +669,7 @@ export default function PatientPortal() {
                   <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center justify-between">
                       <h4 className="text-lg font-semibold text-gray-900">{t('Radiology reports')}</h4>
-                      <RadiologyIcon className="h-5 w-5 text-blue-600" />
+                      <ReportsIcon className="h-5 w-5 text-blue-600" />
                     </div>
                     {radiologyReports.length === 0 ? (
                       <p className="mt-3 text-sm text-gray-500">{t('No radiology reports available.')}</p>
@@ -694,7 +692,7 @@ export default function PatientPortal() {
                   <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
                     <div className="flex items-center justify-between">
                       <h4 className="text-lg font-semibold text-gray-900">{t('Recent payments')}</h4>
-                      <WalletIcon className="h-5 w-5 text-blue-600" />
+                      <PharmacyIcon className="h-5 w-5 text-blue-600" />
                     </div>
                     {payments.length === 0 ? (
                       <p className="mt-3 text-sm text-gray-500">{t('No payments recorded yet.')}</p>

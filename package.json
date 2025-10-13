@@ -17,6 +17,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "migrate:resolve:system-admin": "prisma migrate resolve --rolled-back \"20250501000000_system_admin_role\"",
     "seed:csv": "tsx scripts/loadCsv.ts",
+    "seed:portal": "tsx prisma/seedPortalAccounts.mts",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --runInBand",
     "lint": "eslint .",
     "prisma:generate": "prisma generate",

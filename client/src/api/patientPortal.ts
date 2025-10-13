@@ -2,12 +2,10 @@ export type FacilityType = 'GPClinic' | 'Hospital';
 
 export interface PatientLoginResponse {
   accessToken: string;
-  user: {
-    userId: string;
-    email: string;
-    role: string;
-    patientId: string | null;
-  };
+  patient: {
+    patientId: string;
+    name: string;
+  } | null;
 }
 
 async function request(path: string, options: RequestInit = {}) {
@@ -20,19 +18,11 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 export async function loginPatient(email: string, password: string): Promise<PatientLoginResponse> {
-  const result = (await request('/api/auth/login', {
+  const result = (await request('/api/patient-portal/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
   })) as PatientLoginResponse;
-
-  if (result.user.role !== 'Patient') {
-    throw new Error('Patient credentials are required to access the portal.');
-  }
-
-  if (!result.user.patientId) {
-    throw new Error('Patient account is not linked to a patient profile.');
-  }
 
   return result;
 }
@@ -101,15 +91,16 @@ export async function fetchSpecialists(params: {
   return request(path) as Promise<SpecialistResponse[]>;
 }
 
-export async function fetchPatientProfile(token: string) {
-  return authFetch('/api/patient-portal/profile', token);
+export async function fetchPatientProfile(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/profile/${patientId}`, token);
 }
 
-export async function fetchPatientAppointments(token: string) {
-  return authFetch('/api/patient-portal/appointments', token);
+export async function fetchPatientAppointments(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/appointments/${patientId}`, token);
 }
 
 export interface CreatePatientAppointmentInput {
+  patientId: string;
   doctorId: string;
   department?: string;
   date: string;
@@ -126,18 +117,18 @@ export async function createPatientAppointment(token: string, body: CreatePatien
   });
 }
 
-export async function fetchLabResults(token: string) {
-  return authFetch('/api/patient-portal/labs', token);
+export async function fetchLabResults(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/labs/${patientId}`, token);
 }
 
-export async function fetchImmunizations(token: string) {
-  return authFetch('/api/patient-portal/immunizations', token);
+export async function fetchImmunizations(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/immunizations/${patientId}`, token);
 }
 
-export async function fetchRadiologyReports(token: string) {
-  return authFetch('/api/patient-portal/radiology', token);
+export async function fetchRadiologyReports(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/radiology/${patientId}`, token);
 }
 
-export async function fetchPayments(token: string) {
-  return authFetch('/api/patient-portal/payments', token);
+export async function fetchPayments(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/payments/${patientId}`, token);
 }
