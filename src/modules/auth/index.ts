@@ -3,6 +3,7 @@ import { Router, type Response, type NextFunction } from 'express';
 import type { Request } from 'express';
 import bcrypt from 'bcrypt';
 import { PrismaClient } from '@prisma/client';
+import { z } from 'zod';
 
 type RoleName =
   | 'Doctor'
@@ -13,13 +14,15 @@ type RoleName =
   | 'PharmacyTech'
   | 'InventoryManager'
   | 'Nurse'
-  | 'LabTech';
+  | 'LabTech'
+  | 'Patient';
 
 export interface AuthUser {
   userId: string;
   role: RoleName;
   email: string;
   doctorId?: string;
+  patientId?: string;
 }
 
 export interface AuthRequest extends Request {
@@ -28,6 +31,17 @@ export interface AuthRequest extends Request {
 
 const prisma = new PrismaClient();
 const PASSWORD_MIN_LENGTH = 8;
+
+const patientRegistrationSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(PASSWORD_MIN_LENGTH),
+  dob: z.coerce.date(),
+  gender: z.enum(['M', 'F']),
+  contact: z.string().trim().min(1).optional(),
+  insurance: z.string().trim().min(1).optional(),
+  drugAllergies: z.string().trim().min(1).optional(),
+});
 
 function parseBearerToken(header: string | undefined): string | null {
   if (!header) return null;
@@ -64,7 +78,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
     const user = await prisma.user.findUnique({
       where: { userId: payload.sub },
-      select: { userId: true, email: true, role: true, status: true, doctorId: true },
+      select: { userId: true, email: true, role: true, status: true, doctorId: true, patientId: true },
     });
 
     if (!user || user.status !== 'active') {
@@ -76,6 +90,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       role: user.role as RoleName,
       email: user.email,
       doctorId: user.doctorId ?? undefined,
+      patientId: user.patientId ?? undefined,
     };
 
     next();
@@ -103,7 +118,68 @@ export function requireRole(...roles: RoleName[]) {
   };
 }
 
+export function requirePatient(req: AuthRequest, res: Response, next: NextFunction) {
+  const user = req.user;
+  if (!user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (user.role !== 'Patient' || !user.patientId) {
+    return res.status(403).json({ error: 'Patient access required' });
+  }
+
+  return next();
+}
+
 const router = Router();
+
+router.post('/patient/register', async (req: Request, res: Response) => {
+  const parsed = patientRegistrationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const data = parsed.data;
+  const normalizedEmail = data.email.trim().toLowerCase();
+
+  const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+  if (existingUser) {
+    return res.status(409).json({ error: 'An account already exists for that email address' });
+  }
+
+  const passwordHash = await bcrypt.hash(data.password, 10);
+
+  const patientRecord = await prisma.$transaction(async (tx) => {
+    const patient = await tx.patient.create({
+      data: {
+        name: data.name,
+        dob: data.dob,
+        gender: data.gender,
+        contact: data.contact ?? null,
+        insurance: data.insurance ?? null,
+        drugAllergies: data.drugAllergies ?? null,
+      },
+    });
+
+    await tx.user.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        role: 'Patient',
+        status: 'active',
+        doctorId: null,
+        patientId: patient.patientId,
+      },
+    });
+
+    return patient;
+  });
+
+  res.status(201).json({
+    message: 'Patient portal account created',
+    patientId: patientRecord.patientId,
+  });
+});
 
 router.post('/password/change', requireAuth, async (req: AuthRequest, res: Response) => {
   const body = req.body as
@@ -317,6 +393,7 @@ router.post('/login', async (req: Request, res: Response) => {
       role: user.role,
       email: user.email,
       doctorId: user.doctorId ?? null,
+      patientId: user.patientId ?? null,
     }),
   ).toString('base64url');
   const accessToken = `${header}.${payload}.`;
@@ -327,6 +404,7 @@ router.post('/login', async (req: Request, res: Response) => {
       role: user.role,
       email: user.email,
       doctorId: user.doctorId,
+      patientId: user.patientId,
     },
   });
 });

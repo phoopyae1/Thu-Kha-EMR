@@ -141,6 +141,138 @@ async function seedLabCatalog() {
   console.log('✅ Seeded lab catalog');
 }
 
+async function seedFacilities() {
+  const facilities = [
+    {
+      facilityId: '11111111-2222-4333-8444-555555555555',
+      name: 'Downtown GP Clinic',
+      type: 'GPClinic' as const,
+      addressLine1: '12 Merchant Road',
+      addressLine2: 'Lanmadaw Township',
+      city: 'Yangon',
+      state: 'Yangon',
+      postalCode: '11181',
+      phone: '+95 1 123 4567',
+      email: 'frontdesk@downtownclinic.mm',
+      website: 'https://downtownclinic.example',
+      latitude: new Prisma.Decimal('16.779200'),
+      longitude: new Prisma.Decimal('96.161500'),
+    },
+    {
+      facilityId: '99999999-8888-7777-6666-555555555555',
+      name: 'Thukha General Hospital',
+      type: 'Hospital' as const,
+      addressLine1: '88 University Avenue',
+      addressLine2: 'Bahan Township',
+      city: 'Yangon',
+      state: 'Yangon',
+      postalCode: '11041',
+      phone: '+95 1 765 4321',
+      email: 'info@thukhahospital.mm',
+      website: 'https://thukhahospital.example',
+      latitude: new Prisma.Decimal('16.832100'),
+      longitude: new Prisma.Decimal('96.158400'),
+    },
+  ];
+
+  for (const facility of facilities) {
+    await prisma.facility.upsert({
+      where: { facilityId: facility.facilityId },
+      update: facility,
+      create: facility,
+    });
+  }
+
+  const gpClinic = facilities[0];
+  const hospital = facilities[1];
+
+  await prisma.doctor.updateMany({
+    where: { department: { contains: 'General', mode: 'insensitive' } },
+    data: { facilityId: gpClinic.facilityId },
+  });
+
+  await prisma.doctor.updateMany({
+    where: { department: { in: ['Cardiology', 'Endocrinology'] } },
+    data: { facilityId: hospital.facilityId },
+  });
+
+  console.log('✅ Facilities seeded');
+}
+
+async function seedPatientPortalArtifacts() {
+  const patientUser = await prisma.user.findUnique({
+    where: { email: 'patient@example.com' },
+    select: { patientId: true },
+  });
+
+  if (!patientUser?.patientId) {
+    console.warn('⚠️ Unable to locate patient portal account for enrichment');
+    return;
+  }
+
+  const patientId = patientUser.patientId;
+  const visit = await prisma.visit.findFirst({
+    where: { patientId },
+    orderBy: { visitDate: 'desc' },
+  });
+
+  await prisma.immunization.upsert({
+    where: { immunizationId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+    update: {
+      patientId,
+      vaccineName: 'Influenza (Quadrivalent)',
+      manufacturer: 'Sanofi',
+      lotNumber: 'FLU-2025-01',
+      doseNumber: 1,
+      administeredAt: new Date('2025-07-15'),
+      provider: 'Downtown GP Clinic',
+      nextDueDate: new Date('2026-07-15'),
+      notes: 'Annual flu shot administered in left deltoid.',
+    },
+    create: {
+      immunizationId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      patientId,
+      vaccineName: 'Influenza (Quadrivalent)',
+      manufacturer: 'Sanofi',
+      lotNumber: 'FLU-2025-01',
+      doseNumber: 1,
+      administeredAt: new Date('2025-07-15'),
+      provider: 'Downtown GP Clinic',
+      nextDueDate: new Date('2026-07-15'),
+      notes: 'Annual flu shot administered in left deltoid.',
+    },
+  });
+
+  await prisma.radiologyReport.upsert({
+    where: { reportId: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff' },
+    update: {
+      patientId,
+      visitId: visit?.visitId ?? null,
+      modality: 'Chest X-ray',
+      bodyPart: 'Chest',
+      reportText:
+        'PA and lateral chest radiographs show clear lung fields with no focal consolidation. Cardiomediastinal silhouette within normal limits.',
+      impressions: 'No acute cardiopulmonary process.',
+      performedAt: new Date('2025-06-28T09:30:00Z'),
+      radiologist: 'Dr Nay Win',
+    },
+    create: {
+      reportId: 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff',
+      patientId,
+      visitId: visit?.visitId ?? null,
+      modality: 'Chest X-ray',
+      bodyPart: 'Chest',
+      reportText:
+        'PA and lateral chest radiographs show clear lung fields with no focal consolidation. Cardiomediastinal silhouette within normal limits.',
+      impressions: 'No acute cardiopulmonary process.',
+      performedAt: new Date('2025-06-28T09:30:00Z'),
+      radiologist: 'Dr Nay Win',
+    },
+  });
+
+  console.log('✅ Patient portal records seeded');
+}
+
 async function main() {
   // Run legacy seed first to ensure baseline data remains available.
   await import('./seed.mjs');
@@ -173,6 +305,8 @@ async function main() {
   });
   await seedPharmacyReference();
   await seedLabCatalog();
+  await seedFacilities();
+  await seedPatientPortalArtifacts();
 }
 
 main()
