@@ -25,13 +25,15 @@ import ProblemList from './pages/ProblemList';
 import LabOrdersPage from './pages/LabOrders';
 import LabOrderDetailPage from './pages/LabOrderDetail';
 import PatientPortal from './pages/PatientPortal';
+import PatientPortalLanding from './pages/PatientPortalLanding';
 import './styles/App.css';
 
 function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/patient-portal" element={<PatientPortal />} />
+      <Route path="/patient-portal" element={<PatientPortalLanding />} />
+      <Route path="/patient-portal/login" element={<PatientPortal />} />
       <Route
         path="/patients"
         element={
