@@ -132,3 +132,7 @@ export async function fetchRadiologyReports(token: string, patientId: string) {
 export async function fetchPayments(token: string, patientId: string) {
   return authFetch(`/api/patient-portal/payments/${patientId}`, token);
 }
+
+export async function fetchMedications(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/medications/${patientId}`, token);
+}
