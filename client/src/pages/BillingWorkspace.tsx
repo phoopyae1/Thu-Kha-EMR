@@ -49,6 +49,10 @@ const INVOICE_STATUS_FILTERS = [
   { value: 'VOID', label: 'Voided' },
 ];
 
+function isUuid(value: string) {
+  return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(value.trim());
+}
+
 function formatMoney(value: string, currency = 'MMK') {
   const numeric = Number.parseFloat(value);
   if (Number.isNaN(numeric)) {
@@ -163,6 +167,30 @@ export default function BillingWorkspace() {
       }
       setPatientSearchLoading(true);
       setPatientSearchError(null);
+      if (isUuid(query)) {
+        try {
+          const patientRecord = (await getPatient(query)) as Patient;
+          if (!active) return;
+          await selectPatient(patientRecord, { preserveQuery: true, isActive: () => active });
+          if (!active) return;
+          setPatientMatches([]);
+          setPatientSearchError(null);
+        } catch (error) {
+          console.error(error);
+          if (!active) return;
+          setPatientMatches([]);
+          setSelectedPatient(null);
+          setPatientVisits([]);
+          setPatientVisitsError('No patient found with that ID.');
+          setPatientVisitsLoading(false);
+          setPatientSearchError('No patient found with that ID.');
+        } finally {
+          if (active) {
+            setPatientSearchLoading(false);
+          }
+        }
+        return;
+      }
       try {
         const results = await searchPatients(query);
         if (!active) return;
@@ -345,22 +373,42 @@ export default function BillingWorkspace() {
     }
   }
 
-  async function handleSelectPatient(patient: Patient) {
+  async function selectPatient(
+    patient: Patient,
+    options: { preserveQuery?: boolean; isActive?: () => boolean } = {},
+  ) {
+    const { preserveQuery = false, isActive } = options;
+    const checkActive = () => (isActive ? isActive() : true);
+    if (!checkActive()) return;
     setSelectedPatient(patient);
-    setPatientQuery(patient.name);
+    if (!checkActive()) return;
+    if (!preserveQuery) {
+      setPatientQuery(patient.name);
+    }
+    if (!checkActive()) return;
     setPatientMatches([]);
+    if (!checkActive()) return;
     setPatientVisits([]);
+    if (!checkActive()) return;
     setPatientVisitsError(null);
+    if (!checkActive()) return;
     setPatientVisitsLoading(true);
     try {
       const visits = await listPatientVisits(patient.patientId);
+      if (!checkActive()) return;
       setPatientVisits(visits);
     } catch (error) {
       console.error(error);
+      if (!checkActive()) return;
       setPatientVisitsError('Unable to load visits for that patient.');
     } finally {
+      if (!checkActive()) return;
       setPatientVisitsLoading(false);
     }
+  }
+
+  async function handleSelectPatient(patient: Patient) {
+    await selectPatient(patient);
   }
 
   async function handleSelectVisit(visit: Visit) {

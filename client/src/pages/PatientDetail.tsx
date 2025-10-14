@@ -39,6 +39,7 @@ export default function PatientDetail() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { user } = useAuth();
+  const canManagePortalAccount = Boolean(user && ['AdminAssistant', 'ITAdmin'].includes(user.role));
   const initialTab =
     new URLSearchParams(location.search).get('tab') === 'visits'
       ? 'visits'
@@ -334,7 +335,6 @@ export default function PatientDetail() {
     );
   }
 
-  const canManagePortalAccount = Boolean(user && ['AdminAssistant', 'ITAdmin'].includes(user.role));
   const canViewProblems = user && ['Doctor', 'Nurse', 'ITAdmin'].includes(user.role);
 
   const headerActions = (
