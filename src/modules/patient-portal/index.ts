@@ -706,7 +706,7 @@ router.get('/radiology/:patientId', async (req: Request, res: Response) => {
 
 router.get('/payments/:patientId', async (req: Request, res: Response) => {
   const { patientId } = req.params;
-  
+
   if (!patientId) {
     return res.status(400).json({ error: 'Patient ID is required' });
   }
@@ -746,6 +746,49 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
       ...payment,
       amount: Number(payment.amount),
     })),
+  }));
+
+  res.json(formatted);
+});
+
+router.get('/medications/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  const medications = await prisma.medication.findMany({
+    where: { visit: { patientId } },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      medId: true,
+      drugName: true,
+      dosage: true,
+      instructions: true,
+      createdAt: true,
+      visit: {
+        select: {
+          visitId: true,
+          visitDate: true,
+          department: true,
+          doctor: {
+            select: { name: true },
+          },
+        },
+      },
+    },
+  });
+
+  const formatted = medications.map((medication) => ({
+    ...medication,
+    visit: medication.visit
+      ? {
+          ...medication.visit,
+          visitDate: medication.visit.visitDate,
+        }
+      : null,
   }));
 
   res.json(formatted);
