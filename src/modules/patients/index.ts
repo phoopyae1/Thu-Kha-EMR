@@ -52,7 +52,7 @@ router.get(
       filters.push(Prisma.sql`"patientId" = ${trimmed}`);
     }
 
-    const whereClause = Prisma.join(filters, Prisma.sql` OR `);
+    const whereClause = Prisma.join(filters, ' OR ');
 
     type RawPatient = {
       patientId: string;
