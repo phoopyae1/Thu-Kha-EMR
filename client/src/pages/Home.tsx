@@ -1201,46 +1201,64 @@ function TeamDashboard({ role }: { role?: string }) {
               </p>
             </div>
           </div>
-          <div className="mt-6">
-            <Link
-              to="/register"
-              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
-            >
-              {t('Register Patient')}
-            </Link>
+          <div className="w-full max-w-sm rounded-3xl bg-white/10 p-6 text-sm text-white shadow-lg backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{t('Today’s highlights')}</p>
+            <p className="mt-3 text-base font-semibold">{appointmentSummary}</p>
+            <p className="mt-3 text-sm text-white/80">{checkedInSummary}</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <Link
+                to="/appointments/new"
+                className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow transition hover:bg-blue-50"
+              >
+                {t('Book appointment')}
+              </Link>
+              <Link
+                to="/patients"
+                className="inline-flex items-center justify-center rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-white/30"
+              >
+                {t('Find patient')}
+              </Link>
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <SearchIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">{t('Search Patient Records')}</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {t('Look up patients to confirm coverage, history, and contact details.')}
-              </p>
-            </div>
-          </div>
-          <div className="mt-6">
-            <Link
-              to="/patients"
-              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
-            >
-              {t('Search Patient')}
-            </Link>
-          </div>
-        </div>
-
-        <div className="flex flex-col justify-between rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <CalendarIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-500">{t('Appointments Today')}</div>
-              <div className="mt-2 text-4xl font-semibold text-gray-900">{renderCount(statusTotals.total)}</div>
+      <div className="mt-10 grid gap-8 xl:grid-cols-[280px_1fr]">
+        <aside className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">{t('Workspace navigation')}</h3>
+            <p className="mt-1 text-xs text-slate-500">{t('Switch between clinic workflows inspired by the EMR portal layout.')}</p>
+            <div className="mt-4 space-y-2" role="tablist" aria-label={t('Workspace tabs')}>
+              {workspaceOrder.map((tab) => {
+                const config = workspaceTabs[tab];
+                const isActive = tab === activeWorkspace;
+                return (
+                  <button
+                    key={tab}
+                    id={`workspace-tab-${tab}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={`workspace-panel-${tab}`}
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => setActiveWorkspace(tab)}
+                    className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition focus:outline-none focus:ring-2 ${config.accent.focusRing} ${
+                      isActive
+                        ? `bg-gradient-to-r ${config.accent.navGradient} text-white shadow-lg`
+                        : 'bg-white text-slate-600 shadow-sm hover:bg-slate-50'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                        isActive ? 'bg-white/15 text-white' : config.accent.navIcon
+                      }`}
+                    >
+                      <config.icon className="h-5 w-5" />
+                    </span>
+                    <span className="flex-1">{config.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-600">
@@ -1248,14 +1266,21 @@ function TeamDashboard({ role }: { role?: string }) {
           </p>
         </div>
 
-        <div className="flex flex-col justify-between rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <PatientsIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-500">{t('Checked-in Patients')}</div>
-              <div className="mt-2 text-4xl font-semibold text-gray-900">{renderCount(readyCount)}</div>
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <RegisterIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">{t('Register new patient')}</h3>
+                <p className="mt-1 text-sm text-slate-600">{t('Capture demographics and intake details for walk-in patients in minutes.')}</p>
+                <Link
+                  to="/register"
+                  className="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-blue-700"
+                >
+                  {t('Start intake')}
+                </Link>
+              </div>
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-600">
@@ -1263,73 +1288,105 @@ function TeamDashboard({ role }: { role?: string }) {
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-lg font-semibold text-gray-900">{t('Upcoming Appointments')}</div>
-              {loading && hasAppointments && (
-                <p className="text-xs font-medium text-gray-500">{t('Loading appointments...')}</p>
-              )}
-            </div>
-            <Link to="/appointments" className="text-xs font-semibold text-blue-600 hover:underline">
-              {t('View schedule')}
-            </Link>
-          </div>
-          {error ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          ) : loading && !hasAppointments ? (
-            <p className="mt-4 text-sm text-gray-500">{t('Loading appointments...')}</p>
-          ) : upcomingAppointments.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {upcomingAppointments.map((appointment) => (
-                <li
-                  key={appointment.appointmentId}
-                  className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3"
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                <SearchIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">{t('Search clinic records')}</h3>
+                <p className="mt-1 text-sm text-slate-600">{t('Look up patient charts, confirm coverage, or find contact details on the fly.')}</p>
+                <Link
+                  to="/patients"
+                  className="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-blue-700"
                 >
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{appointment.patient.name}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                      <span>{formatDateDisplay(appointment.date)}</span>
-                      <span>•</span>
-                      <span>{formatTimeRange(appointment.startTimeMin, appointment.endTimeMin)}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-400">
-                      {appointment.doctor.name} • {appointment.department}
-                    </div>
-                  </div>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${statusVisuals[appointment.status].chip}`}
-                  >
-                    {statusVisuals[appointment.status].label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">{t('No upcoming appointments.')}</p>
-          )}
-        </div>
+                  {t('Open patient search')}
+                </Link>
+              </div>
+            </div>
+          </section>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="text-lg font-semibold text-gray-900">{t('Task Reminders')}</div>
-          {error ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          ) : loading && !hasAppointments ? (
-            <p className="mt-4 text-sm text-gray-500">{t('Loading appointments...')}</p>
-          ) : tasks.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {tasks.map((task) => (
-                <li key={task.key} className="flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-green-600">
-                    <CheckIcon className="h-4 w-4" />
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">{t('Today at a glance')}</h3>
+            <dl className="mt-4 space-y-4 text-sm text-slate-600">
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Appointments')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(statusTotals.total)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Checked-in')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(readyCount)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Waiting')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(waitingCount)}</dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-xs text-slate-500">{appointmentSummary}</p>
+          </section>
+        </aside>
+
+        <div
+          id={`workspace-panel-${activeWorkspace}`}
+          role="tabpanel"
+          aria-labelledby={`workspace-tab-${activeWorkspace}`}
+          className="space-y-6"
+        >
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-4">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-2xl ${activeWorkspaceConfig.accent.headerIcon} ring-4 ${activeWorkspaceConfig.accent.headerIconRing}`}
+                >
+                  <activeWorkspaceConfig.icon className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">{activeWorkspaceConfig.heading}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{activeWorkspaceConfig.description}</p>
+                </div>
+              </div>
+              {activeWorkspaceConfig.stat ? (
+                <div className="rounded-3xl border border-slate-100 bg-slate-50 px-5 py-4 text-center">
+                  <div className="text-2xl font-semibold text-slate-900">{activeWorkspaceConfig.stat.value}</div>
+                  <div className="text-xs font-medium text-slate-500">{activeWorkspaceConfig.stat.label}</div>
+                </div>
+              ) : null}
+            </div>
+            {activeWorkspaceConfig.infoChips?.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeWorkspaceConfig.infoChips.map((chip) => (
+                  <span
+                    key={`${activeWorkspace}-${chip.label}`}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${activeWorkspaceConfig.accent.chip}`}
+                  >
+                    <span className="text-sm font-semibold">{chip.value}</span>
+                    <span className="text-xs font-medium">{chip.label}</span>
                   </span>
-                  <span className="text-sm text-gray-700">{task.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">{t('No pending tasks for today.')}</p>
-          )}
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                to={activeWorkspaceConfig.primaryAction.to}
+                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
+              >
+                {activeWorkspaceConfig.primaryAction.label}
+              </Link>
+              {activeWorkspaceConfig.secondaryAction ? (
+                <Link
+                  to={activeWorkspaceConfig.secondaryAction.to}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  {activeWorkspaceConfig.secondaryAction.label}
+                </Link>
+              ) : null}
+            </div>
+            {activeWorkspaceConfig.footnote ? (
+              <p className="mt-4 text-xs text-slate-500">{activeWorkspaceConfig.footnote}</p>
+            ) : null}
+          </section>
+
+          {renderWorkspaceContent()}
         </div>
       </div>
     </DashboardLayout>
