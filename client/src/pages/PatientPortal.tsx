@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarIcon,
   CheckIcon,
   AvatarIcon,
   ReportsIcon,
-  PatientsIcon,
   PharmacyIcon,
   DashboardIcon,
   CloseIcon,
@@ -48,10 +47,59 @@ interface PaymentReceiptModalProps {
   invoice: any;
   patient: any | null;
   onClose: () => void;
-  t: (key: string, variables?: Record<string, unknown>) => string;
+  t: (key: string, variables?: Record<string, string | number>) => string;
   displayName: string;
   logo?: string | null;
   formatCurrency: (amount: number) => string;
+}
+
+type ToastState = {
+  type: 'success' | 'error';
+  title: string;
+  message: string;
+};
+
+type PortalTab = 'dashboard' | 'profile';
+
+interface DashboardTabProps {
+  t: (key: string, variables?: Record<string, string | number>) => string;
+  portalLoading: boolean;
+  upcomingAppointments: any[];
+  pastAppointments: any[];
+  nextAppointment: any | null;
+  lastVisit: any | null;
+  latestImmunization: any | null;
+  invoiceSummary: any;
+  payments: any[];
+  labs: any[];
+  profileCards: Array<{ label: string; value: string }>;
+  medications: any[];
+  immunizations: any[];
+  radiologyReports: any[];
+  appointmentForm: AppointmentForm;
+  appointmentStatus: 'idle' | 'loading' | 'success';
+  appointmentError: string | null;
+  specialists: SpecialistResponse[];
+  specialistsError: string | null;
+  onAppointmentChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
+  onAppointmentSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  setReceiptInvoice: (invoice: any | null) => void;
+  formatCurrency: (amount: number) => string;
+  clinicMapLocations: Array<{ id: string; code: string; label: string; description: string; x: number; y: number }>;
+  patientDetails: any | null;
+  onShowProfile: () => void;
+}
+
+interface ProfileTabProps {
+  t: (key: string, variables?: Record<string, string | number>) => string;
+  profileCards: Array<{ label: string; value: string }>;
+  patientDetails: any | null;
+  latestImmunization: any | null;
+  recentVisits: any[];
+  immunizations: any[];
+  medications: any[];
+  labs: any[];
+  radiologyReports: any[];
 }
 
 function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, formatCurrency }: PaymentReceiptModalProps) {
@@ -234,6 +282,19 @@ function formatCurrency(amount: number) {
   );
 }
 
+function calculateAge(dob?: string | null) {
+  if (!dob) return null;
+  const birthDate = new Date(dob);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
 const defaultLoginForm: LoginForm = { email: 'patient@example.com', password: '' };
 const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: '', reason: '' };
 
@@ -257,12 +318,23 @@ export default function PatientPortal() {
   const [payments, setPayments] = useState<any[]>([]);
   const [medications, setMedications] = useState<any[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [portalError, setPortalError] = useState<string | null>(null);
 
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(defaultAppointmentForm);
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'success'>('idle');
   const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const [receiptInvoice, setReceiptInvoice] = useState<any | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const [activeTab, setActiveTab] = useState<PortalTab>('dashboard');
+
+  const showToast = useCallback((nextToast: ToastState) => {
+    setToast(nextToast);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const handle = window.setTimeout(() => setToast(null), 6000);
+    return () => window.clearTimeout(handle);
+  }, [toast]);
 
   useEffect(() => {
     fetchSpecialists()
@@ -272,8 +344,13 @@ export default function PatientPortal() {
           setAppointmentForm((previous) => ({ ...previous, doctorId: data[0].doctorId }));
         }
       })
-      .catch((error: Error) => setSpecialistsError(error.message));
-  }, []);
+      .catch((error: Error) => {
+        const fallback = t('Unable to load specialists');
+        const message = error.message || fallback;
+        setSpecialistsError(message);
+        showToast({ type: 'error', title: fallback, message });
+      });
+  }, [showToast, t]);
 
   const displayName = useMemo(() => appName || t('EMR System'), [appName, t]);
 
@@ -296,16 +373,16 @@ export default function PatientPortal() {
       const response = await loginPatient(loginForm.email.trim(), loginForm.password.trim());
       setSession({ token: response.accessToken, patientId: response.patient?.patientId!, email: loginForm.email.trim() });
       setLoginStatus('success');
-      setPortalError(null);
     } catch (error) {
       setLoginStatus('idle');
-      setLoginError(error instanceof Error ? error.message : t('Unable to sign in. Please try again.'));
+      const message = error instanceof Error ? error.message : t('Unable to sign in. Please try again.');
+      setLoginError(message);
+      showToast({ type: 'error', title: t('Sign-in failed'), message });
     }
   };
 
   const loadPortalData = async (activeSession: PortalSession) => {
     setPortalLoading(true);
-    setPortalError(null);
     try {
       const [
         profileData,
@@ -336,13 +413,20 @@ export default function PatientPortal() {
       setAppointmentStatus('idle');
     } catch (error) {
       setPortalLoading(false);
-      setPortalError(error instanceof Error ? error.message : t('Unable to load patient data.'));
+      const message = error instanceof Error ? error.message : t('Unable to load patient data.');
+      showToast({ type: 'error', title: t('Portal data unavailable'), message });
     }
   };
 
   useEffect(() => {
     if (session) {
       void loadPortalData(session);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      setActiveTab('dashboard');
     }
   }, [session]);
 
@@ -371,7 +455,9 @@ export default function PatientPortal() {
       await loadPortalData(session);
     } catch (error) {
       setAppointmentStatus('idle');
-      setAppointmentError(error instanceof Error ? error.message : t('Unable to schedule appointment.'));
+      const message = error instanceof Error ? error.message : t('Unable to schedule appointment.');
+      setAppointmentError(message);
+      showToast({ type: 'error', title: t('Appointment request failed'), message });
     }
   };
 
@@ -380,7 +466,6 @@ export default function PatientPortal() {
     setLoginForm(defaultLoginForm);
     setLoginError(null);
     setLoginStatus('idle');
-    setPortalError(null);
     setPortalLoading(false);
     setProfile(null);
     setAppointments(null);
@@ -400,18 +485,122 @@ export default function PatientPortal() {
   const recentVisits = profile?.recentVisits ?? [];
   const latestImmunization = profile?.latestImmunization ?? null;
   const patientDetails = profile?.patient;
+  const nextAppointment = upcomingAppointments[0] ?? null;
+  const lastVisit = recentVisits[0] ?? null;
+  const patientAge = calculateAge(patientDetails?.dob ?? null);
+  const genderLabel =
+    patientDetails && typeof patientDetails.gender === 'string'
+      ? patientDetails.gender === 'F'
+        ? t('Female')
+        : patientDetails.gender === 'M'
+          ? t('Male')
+          : patientDetails.gender
+      : t('Not recorded');
 
-  const quickLinks = [
-    { label: t('Appointments'), href: '#appointments' },
-    { label: t('Labs'), href: '#labs' },
-    { label: t('Medications'), href: '#medications' },
-    { label: t('Immunisations'), href: '#immunisations' },
-    { label: t('Radiology'), href: '#radiology' },
-    { label: t('Payments'), href: '#payments' },
+  const profileCards = patientDetails
+    ? [
+        {
+          label: t('Date of birth'),
+          value: patientDetails.dob ? new Date(patientDetails.dob).toLocaleDateString() : t('Not recorded'),
+        },
+        {
+          label: t('Age'),
+          value: patientAge !== null ? t('{count} years old', { count: patientAge }) : t('Not recorded'),
+        },
+        {
+          label: t('Gender'),
+          value: genderLabel,
+        },
+        {
+          label: t('Primary contact'),
+          value: patientDetails.contact?.trim() || t('Not available'),
+        },
+        {
+          label: t('Insurance'),
+          value: patientDetails.insurance?.trim() || t('Self-pay'),
+        },
+        {
+          label: t('Drug allergies'),
+          value: patientDetails.drugAllergies?.trim() || t('None reported'),
+        },
+      ]
+    : [];
+
+  const tabs = useMemo(
+    () => [
+      { id: 'dashboard' as PortalTab, label: t('Landing page') },
+      { id: 'profile' as PortalTab, label: t('Profile overview') },
+    ],
+    [t],
+  );
+
+  const clinicMapLocations = useMemo(
+    () => [
+      {
+        id: 'building-4',
+        code: '4',
+        label: t('Building 4 - Outpatient pavilion'),
+        description: t('Check-in, family medicine, and pharmacy pickup'),
+        x: 28,
+        y: 58,
+      },
+      {
+        id: 'building-5',
+        code: '5',
+        label: t('Building 5 - Diagnostics hub'),
+        description: t('Radiology, lab services, and imaging check-in'),
+        x: 66,
+        y: 32,
+      },
+    ],
+    [t],
+  );
+
+  const dashboardStats = [
+    {
+      label: t('Upcoming visits'),
+      value: upcomingAppointments.length,
+      accent: 'text-blue-600',
+      description: t('Ready for check-in'),
+    },
+    {
+      label: t('Lab updates'),
+      value: labs.length,
+      accent: 'text-indigo-600',
+      description: t('Latest diagnostics shared'),
+    },
+    {
+      label: t('Balance due'),
+      value: formatCurrency(invoiceSummary?.outstanding ?? 0),
+      accent: 'text-rose-600',
+      description: t('From recent invoices'),
+    },
   ];
 
   return (
     <div className="min-h-screen bg-slate-100">
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-50">
+          <div className="pointer-events-auto flex w-80 items-start gap-3 rounded-2xl bg-white p-4 shadow-lg ring-1 ring-black/5">
+            <span
+              className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${toast.type === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`}
+              aria-hidden="true"
+            />
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-slate-900">{toast.title}</div>
+              <p className="mt-1 text-slate-600">{toast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="-mr-2 rounded-full p-1 text-slate-400 transition hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="sr-only">{t('Dismiss')}</span>×
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="border-b border-slate-200 bg-white/70 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
@@ -452,16 +641,23 @@ export default function PatientPortal() {
           </div>
         </div>
         {session ? (
-          <nav className="mx-auto hidden w-full max-w-6xl flex-wrap items-center gap-2 px-6 pb-4 md:flex">
-            {quickLinks.map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="rounded-full border border-blue-100 bg-white px-4 py-1.5 text-sm font-medium text-blue-700 transition hover:border-blue-200 hover:bg-blue-50"
-              >
-                {link.label}
-              </a>
-            ))}
+          <nav className="mx-auto hidden w-full max-w-6xl items-center gap-2 px-6 pb-4 md:flex">
+            <div className="inline-flex rounded-full border border-blue-100 bg-white p-1 shadow-sm">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? 'bg-blue-600 text-white shadow'
+                      : 'text-blue-700 hover:bg-blue-50'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </nav>
         ) : null}
       </header>
@@ -469,493 +665,82 @@ export default function PatientPortal() {
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
         {session ? (
           <>
-            <section className="rounded-3xl bg-gradient-to-r from-blue-600 via-blue-500 to-indigo-500 p-[1px] shadow-xl">
-              <div className="rounded-[calc(theme(borderRadius.3xl)-4px)] bg-white/95 p-8">
-                <div className="flex flex-wrap items-start justify-between gap-6">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Secure session')}</p>
-                    <h2 className="mt-2 text-2xl font-semibold text-slate-900">{t('Welcome back')}</h2>
-                    <p className="mt-2 text-sm text-slate-600">{t('Signed in as {email}', { email: session.email })}</p>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {t('Review your care history, request appointments, and download receipts.')}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-3 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={handleLogout}
-                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
-                    >
-                      {t('Sign out')}
-                    </button>
-                    <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">
-                      <CheckIcon className="h-5 w-5" />
-                      {portalLoading ? t('Syncing data...') : t('Portal connected')}
-                    </span>
-                  </div>
+
+            <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Secure session')}</p>
+                  <h2 className="mt-2 text-3xl font-semibold text-slate-900">{t('Your care workspace')}</h2>
+                  <p className="mt-2 text-sm text-slate-500">{t('Signed in as {email}', { email: session.email })}</p>
                 </div>
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">{t('Upcoming visits')}</div>
-                    <div className="mt-2 text-2xl font-semibold text-blue-900">{upcomingAppointments.length}</div>
-                    <p className="text-xs text-blue-700">{t('Scheduled visits ready to check in')}</p>
-                  </div>
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{t('Lab results')}</div>
-                    <div className="mt-2 text-2xl font-semibold text-indigo-900">{labs.length}</div>
-                    <p className="text-xs text-indigo-700">{t('Recent results securely shared')}</p>
-                  </div>
-                  <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-rose-600">{t('Outstanding balance')}</div>
-                    <div className="mt-2 text-2xl font-semibold text-rose-900">{formatCurrency(invoiceSummary?.outstanding ?? 0)}</div>
-                    <p className="text-xs text-rose-700">{t('Track payments and receipts below')}</p>
-                  </div>
+                <div className="flex flex-col items-start gap-3 text-sm text-slate-600 sm:flex-row sm:items-center">
+                  <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-700">
+                    <CheckIcon className="h-5 w-5" />
+                    {portalLoading ? t('Syncing data...') : t('Portal connected')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-4 py-2 font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+                  >
+                    {t('Sign out')}
+                  </button>
                 </div>
+              </div>
+              <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                {dashboardStats.map((stat) => (
+                  <div key={stat.label} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{stat.label}</div>
+                    <div className={`mt-2 text-2xl font-semibold ${stat.accent}`}>{stat.value}</div>
+                    <p className="mt-1 text-xs text-slate-500">{stat.description}</p>
+                  </div>
+                ))}
               </div>
             </section>
 
-            {portalError ? (
-              <p className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-6 py-4 text-sm text-rose-700">{portalError}</p>
-            ) : null}
-
-            <div className="mt-10 grid gap-8 xl:grid-cols-[320px_1fr]">
-              <aside className="space-y-6">
-                {patientDetails ? (
-                  <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-lg font-semibold text-slate-900">{patientDetails.name}</h3>
-                        <p className="text-sm text-slate-500">
-                          {t('DOB: {date}', { date: new Date(patientDetails.dob).toLocaleDateString() })} •{' '}
-                          {patientDetails.gender === 'F' ? t('Female') : t('Male')}
-                        </p>
-                      </div>
-                      <AvatarIcon className="h-10 w-10 text-blue-600" />
-                    </div>
-                    <dl className="mt-4 space-y-3 text-sm text-slate-600">
-                      <div>
-                        <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Patient ID')}</dt>
-                        <dd className="font-medium text-slate-900">{patientDetails.patientId}</dd>
-                      </div>
-                      {patientDetails.contact ? (
-                        <div>
-                          <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Contact')}</dt>
-                          <dd className="font-medium text-slate-900">{patientDetails.contact}</dd>
-                        </div>
-                      ) : (
-                        <div>
-                          <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Contact')}</dt>
-                          <dd className="font-medium text-slate-900">{t('Not available')}</dd>
-                        </div>
-                      )}
-                      <div>
-                        <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Insurance')}</dt>
-                        <dd className="font-medium text-slate-900">{patientDetails.insurance ?? t('Self-pay')}</dd>
-                      </div>
-                      {patientDetails.drugAllergies ? (
-                        <div>
-                          <dt className="text-xs uppercase tracking-wide text-rose-500">{t('Allergies')}</dt>
-                          <dd className="font-medium text-rose-600">{patientDetails.drugAllergies}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  </section>
-                ) : null}
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:hidden">
-                  <h3 className="text-sm font-semibold text-slate-900">{t('Quick sections')}</h3>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {quickLinks.map((link) => (
-                      <a
-                        key={link.href}
-                        href={link.href}
-                        className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700 transition hover:border-blue-200 hover:bg-blue-100"
-                      >
-                        {link.label}
-                      </a>
-                    ))}
-                  </div>
-                </section>
-
-                {latestImmunization ? (
-                  <section className="rounded-3xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-blue-900">{t('Latest immunisation')}</h3>
-                      <PharmacyIcon className="h-5 w-5 text-blue-700" />
-                    </div>
-                    <p className="mt-3 text-base font-semibold">{latestImmunization.vaccineName}</p>
-                    <p className="text-xs text-blue-800">
-                      {t('Administered {date}', { date: new Date(latestImmunization.administeredAt).toLocaleDateString() })}
-                    </p>
-                    {latestImmunization.provider ? (
-                      <p className="text-xs text-blue-700">{latestImmunization.provider}</p>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                {invoiceSummary ? (
-                  <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-semibold text-slate-900">{t('Billing summary')}</h3>
-                      <PharmacyIcon className="h-5 w-5 text-blue-600" />
-                    </div>
-                    <div className="mt-4 grid gap-4 text-sm text-slate-600">
-                      <div>
-                        <div className="text-xs uppercase tracking-wide text-slate-500">{t('Outstanding')}</div>
-                        <div className="text-lg font-semibold text-slate-900">{formatCurrency(invoiceSummary.outstanding)}</div>
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <div className="text-xs uppercase tracking-wide text-slate-500">{t('Total paid')}</div>
-                          <div className="text-base font-semibold text-emerald-600">{formatCurrency(invoiceSummary.paidTotal)}</div>
-                        </div>
-                        <div>
-                          <div className="text-xs uppercase tracking-wide text-slate-500">{t('Lifetime value')}</div>
-                          <div className="text-base font-semibold text-slate-900">{formatCurrency(invoiceSummary.lifetimeValue)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                ) : null}
-
-                {recentVisits.length > 0 ? (
-                  <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                    <h3 className="text-lg font-semibold text-slate-900">{t('Recent visits')}</h3>
-                    <ul className="mt-4 space-y-3 text-sm text-slate-600">
-                      {recentVisits.map((visit: any) => (
-                        <li key={visit.visitId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="font-semibold text-slate-900">
-                            {new Date(visit.visitDate).toLocaleDateString()} • {visit.doctor?.name ?? ''}
-                          </div>
-                          <div className="text-xs text-slate-500">{visit.department}</div>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                ) : null}
-              </aside>
-
-              <div className="space-y-8">
-                <section id="appointments" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Care coordination')}</h3>
-                      <p className="text-sm text-slate-500">{t('Manage upcoming visits and request new appointments.')}</p>
-                    </div>
-                    <CalendarIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {portalLoading ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('Refreshing your schedule...')}</p>
-                  ) : null}
-                  <div className="mt-6 grid gap-6 lg:grid-cols-2">
-                    <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Upcoming appointments')}</h4>
-                      {upcomingAppointments.length === 0 ? (
-                        <p className="mt-3 text-sm text-slate-500">{t('You have no upcoming visits scheduled.')}</p>
-                      ) : (
-                        <ul className="mt-4 space-y-3 text-sm text-slate-600">
-                          {upcomingAppointments.map((item: any) => (
-                            <li key={item.appointmentId} className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3">
-                              <div className="font-semibold text-blue-800">
-                                {new Date(item.date).toLocaleDateString()} • {formatMinutes(item.startTimeMin)}
-                              </div>
-                              <div>{item.doctor.name}</div>
-                              <div className="text-xs text-blue-600">
-                                {item.department} • {item.location ?? t('Clinic visit')}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Request a new appointment')}</h4>
-                      <form onSubmit={handleAppointmentSubmit} className="mt-4 space-y-4 text-sm">
-                        {specialistsError ? (
-                          <p className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{specialistsError}</p>
-                        ) : null}
-                        <div>
-                          <label htmlFor="doctorId" className="text-sm font-medium text-slate-700">
-                            {t('Choose a doctor')}
-                          </label>
-                          <select
-                            id="doctorId"
-                            name="doctorId"
-                            value={appointmentForm.doctorId}
-                            onChange={handleAppointmentChange}
-                            required
-                            className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                          >
-                            {specialists.map((specialist) => (
-                              <option key={specialist.doctorId} value={specialist.doctorId}>
-                                {specialist.name} • {specialist.department}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="grid gap-4 sm:grid-cols-2">
-                          <div>
-                            <label htmlFor="date" className="text-sm font-medium text-slate-700">
-                              {t('Preferred date')}
-                            </label>
-                            <input
-                              id="date"
-                              name="date"
-                              type="date"
-                              value={appointmentForm.date}
-                              onChange={handleAppointmentChange}
-                              required
-                              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                            />
-                          </div>
-                          <div>
-                            <label htmlFor="time" className="text-sm font-medium text-slate-700">
-                              {t('Preferred time')}
-                            </label>
-                            <input
-                              id="time"
-                              name="time"
-                              type="time"
-                              value={appointmentForm.time}
-                              onChange={handleAppointmentChange}
-                              required
-                              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <label htmlFor="reason" className="text-sm font-medium text-slate-700">
-                            {t('Visit reason')}
-                          </label>
-                          <textarea
-                            id="reason"
-                            name="reason"
-                            value={appointmentForm.reason}
-                            onChange={handleAppointmentChange}
-                            rows={3}
-                            placeholder={t('E.g. Annual physical, lab review, medication refill')}
-                            className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                          />
-                        </div>
-                        {appointmentError ? <p className="text-sm text-rose-600">{appointmentError}</p> : null}
-                        <button
-                          type="submit"
-                          disabled={appointmentStatus === 'loading'}
-                          className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
-                        >
-                          <CalendarIcon className="h-5 w-5" />
-                          {appointmentStatus === 'loading' ? t('Scheduling...') : t('Schedule appointment')}
-                        </button>
-                        {appointmentStatus === 'success' ? (
-                          <p className="text-sm text-emerald-600">{t('Appointment request received! We will confirm shortly.')}</p>
-                        ) : null}
-                      </form>
-                    </div>
-                  </div>
-                  {pastAppointments.length > 0 ? (
-                    <div className="mt-8">
-                      <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Previous appointments')}</h4>
-                      <ul className="mt-3 grid gap-3 text-sm text-slate-600 md:grid-cols-2">
-                        {pastAppointments.slice(0, 6).map((item: any) => (
-                          <li key={item.appointmentId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                            <div className="font-semibold text-slate-900">
-                              {new Date(item.date).toLocaleDateString()} • {item.doctor.name}
-                            </div>
-                            <div className="text-xs text-slate-500">{item.department}</div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </section>
-
-                <section id="labs" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Laboratory results')}</h3>
-                      <p className="text-sm text-slate-500">{t('Review your latest diagnostic findings at a glance.')}</p>
-                    </div>
-                    <ReportsIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {labs.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('No lab results available yet.')}</p>
-                  ) : (
-                    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-                      {labs.slice(0, 8).map((result) => (
-                        <li key={result.labResultId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="font-semibold text-slate-900">{result.LabOrderItem.testName}</div>
-                          <div className="text-xs text-slate-500">
-                            {new Date(result.resultedAt).toLocaleDateString()} • {result.resultValue ?? result.resultValueNum}
-                            {result.unit ? ` ${result.unit}` : ''}
-                          </div>
-                          {result.abnormalFlag ? (
-                            <div className="mt-1 text-xs font-semibold text-orange-600">
-                              {t('Flagged: {flag}', { flag: result.abnormalFlag })}
-                            </div>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section id="medications" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Medication history')}</h3>
-                      <p className="text-sm text-slate-500">{t('Track what has been prescribed during your visits.')}</p>
-                    </div>
-                    <PharmacyIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {medications.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('No medications have been recorded yet.')}</p>
-                  ) : (
-                    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-                      {medications.slice(0, 8).map((medication) => (
-                        <li key={medication.medId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <div className="font-semibold text-slate-900">{medication.drugName}</div>
-                              {medication.dosage ? <div className="text-sm text-slate-600">{medication.dosage}</div> : null}
-                              {medication.instructions ? (
-                                <div className="text-xs text-slate-500">{medication.instructions}</div>
-                              ) : null}
-                            </div>
-                            {medication.visit ? (
-                              <div className="text-right text-xs text-slate-500">
-                                <div>{new Date(medication.visit.visitDate).toLocaleDateString()}</div>
-                                <div>{medication.visit.doctor?.name ?? ''}</div>
-                                <div>{medication.visit.department}</div>
-                              </div>
-                            ) : null}
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section id="immunisations" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Immunisations')}</h3>
-                      <p className="text-sm text-slate-500">{t('Stay up to date with completed vaccines and boosters.')}</p>
-                    </div>
-                    <PharmacyIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {immunizations.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('No immunisation records yet.')}</p>
-                  ) : (
-                    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-                      {immunizations.map((entry) => (
-                        <li key={entry.immunizationId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="font-semibold text-slate-900">{entry.vaccineName}</div>
-                          <div className="text-xs text-slate-500">
-                            {t('Administered {date}', { date: new Date(entry.administeredAt).toLocaleDateString() })}
-                          </div>
-                          {entry.nextDueDate ? (
-                            <div className="text-xs text-blue-600">
-                              {t('Next due {date}', { date: new Date(entry.nextDueDate).toLocaleDateString() })}
-                            </div>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section id="radiology" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Radiology reports')}</h3>
-                      <p className="text-sm text-slate-500">{t('Images and interpretations from your diagnostic visits.')}</p>
-                    </div>
-                    <ReportsIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {radiologyReports.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('No radiology reports available.')}</p>
-                  ) : (
-                    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-                      {radiologyReports.map((report) => (
-                        <li key={report.reportId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <div className="font-semibold text-slate-900">{report.modality}</div>
-                          <div className="text-xs text-slate-500">
-                            {t('Reported {date}', { date: new Date(report.reportDate).toLocaleDateString() })}
-                          </div>
-                          {report.impression ? (
-                            <div className="mt-1 text-xs text-slate-500">{report.impression}</div>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
-
-                <section id="payments" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-slate-900">{t('Payments')}</h3>
-                      <p className="text-sm text-slate-500">{t('Review balances, payments, and download receipts.')}</p>
-                    </div>
-                    <ReportsIcon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  {payments.length === 0 ? (
-                    <p className="mt-4 text-sm text-slate-500">{t('No payments recorded yet.')}</p>
-                  ) : (
-                    <ul className="mt-5 space-y-3 text-sm text-slate-600">
-                      {payments.map((invoice: any) => {
-                        const invoicePayments = invoice.payments ?? [];
-
-                        return (
-                          <li key={invoice.invoiceId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <div className="font-semibold text-slate-900">{invoice.invoiceNo}</div>
-                                <div className="text-xs text-slate-500">
-                                  {t('Status: {status}', { status: invoice.status })}
-                                </div>
-                                <div className="text-xs text-slate-500">
-                                  {t('Issued {date}', { date: new Date(invoice.createdAt).toLocaleDateString() })}
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <div className="font-semibold text-slate-900">{formatCurrency(invoice.amountDue ?? 0)}</div>
-                                <div className="text-xs text-slate-500">{t('Balance due')}</div>
-                              </div>
-                            </div>
-                            {invoicePayments.length > 0 ? (
-                              <div className="mt-3 space-y-1 text-xs text-slate-500">
-                                {invoicePayments.map((payment: any) => (
-                                  <div key={payment.paymentId} className="flex items-center justify-between">
-                                    <span>
-                                      {new Date(payment.paidAt).toLocaleDateString()} • {payment.method}
-                                    </span>
-                                    <span>{formatCurrency(payment.amount ?? 0)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-3 text-xs text-slate-500">{t('No payments applied yet.')}</p>
-                            )}
-                            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                              <div className="text-xs text-slate-500">
-                                {t('Total paid')}: {formatCurrency(invoice.amountPaid ?? 0)}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setReceiptInvoice(invoice)}
-                                className="inline-flex items-center justify-center rounded-full border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-                              >
-                                {t('View receipt')}
-                              </button>
-                            </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  )}
-                </section>
-              </div>
+            <div className="mt-10">
+              {activeTab === 'dashboard' ? (
+                <DashboardTab
+                  t={t}
+                  portalLoading={portalLoading}
+                  upcomingAppointments={upcomingAppointments}
+                  pastAppointments={pastAppointments}
+                  nextAppointment={nextAppointment}
+                  lastVisit={lastVisit}
+                  latestImmunization={latestImmunization}
+                  invoiceSummary={invoiceSummary}
+                  payments={payments}
+                  labs={labs}
+                  profileCards={profileCards}
+                  medications={medications}
+                  immunizations={immunizations}
+                  radiologyReports={radiologyReports}
+                  appointmentForm={appointmentForm}
+                  appointmentStatus={appointmentStatus}
+                  appointmentError={appointmentError}
+                  specialists={specialists}
+                  specialistsError={specialistsError}
+                  onAppointmentChange={handleAppointmentChange}
+                  onAppointmentSubmit={handleAppointmentSubmit}
+                  setReceiptInvoice={setReceiptInvoice}
+                  formatCurrency={formatCurrency}
+                  clinicMapLocations={clinicMapLocations}
+                  patientDetails={patientDetails ?? null}
+                  onShowProfile={() => setActiveTab('profile')}
+                />
+              ) : (
+                <ProfileTab
+                  t={t}
+                  profileCards={profileCards}
+                  patientDetails={patientDetails ?? null}
+                  latestImmunization={latestImmunization}
+                  recentVisits={recentVisits}
+                  immunizations={immunizations}
+                  medications={medications}
+                  labs={labs}
+                  radiologyReports={radiologyReports}
+                />
+              )}
             </div>
 
             {receiptInvoice ? (
@@ -1033,3 +818,704 @@ export default function PatientPortal() {
   );
 }
 
+
+
+function DashboardTab({
+  t,
+  portalLoading,
+  upcomingAppointments,
+  pastAppointments,
+  nextAppointment,
+  lastVisit,
+  latestImmunization,
+  invoiceSummary,
+  payments,
+  labs,
+  profileCards,
+  medications,
+  immunizations,
+  radiologyReports,
+  appointmentForm,
+  appointmentStatus,
+  appointmentError,
+  specialists,
+  specialistsError,
+  onAppointmentChange,
+  onAppointmentSubmit,
+  setReceiptInvoice,
+  formatCurrency,
+  clinicMapLocations,
+  patientDetails,
+  onShowProfile,
+}: DashboardTabProps) {
+  const latestLab = labs[0] ?? null;
+  const latestRadiology = radiologyReports[0] ?? null;
+  const genderLabel =
+    patientDetails && typeof patientDetails.gender === 'string'
+      ? patientDetails.gender === 'F'
+        ? t('Female')
+        : patientDetails.gender === 'M'
+          ? t('Male')
+          : patientDetails.gender
+      : t('Not recorded');
+
+  return (
+    <div className="grid gap-8 xl:grid-cols-[320px_1fr]">
+      <aside className="space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t("Today's queue")}</h3>
+            <CalendarIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          <p className="mt-2 text-sm text-slate-500">
+            {t('Upcoming visits linked to your portal account.')}
+          </p>
+          {upcomingAppointments.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No upcoming appointments scheduled.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3">
+              {upcomingAppointments.slice(0, 5).map((item: any, index) => (
+                <li
+                  key={item.appointmentId}
+                  className={`rounded-2xl border px-4 py-3 ${
+                    index === 0 ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
+                    <span>{new Date(item.date).toLocaleDateString()}</span>
+                    <span>{formatMinutes(item.startTimeMin)}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">{item.doctor?.name ?? t('Provider pending')}</div>
+                  <div className="text-xs text-slate-500">
+                    {(item.department as string | undefined) ?? t('Department pending')} • {item.location ?? t('Clinic visit')}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Clinic map')}</h3>
+            <DashboardIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          <p className="mt-2 text-sm text-slate-500">{t('Preview arrival points before your visit.')}</p>
+          <div className="mt-4 rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-slate-50 to-emerald-50 p-4">
+            <div className="relative h-44 w-full overflow-hidden rounded-xl bg-white shadow-inner">
+              <div
+                className="absolute inset-0 opacity-80"
+                style={{
+                  background:
+                    'radial-gradient(circle at 20% 25%, rgba(37, 99, 235, 0.15), transparent 55%), radial-gradient(circle at 70% 40%, rgba(16, 185, 129, 0.15), transparent 60%), linear-gradient(135deg, rgba(14, 116, 144, 0.08), transparent)',
+                }}
+              />
+              <div className="absolute inset-5 grid grid-cols-4 grid-rows-4 gap-3 opacity-60">
+                {Array.from({ length: 16 }).map((_, index) => (
+                  <div key={index} className="rounded-xl border border-slate-100 bg-slate-50" />
+                ))}
+              </div>
+              {clinicMapLocations.map((location) => (
+                <button
+                  key={location.id}
+                  type="button"
+                  className="group absolute -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                  style={{ left: `${location.x}%`, top: `${location.y}%` }}
+                  aria-label={location.label}
+                >
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-semibold text-white shadow-lg ring-4 ring-white/80">
+                    {location.code}
+                  </span>
+                  <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-36 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-600 shadow-lg group-hover:block group-focus-visible:block">
+                    <span className="block font-semibold text-slate-900">{location.label}</span>
+                    <span className="mt-1 block text-slate-500">{location.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+          <ul className="mt-4 space-y-3 text-sm text-slate-600">
+            {clinicMapLocations.map((location) => (
+              <li key={location.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-sm font-semibold text-slate-900">{location.label}</div>
+                <p className="mt-1 text-xs text-slate-500">{location.description}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {latestImmunization ? (
+          <section className="rounded-3xl border border-blue-100 bg-blue-50 p-6 text-sm text-blue-900 shadow-sm">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-blue-900">{t('Latest immunisation')}</h3>
+              <PharmacyIcon className="h-5 w-5 text-blue-700" />
+            </div>
+            <p className="mt-3 text-base font-semibold">{latestImmunization.vaccineName}</p>
+            <p className="mt-1 text-xs text-blue-800">
+              {t('Administered {date}', { date: new Date(latestImmunization.administeredAt).toLocaleDateString() })}
+            </p>
+            {latestImmunization.provider ? (
+              <p className="mt-2 text-xs text-blue-700">{t('Provided by {provider}', { provider: latestImmunization.provider })}</p>
+            ) : null}
+          </section>
+        ) : null}
+
+        {latestLab || latestRadiology ? (
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Latest updates')}</h3>
+            <div className="mt-4 space-y-4 text-sm text-slate-600">
+              {latestLab ? (
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{t('Lab result')}</div>
+                  <div className="mt-1 text-base font-semibold text-indigo-900">{latestLab.LabOrderItem.testName}</div>
+                  <div className="text-xs text-indigo-700">
+                    {new Date(latestLab.resultedAt).toLocaleDateString()} • {latestLab.resultValue ?? latestLab.resultValueNum}
+                    {latestLab.unit ? ` ${latestLab.unit}` : ''}
+                  </div>
+                </div>
+              ) : null}
+              {latestRadiology ? (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{t('Imaging')}</div>
+                  <div className="mt-1 text-base font-semibold text-emerald-900">{latestRadiology.studyType}</div>
+                  <div className="text-xs text-emerald-700">
+                    {new Date(latestRadiology.performedAt).toLocaleDateString()} • {latestRadiology.location ?? t('On site')}
+                  </div>
+                  {latestRadiology.impression ? (
+                    <p className="mt-1 text-xs text-emerald-700">{latestRadiology.impression}</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+      </aside>
+
+      <div className="space-y-8">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{t('Current patient')}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-900">
+                {patientDetails?.name ?? t('Patient profile pending')}
+              </h2>
+              <p className="mt-2 text-sm text-slate-500">
+                {patientDetails
+                  ? t('DOB {dob} • {gender}', {
+                      dob: patientDetails.dob
+                        ? new Date(patientDetails.dob).toLocaleDateString()
+                        : t('Not recorded'),
+                      gender: genderLabel,
+                    })
+                  : t('Link your chart to see demographics and alerts.')}
+              </p>
+            </div>
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+              <AvatarIcon className="h-7 w-7 text-blue-600" />
+            </div>
+          </div>
+          {profileCards.length > 0 ? (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {profileCards.slice(0, 4).map((card) => (
+                <div key={card.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
+                  <div className="mt-2 text-sm font-semibold text-slate-900">{card.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Care timeline')}</h3>
+            <ReportsIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            {nextAppointment ? (
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+                <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Next appointment')}</div>
+                <div className="mt-2 text-base font-semibold text-blue-900">
+                  {new Date(nextAppointment.date).toLocaleDateString()} • {nextAppointment.doctor?.name ?? ''}
+                </div>
+                <p className="mt-1 text-xs text-blue-700">
+                  {(nextAppointment.department as string | undefined) ?? t('Department pending')} • {formatMinutes(nextAppointment.startTimeMin)}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">
+                {t('No upcoming appointments have been scheduled yet.')}
+              </div>
+            )}
+
+            {lastVisit ? (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">{t('Most recent visit')}</div>
+                <div className="mt-2 text-base font-semibold text-emerald-900">
+                  {new Date(lastVisit.visitDate).toLocaleDateString()} • {lastVisit.doctor?.name ?? ''}
+                </div>
+                <p className="mt-1 text-xs text-emerald-700">{lastVisit.department ?? t('Department pending')}</p>
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-500">
+                {t('Past visits will appear here once recorded.')}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">{t('Manage appointments')}</h3>
+              <p className="text-sm text-slate-500">{t('Request new visits or review confirmed times.')}</p>
+            </div>
+            <CalendarIcon className="h-6 w-6 text-blue-600" />
+          </div>
+          {portalLoading ? (
+            <p className="mt-4 text-sm text-slate-500">{t('Refreshing your schedule...')}</p>
+          ) : null}
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            <form onSubmit={onAppointmentSubmit} className="space-y-4 text-sm">
+              {specialistsError ? (
+                <p className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{specialistsError}</p>
+              ) : null}
+              <div>
+                <label htmlFor="doctorId" className="text-sm font-medium text-slate-700">
+                  {t('Choose a doctor')}
+                </label>
+                <select
+                  id="doctorId"
+                  name="doctorId"
+                  value={appointmentForm.doctorId}
+                  onChange={onAppointmentChange}
+                  required
+                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                >
+                  {specialists.map((specialist) => (
+                    <option key={specialist.doctorId} value={specialist.doctorId}>
+                      {specialist.name} • {specialist.department}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label htmlFor="date" className="text-sm font-medium text-slate-700">
+                    {t('Preferred date')}
+                  </label>
+                  <input
+                    id="date"
+                    name="date"
+                    type="date"
+                    value={appointmentForm.date}
+                    onChange={onAppointmentChange}
+                    required
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="time" className="text-sm font-medium text-slate-700">
+                    {t('Preferred time')}
+                  </label>
+                  <input
+                    id="time"
+                    name="time"
+                    type="time"
+                    value={appointmentForm.time}
+                    onChange={onAppointmentChange}
+                    required
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+              </div>
+              <div>
+                <label htmlFor="reason" className="text-sm font-medium text-slate-700">
+                  {t('Visit reason')}
+                </label>
+                <textarea
+                  id="reason"
+                  name="reason"
+                  value={appointmentForm.reason}
+                  onChange={onAppointmentChange}
+                  rows={3}
+                  placeholder={t('E.g. Annual physical, lab review, medication refill')}
+                  className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                />
+              </div>
+              {appointmentError ? <p className="text-sm text-rose-600">{appointmentError}</p> : null}
+              <button
+                type="submit"
+                disabled={appointmentStatus === 'loading'}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+              >
+                <CalendarIcon className="h-5 w-5" />
+                {appointmentStatus === 'loading' ? t('Scheduling...') : t('Schedule appointment')}
+              </button>
+              {appointmentStatus === 'success' ? (
+                <p className="text-sm text-emerald-600">{t('Appointment request received! We will confirm shortly.')}</p>
+              ) : null}
+            </form>
+            <div>
+              <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{t('Previous appointments')}</h4>
+              {pastAppointments.length === 0 ? (
+                <p className="mt-3 text-sm text-slate-500">{t('No prior visits recorded yet.')}</p>
+              ) : (
+                <ul className="mt-3 space-y-3 text-sm text-slate-600">
+                  {pastAppointments.slice(0, 6).map((item: any) => (
+                    <li key={item.appointmentId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <div className="font-semibold text-slate-900">
+                        {new Date(item.date).toLocaleDateString()} • {item.doctor.name}
+                      </div>
+                      <div className="text-xs text-slate-500">{item.department}</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">{t('Billing & receipts')}</h3>
+              <p className="text-sm text-slate-500">{t('Download invoices and track payments made to date.')}</p>
+            </div>
+            <PharmacyIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {invoiceSummary ? (
+            <div className="mt-4 grid gap-4 rounded-2xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-600 sm:grid-cols-3">
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">{t('Outstanding')}</div>
+                <div className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(invoiceSummary.outstanding)}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">{t('Total paid')}</div>
+                <div className="mt-1 text-base font-semibold text-emerald-600">{formatCurrency(invoiceSummary.paidTotal)}</div>
+              </div>
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">{t('Lifetime value')}</div>
+                <div className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(invoiceSummary.lifetimeValue)}</div>
+              </div>
+            </div>
+          ) : null}
+          {payments.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No invoices available yet.')}</p>
+          ) : (
+            <ul className="mt-5 space-y-3 text-sm text-slate-600">
+              {payments.slice(0, 5).map((invoice: any) => {
+                const invoicePayments = invoice.payments ?? [];
+                return (
+                  <li key={invoice.invoiceId ?? invoice.invoiceNo} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="font-semibold text-slate-900">{invoice.invoiceNo ?? invoice.invoiceId}</div>
+                        <div className="text-xs text-slate-500">
+                          {t('Issued {date}', { date: new Date(invoice.createdAt).toLocaleDateString() })}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-slate-900">{formatCurrency(invoice.amountDue ?? 0)}</div>
+                        <div className="text-xs text-slate-500">{t('Balance due')}</div>
+                      </div>
+                    </div>
+                    {invoicePayments.length > 0 ? (
+                      <div className="mt-3 space-y-1 text-xs text-slate-500">
+                        {invoicePayments.map((payment: any) => (
+                          <div key={payment.paymentId} className="flex items-center justify-between">
+                            <span>
+                              {new Date(payment.paidAt).toLocaleDateString()} • {payment.method}
+                            </span>
+                            <span>{formatCurrency(payment.amount ?? 0)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-slate-500">{t('No payments applied yet.')}</p>
+                    )}
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs text-slate-500">
+                        {t('Total paid')}: {formatCurrency(invoice.amountPaid ?? 0)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReceiptInvoice(invoice)}
+                        className="inline-flex items-center justify-center rounded-full border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+                      >
+                        {t('View receipt')}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">{t('Clinical records')}</h3>
+              <p className="text-sm text-slate-500">{t('Recent results and active therapies at a glance.')}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onShowProfile}
+              className="inline-flex items-center justify-center rounded-full border border-blue-200 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+            >
+              {t('Open profile tab')}
+            </button>
+          </div>
+          <div className="mt-6 grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{t('Labs')}</div>
+              {labs.length === 0 ? (
+                <p className="mt-2 text-xs text-indigo-700">{t('No results yet.')}</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-xs text-indigo-700">
+                  {labs.slice(0, 3).map((result) => (
+                    <li key={result.labResultId}>
+                      <span className="block font-semibold text-indigo-900">{result.LabOrderItem.testName}</span>
+                      <span className="block">{new Date(result.resultedAt).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{t('Medications')}</div>
+              {medications.length === 0 ? (
+                <p className="mt-2 text-xs text-emerald-700">{t('No active medications recorded.')}</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-xs text-emerald-700">
+                  {medications.slice(0, 3).map((medication) => (
+                    <li key={medication.medId}>
+                      <span className="block font-semibold text-emerald-900">{medication.drugName}</span>
+                      {medication.dosage ? <span className="block">{medication.dosage}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-amber-600">{t('Vaccines')}</div>
+              {immunizations.length === 0 ? (
+                <p className="mt-2 text-xs text-amber-700">{t('No immunisations recorded yet.')}</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-xs text-amber-700">
+                  {immunizations.slice(0, 3).map((dose: any) => (
+                    <li key={dose.immunizationId}>
+                      <span className="block font-semibold text-amber-900">{dose.vaccineName}</span>
+                      <span className="block">{new Date(dose.administeredAt).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
+              <div className="text-xs font-semibold uppercase tracking-wide text-sky-600">{t('Imaging')}</div>
+              {radiologyReports.length === 0 ? (
+                <p className="mt-2 text-xs text-sky-700">{t('No imaging studies available yet.')}</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-xs text-sky-700">
+                  {radiologyReports.slice(0, 3).map((report: any) => (
+                    <li key={report.radiologyReportId}>
+                      <span className="block font-semibold text-sky-900">{report.studyType}</span>
+                      <span className="block">{new Date(report.performedAt).toLocaleDateString()}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function ProfileTab({
+  t,
+  profileCards,
+  patientDetails,
+  latestImmunization,
+  recentVisits,
+  immunizations,
+  medications,
+  labs,
+  radiologyReports,
+}: ProfileTabProps) {
+  return (
+    <div className="space-y-8">
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-6">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient profile')}</div>
+            <h2 className="mt-2 text-2xl font-semibold text-slate-900">{patientDetails?.name ?? t('Profile overview')}</h2>
+            <p className="mt-2 text-sm text-slate-500">
+              {t('Demographics, contact preferences, and health history in one place.')}
+            </p>
+          </div>
+          {patientDetails?.patientId ? (
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+              <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient ID')}</div>
+              <div className="mt-1 text-base font-semibold text-blue-900">{patientDetails.patientId}</div>
+            </div>
+          ) : null}
+        </div>
+        {profileCards.length > 0 ? (
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {profileCards.map((card) => (
+              <div key={card.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
+                <div className="mt-2 text-base font-semibold text-slate-900">{card.value}</div>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        {latestImmunization ? (
+          <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-500">{t('Latest immunisation')}</div>
+            <div className="mt-2 text-base font-semibold text-amber-900">{latestImmunization.vaccineName}</div>
+            <p className="mt-1 text-xs text-amber-700">
+              {t('Administered {date}', { date: new Date(latestImmunization.administeredAt).toLocaleDateString() })}
+            </p>
+            {latestImmunization.provider ? (
+              <p className="mt-1 text-xs text-amber-700">{latestImmunization.provider}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-2">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Visit history')}</h3>
+            <DashboardIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {recentVisits.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No past visits recorded yet.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3 text-sm text-slate-600">
+              {recentVisits.map((visit: any) => (
+                <li key={visit.visitId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">
+                    {new Date(visit.visitDate).toLocaleDateString()} • {visit.doctor?.name ?? ''}
+                  </div>
+                  <div className="text-xs text-slate-500">{visit.department}</div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Immunisations')}</h3>
+            <PharmacyIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {immunizations.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No immunisations recorded yet.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3 text-sm text-slate-600">
+              {immunizations.map((dose: any) => (
+                <li key={dose.immunizationId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">{dose.vaccineName}</div>
+                  <div className="text-xs text-slate-500">
+                    {t('Administered {date}', { date: new Date(dose.administeredAt).toLocaleDateString() })}
+                  </div>
+                  {dose.provider ? <div className="text-xs text-slate-500">{dose.provider}</div> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Medication history')}</h3>
+            <PharmacyIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {medications.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No medications have been recorded yet.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3 text-sm text-slate-600">
+              {medications.map((medication) => (
+                <li key={medication.medId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-slate-900">{medication.drugName}</div>
+                      {medication.dosage ? <div className="text-sm text-slate-600">{medication.dosage}</div> : null}
+                      {medication.instructions ? (
+                        <div className="text-xs text-slate-500">{medication.instructions}</div>
+                      ) : null}
+                    </div>
+                    {medication.visit ? (
+                      <div className="text-right text-xs text-slate-500">
+                        <div>{new Date(medication.visit.visitDate).toLocaleDateString()}</div>
+                        <div>{medication.visit.doctor?.name ?? ''}</div>
+                        <div>{medication.visit.department}</div>
+                      </div>
+                    ) : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Laboratory results')}</h3>
+            <ReportsIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {labs.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No lab results available yet.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3 text-sm text-slate-600">
+              {labs.map((result) => (
+                <li key={result.labResultId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">{result.LabOrderItem.testName}</div>
+                  <div className="text-xs text-slate-500">
+                    {new Date(result.resultedAt).toLocaleDateString()} • {result.resultValue ?? result.resultValueNum}
+                    {result.unit ? ` ${result.unit}` : ''}
+                  </div>
+                  {result.abnormalFlag ? (
+                    <div className="mt-1 text-xs font-semibold text-orange-600">
+                      {t('Flagged: {flag}', { flag: result.abnormalFlag })}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-slate-900">{t('Radiology reports')}</h3>
+            <ReportsIcon className="h-5 w-5 text-blue-600" />
+          </div>
+          {radiologyReports.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-500">{t('No imaging studies available yet.')}</p>
+          ) : (
+            <ul className="mt-4 space-y-3 text-sm text-slate-600">
+              {radiologyReports.map((report: any) => (
+                <li key={report.radiologyReportId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="font-semibold text-slate-900">{report.studyType}</div>
+                  <div className="text-xs text-slate-500">
+                    {new Date(report.performedAt).toLocaleDateString()} • {report.location ?? t('On site')}
+                  </div>
+                  {report.impression ? (
+                    <p className="mt-1 text-xs text-slate-500">{report.impression}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
