@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarIcon,
@@ -48,11 +48,17 @@ interface PaymentReceiptModalProps {
   invoice: any;
   patient: any | null;
   onClose: () => void;
-  t: (key: string, variables?: Record<string, unknown>) => string;
+  t: (key: string, variables?: Record<string, string | number>) => string;
   displayName: string;
   logo?: string | null;
   formatCurrency: (amount: number) => string;
 }
+
+type ToastState = {
+  type: 'success' | 'error';
+  title: string;
+  message: string;
+};
 
 function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, formatCurrency }: PaymentReceiptModalProps) {
   useEffect(() => {
@@ -234,6 +240,19 @@ function formatCurrency(amount: number) {
   );
 }
 
+function calculateAge(dob?: string | null) {
+  if (!dob) return null;
+  const birthDate = new Date(dob);
+  if (Number.isNaN(birthDate.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
 const defaultLoginForm: LoginForm = { email: 'patient@example.com', password: '' };
 const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: '', reason: '' };
 
@@ -257,12 +276,22 @@ export default function PatientPortal() {
   const [payments, setPayments] = useState<any[]>([]);
   const [medications, setMedications] = useState<any[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
-  const [portalError, setPortalError] = useState<string | null>(null);
 
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(defaultAppointmentForm);
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'success'>('idle');
   const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const [receiptInvoice, setReceiptInvoice] = useState<any | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const showToast = useCallback((nextToast: ToastState) => {
+    setToast(nextToast);
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const handle = window.setTimeout(() => setToast(null), 6000);
+    return () => window.clearTimeout(handle);
+  }, [toast]);
 
   useEffect(() => {
     fetchSpecialists()
@@ -272,8 +301,13 @@ export default function PatientPortal() {
           setAppointmentForm((previous) => ({ ...previous, doctorId: data[0].doctorId }));
         }
       })
-      .catch((error: Error) => setSpecialistsError(error.message));
-  }, []);
+      .catch((error: Error) => {
+        const fallback = t('Unable to load specialists');
+        const message = error.message || fallback;
+        setSpecialistsError(message);
+        showToast({ type: 'error', title: fallback, message });
+      });
+  }, [showToast, t]);
 
   const displayName = useMemo(() => appName || t('EMR System'), [appName, t]);
 
@@ -296,16 +330,16 @@ export default function PatientPortal() {
       const response = await loginPatient(loginForm.email.trim(), loginForm.password.trim());
       setSession({ token: response.accessToken, patientId: response.patient?.patientId!, email: loginForm.email.trim() });
       setLoginStatus('success');
-      setPortalError(null);
     } catch (error) {
       setLoginStatus('idle');
-      setLoginError(error instanceof Error ? error.message : t('Unable to sign in. Please try again.'));
+      const message = error instanceof Error ? error.message : t('Unable to sign in. Please try again.');
+      setLoginError(message);
+      showToast({ type: 'error', title: t('Sign-in failed'), message });
     }
   };
 
   const loadPortalData = async (activeSession: PortalSession) => {
     setPortalLoading(true);
-    setPortalError(null);
     try {
       const [
         profileData,
@@ -336,7 +370,8 @@ export default function PatientPortal() {
       setAppointmentStatus('idle');
     } catch (error) {
       setPortalLoading(false);
-      setPortalError(error instanceof Error ? error.message : t('Unable to load patient data.'));
+      const message = error instanceof Error ? error.message : t('Unable to load patient data.');
+      showToast({ type: 'error', title: t('Portal data unavailable'), message });
     }
   };
 
@@ -371,7 +406,9 @@ export default function PatientPortal() {
       await loadPortalData(session);
     } catch (error) {
       setAppointmentStatus('idle');
-      setAppointmentError(error instanceof Error ? error.message : t('Unable to schedule appointment.'));
+      const message = error instanceof Error ? error.message : t('Unable to schedule appointment.');
+      setAppointmentError(message);
+      showToast({ type: 'error', title: t('Appointment request failed'), message });
     }
   };
 
@@ -380,7 +417,6 @@ export default function PatientPortal() {
     setLoginForm(defaultLoginForm);
     setLoginError(null);
     setLoginStatus('idle');
-    setPortalError(null);
     setPortalLoading(false);
     setProfile(null);
     setAppointments(null);
@@ -400,8 +436,49 @@ export default function PatientPortal() {
   const recentVisits = profile?.recentVisits ?? [];
   const latestImmunization = profile?.latestImmunization ?? null;
   const patientDetails = profile?.patient;
+  const nextAppointment = upcomingAppointments[0] ?? null;
+  const lastVisit = recentVisits[0] ?? null;
+  const patientAge = calculateAge(patientDetails?.dob ?? null);
+  const genderLabel =
+    patientDetails && typeof patientDetails.gender === 'string'
+      ? patientDetails.gender === 'F'
+        ? t('Female')
+        : patientDetails.gender === 'M'
+          ? t('Male')
+          : patientDetails.gender
+      : t('Not recorded');
+
+  const profileCards = patientDetails
+    ? [
+        {
+          label: t('Date of birth'),
+          value: patientDetails.dob ? new Date(patientDetails.dob).toLocaleDateString() : t('Not recorded'),
+        },
+        {
+          label: t('Age'),
+          value: patientAge !== null ? t('{count} years old', { count: patientAge }) : t('Not recorded'),
+        },
+        {
+          label: t('Gender'),
+          value: genderLabel,
+        },
+        {
+          label: t('Primary contact'),
+          value: patientDetails.contact?.trim() || t('Not available'),
+        },
+        {
+          label: t('Insurance'),
+          value: patientDetails.insurance?.trim() || t('Self-pay'),
+        },
+        {
+          label: t('Drug allergies'),
+          value: patientDetails.drugAllergies?.trim() || t('None reported'),
+        },
+      ]
+    : [];
 
   const quickLinks = [
+    { label: t('Profile'), href: '#profile' },
     { label: t('Appointments'), href: '#appointments' },
     { label: t('Labs'), href: '#labs' },
     { label: t('Medications'), href: '#medications' },
@@ -412,6 +489,28 @@ export default function PatientPortal() {
 
   return (
     <div className="min-h-screen bg-slate-100">
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-50">
+          <div className="pointer-events-auto flex w-80 items-start gap-3 rounded-2xl bg-white p-4 shadow-lg ring-1 ring-black/5">
+            <span
+              className={`mt-1 h-2.5 w-2.5 flex-shrink-0 rounded-full ${toast.type === 'error' ? 'bg-rose-500' : 'bg-emerald-500'}`}
+              aria-hidden="true"
+            />
+            <div className="flex-1 text-sm">
+              <div className="font-semibold text-slate-900">{toast.title}</div>
+              <p className="mt-1 text-slate-600">{toast.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setToast(null)}
+              className="-mr-2 rounded-full p-1 text-slate-400 transition hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="sr-only">{t('Dismiss')}</span>×
+            </button>
+          </div>
+        </div>
+      )}
+
       <header className="border-b border-slate-200 bg-white/70 backdrop-blur">
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
@@ -513,10 +612,6 @@ export default function PatientPortal() {
                 </div>
               </div>
             </section>
-
-            {portalError ? (
-              <p className="mt-6 rounded-3xl border border-rose-200 bg-rose-50 px-6 py-4 text-sm text-rose-700">{portalError}</p>
-            ) : null}
 
             <div className="mt-10 grid gap-8 xl:grid-cols-[320px_1fr]">
               <aside className="space-y-6">
@@ -636,6 +731,73 @@ export default function PatientPortal() {
               </aside>
 
               <div className="space-y-8">
+                {patientDetails ? (
+                  <section id="profile" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="flex flex-wrap items-start justify-between gap-6">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">{t('Patient profile')}</div>
+                        <h2 className="mt-2 text-2xl font-semibold text-slate-900">{patientDetails.name}</h2>
+                        <p className="mt-2 text-sm text-slate-600">
+                          {t('Review demographic information, care milestones, and upcoming activity in one place.')}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient ID')}</div>
+                        <div className="mt-1 text-base font-semibold text-blue-900">{patientDetails.patientId}</div>
+                      </div>
+                    </div>
+
+                    {profileCards.length > 0 ? (
+                      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                        {profileCards.map((card) => (
+                          <div key={card.label} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{card.label}</div>
+                            <div className="mt-2 text-base font-semibold text-slate-900">{card.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {(nextAppointment || lastVisit || latestImmunization) && (
+                      <div className="mt-6 grid gap-4 md:grid-cols-2">
+                        {nextAppointment ? (
+                          <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Next appointment')}</div>
+                            <div className="mt-2 text-base font-semibold text-blue-900">
+                              {new Date(nextAppointment.date).toLocaleDateString()} • {nextAppointment.doctor?.name}
+                            </div>
+                            <p className="mt-1 text-xs text-blue-700">
+                              {(nextAppointment.department as string | undefined) ?? t('Department pending')} • {formatMinutes(nextAppointment.startTimeMin)}
+                            </p>
+                          </div>
+                        ) : null}
+
+                        {lastVisit ? (
+                          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-500">{t('Most recent visit')}</div>
+                            <div className="mt-2 text-base font-semibold text-emerald-900">
+                              {new Date(lastVisit.visitDate).toLocaleDateString()} • {lastVisit.doctor?.name ?? ''}
+                            </div>
+                            <p className="mt-1 text-xs text-emerald-700">{lastVisit.department ?? t('Department pending')}</p>
+                          </div>
+                        ) : null}
+
+                        {latestImmunization ? (
+                          <div className="rounded-2xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+                            <div className="text-xs font-semibold uppercase tracking-wide text-amber-500">{t('Latest immunisation')}</div>
+                            <div className="mt-2 text-base font-semibold text-amber-900">{latestImmunization.vaccineName}</div>
+                            <p className="mt-1 text-xs text-amber-700">
+                              {t('Administered {date}', {
+                                date: new Date(latestImmunization.administeredAt).toLocaleDateString(),
+                              })}
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+
                 <section id="appointments" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
