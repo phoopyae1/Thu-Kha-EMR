@@ -10,6 +10,7 @@ import {
   PharmacyIcon,
   RegisterIcon,
   SearchIcon,
+  LabIcon,
 } from '../components/icons';
 import { useAuth } from '../context/AuthProvider';
 import {
@@ -47,6 +48,28 @@ import {
   type VisitFormSubmitValues,
 } from '../utils/visitForm';
 import { useTranslation } from '../hooks/useTranslation';
+
+type WorkspaceTabId = 'appointments' | 'medications' | 'lab-profile' | 'search-clinic';
+
+type WorkspaceTabConfig = {
+  label: string;
+  heading: string;
+  description: string;
+  icon: typeof CalendarIcon;
+  primaryAction: { to: string; label: string };
+  secondaryAction?: { to: string; label: string };
+  stat?: { label: string; value: string };
+  infoChips?: Array<{ label: string; value: string }>;
+  footnote?: string;
+  accent: {
+    navGradient: string;
+    navIcon: string;
+    headerIcon: string;
+    headerIconRing: string;
+    chip: string;
+    focusRing: string;
+  };
+};
 
 export default function Home() {
   const { user } = useAuth();
@@ -849,6 +872,7 @@ function TeamDashboard({ role }: { role?: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeWorkspace, setActiveWorkspace] = useState<WorkspaceTabId>('appointments');
   const todayKey = useMemo(() => createDateKey(new Date()), []);
   const statusVisuals = getStatusVisuals(t);
 
@@ -1000,6 +1024,338 @@ function TeamDashboard({ role }: { role?: string }) {
     </div>
   );
 
+  const appointmentSummary = error
+    ? error
+    : statusTotals.total > 0
+      ? t('{upcoming} upcoming · {completed} completed', {
+          upcoming: upcomingCount,
+          completed: statusTotals.completed,
+        })
+      : t('No appointments scheduled today.');
+
+  const checkedInSummary = error
+    ? error
+    : readyCount > 0
+      ? t('{count} patients ready for their visit.', { count: readyCount })
+      : waitingCount > 0
+        ? t('{count} patients waiting to check in.', { count: waitingCount })
+        : t('No patients have checked in yet.');
+
+  const workspaceTabs: Record<WorkspaceTabId, WorkspaceTabConfig> = {
+    appointments: {
+      label: t('Appointments'),
+      heading: t("Coordinate today's schedule"),
+      description: t('Review the visit queue, update appointment statuses, and keep the day on track.'),
+      icon: CalendarIcon,
+      primaryAction: { to: '/appointments', label: t('Open appointments') },
+      secondaryAction: { to: '/appointments/new', label: t('Book new appointment') },
+      stat: { label: t('Appointments today'), value: renderCount(statusTotals.total) },
+      infoChips: [
+        { label: t('Upcoming'), value: renderCount(upcomingCount) },
+        { label: t('Checked-in'), value: renderCount(readyCount) },
+        { label: t('Completed'), value: renderCount(statusTotals.completed) },
+      ],
+      footnote: appointmentSummary,
+      accent: {
+        navGradient: 'from-blue-600 via-blue-500 to-indigo-500',
+        navIcon: 'bg-blue-50 text-blue-600',
+        headerIcon: 'bg-blue-100 text-blue-600',
+        headerIconRing: 'ring-blue-500/20',
+        chip: 'bg-blue-50 text-blue-700',
+        focusRing: 'focus:ring-blue-500/40',
+      },
+    },
+    medications: {
+      label: t('Medications'),
+      heading: t('Dispense medications with confidence'),
+      description: t('Monitor prescriptions waiting in the queue and confirm inventory before pickup.'),
+      icon: PharmacyIcon,
+      primaryAction: { to: '/pharmacy/queue', label: t('Go to pharmacy queue') },
+      secondaryAction: { to: '/pharmacy/inventory', label: t('Check inventory') },
+      footnote: t('Stay ahead of refill requests and highlight items running low in stock.'),
+      accent: {
+        navGradient: 'from-emerald-500 via-teal-500 to-emerald-600',
+        navIcon: 'bg-emerald-50 text-emerald-600',
+        headerIcon: 'bg-emerald-100 text-emerald-600',
+        headerIconRing: 'ring-emerald-500/20',
+        chip: 'bg-emerald-50 text-emerald-700',
+        focusRing: 'focus:ring-emerald-500/40',
+      },
+    },
+    'lab-profile': {
+      label: t('Lab Profile'),
+      heading: t('Follow up on lab work'),
+      description: t('Track order statuses, review requisitions, and share results with the care team.'),
+      icon: LabIcon,
+      primaryAction: { to: '/lab-orders', label: t('View lab orders') },
+      footnote: t('Ensure specimens are collected on time and results are routed to clinicians.'),
+      accent: {
+        navGradient: 'from-violet-500 via-purple-500 to-indigo-500',
+        navIcon: 'bg-violet-50 text-violet-600',
+        headerIcon: 'bg-violet-100 text-violet-600',
+        headerIconRing: 'ring-violet-500/20',
+        chip: 'bg-violet-50 text-violet-700',
+        focusRing: 'focus:ring-violet-500/40',
+      },
+    },
+    'search-clinic': {
+      label: t('Search Clinic'),
+      heading: t('Find clinic resources fast'),
+      description: t('Look up contact information, panels, and patient groups associated with each clinic.'),
+      icon: SearchIcon,
+      primaryAction: { to: '/patients', label: t('Search clinic records') },
+      secondaryAction: { to: '/reports', label: t('Open reports') },
+      footnote: t('Use filters to locate clinics, confirm coverage, and share updates with the team.'),
+      accent: {
+        navGradient: 'from-sky-500 via-cyan-500 to-blue-500',
+        navIcon: 'bg-sky-50 text-sky-600',
+        headerIcon: 'bg-sky-100 text-sky-600',
+        headerIconRing: 'ring-sky-500/20',
+        chip: 'bg-sky-50 text-sky-700',
+        focusRing: 'focus:ring-sky-500/40',
+      },
+    },
+  };
+
+  const workspaceOrder: WorkspaceTabId[] = ['appointments', 'medications', 'lab-profile', 'search-clinic'];
+  const activeWorkspaceConfig = workspaceTabs[activeWorkspace];
+
+  const renderWorkspaceContent = () => {
+    switch (activeWorkspace) {
+      case 'appointments':
+        return (
+          <>
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">{t('Upcoming appointments')}</h3>
+                  {loading && hasAppointments ? (
+                    <p className="text-xs font-medium text-slate-500">{t('Loading appointments...')}</p>
+                  ) : null}
+                </div>
+                <Link to="/appointments" className="text-xs font-semibold text-blue-600 hover:underline">
+                  {t('View schedule')}
+                </Link>
+              </div>
+              {error ? (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+              ) : loading && !hasAppointments ? (
+                <p className="mt-4 text-sm text-slate-500">{t('Loading appointments...')}</p>
+              ) : upcomingAppointments.length > 0 ? (
+                <ul className="mt-4 space-y-3">
+                  {upcomingAppointments.map((appointment) => (
+                    <li
+                      key={appointment.appointmentId}
+                      className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">{appointment.patient.name}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                          <span>{formatDateDisplay(appointment.date)}</span>
+                          <span>•</span>
+                          <span>{formatTimeRange(appointment.startTimeMin, appointment.endTimeMin)}</span>
+                        </div>
+                        <div className="mt-1 text-xs text-slate-400">
+                          {appointment.doctor.name} • {appointment.department}
+                        </div>
+                      </div>
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${statusVisuals[appointment.status].chip}`}
+                      >
+                        {statusVisuals[appointment.status].label}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 text-sm text-slate-500">{t('No upcoming appointments.')}</p>
+              )}
+            </section>
+
+            <section className="rounded-3xl border border-blue-100 bg-blue-50/60 p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-blue-600/10 text-blue-600">
+                  <CheckIcon className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-blue-900">{t("Today's task reminders")}</h3>
+                  <p className="mt-1 text-sm text-blue-800/80">{checkedInSummary}</p>
+                </div>
+              </div>
+              {error ? (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+              ) : loading && !hasAppointments ? (
+                <p className="mt-4 text-sm text-blue-800/80">{t('Loading appointments...')}</p>
+              ) : tasks.length > 0 ? (
+                <ul className="mt-4 space-y-3">
+                  {tasks.map((task) => (
+                    <li
+                      key={task.key}
+                      className="flex items-start gap-3 rounded-2xl bg-white/80 px-4 py-3 text-sm text-blue-900 shadow-sm"
+                    >
+                      <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-blue-600">
+                        <CheckIcon className="h-4 w-4" />
+                      </span>
+                      <span>{task.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-4 text-sm text-blue-800/80">{t('No pending tasks for today.')}</p>
+              )}
+            </section>
+          </>
+        );
+      case 'medications':
+        return (
+          <>
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+                  <PharmacyIcon className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">{t('Medication fulfillment checklist')}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {t('Keep prescriptions flowing by coordinating with the pharmacy queue and reviewing stock before pickup.')}
+                  </p>
+                </div>
+              </div>
+              <ul className="mt-5 space-y-3 text-sm text-slate-600">
+                {[t('Verify new prescriptions and capture counseling notes.'), t('Confirm partial fills are completed or scheduled for follow-up.'), t('Check low-stock medications so the care team can offer alternatives.')].map((item) => (
+                  <li key={item} className="flex items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-emerald-900">
+                    <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-emerald-600 shadow">
+                      <CheckIcon className="h-4 w-4" />
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="rounded-3xl border border-emerald-100 bg-emerald-50/40 p-6 shadow-sm">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-emerald-900">{t('Helpful shortcuts')}</h3>
+                  <p className="mt-1 text-sm text-emerald-800/80">
+                    {t('Jump directly to the queue or inventory to update statuses and confirm availability.')}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    to="/pharmacy/queue"
+                    className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-emerald-700"
+                  >
+                    {t('Pharmacy queue')}
+                  </Link>
+                  <Link
+                    to="/pharmacy/inventory"
+                    className="inline-flex items-center justify-center rounded-full border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 shadow-sm transition hover:bg-emerald-50"
+                  >
+                    {t('Inventory review')}
+                  </Link>
+                </div>
+              </div>
+              <p className="mt-4 text-xs text-emerald-800/80">
+                {t('Use the queue to capture handoffs from clinicians and make sure patients receive the right medication on time.')}
+              </p>
+            </section>
+          </>
+        );
+      case 'lab-profile':
+        return (
+          <>
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+                  <LabIcon className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">{t('Lab tracking overview')}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {t('Coordinate specimen collection, monitor pending results, and notify clinicians when follow-up is needed.')}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {[t('Check requisitions awaiting collection and confirm courier pickup times.'), t('Review completed results and send summaries to the ordering provider.')].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border border-violet-100 bg-violet-50/60 p-4 text-sm text-violet-900"
+                  >
+                    <div className="flex items-start gap-3">
+                      <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/70 text-violet-600 shadow">
+                        <CheckIcon className="h-4 w-4" />
+                      </span>
+                      <span>{item}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-violet-100 bg-violet-50/40 p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-violet-900">{t('Need a quick check?')}</h3>
+              <p className="mt-2 text-sm text-violet-800/80">
+                {t('Use filters in the lab orders workspace to identify overdue specimens and resend results to clinicians or patients.')}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-violet-800/80">
+                <span className="rounded-full bg-white/70 px-3 py-1 font-semibold shadow-sm">{t('Pending collection')}</span>
+                <span className="rounded-full bg-white/70 px-3 py-1 font-semibold shadow-sm">{t('Awaiting results')}</span>
+                <span className="rounded-full bg-white/70 px-3 py-1 font-semibold shadow-sm">{t('Completed & shared')}</span>
+              </div>
+            </section>
+          </>
+        );
+      case 'search-clinic':
+      default:
+        return (
+          <>
+            <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                  <SearchIcon className="h-5 w-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">{t('Clinic search guidance')}</h3>
+                  <p className="mt-1 text-sm text-slate-600">
+                    {t('Look up patient records, cohort lists, and clinic metrics to answer questions fast.')}
+                  </p>
+                </div>
+              </div>
+              <ul className="mt-5 space-y-3 text-sm text-slate-600">
+                {[t('Start with the patient directory to confirm demographics and coverage.'), t('Use cohort filters to group patients by program, provider, or condition.'), t('Export reports for leadership updates or to share with the care team.')].map((item) => (
+                  <li key={item} className="flex items-start gap-3 rounded-2xl border border-sky-100 bg-sky-50/60 px-4 py-3 text-sky-900">
+                    <span className="mt-1 flex h-6 w-6 items-center justify-center rounded-full bg-white/80 text-sky-600 shadow">
+                      <CheckIcon className="h-4 w-4" />
+                    </span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="rounded-3xl border border-sky-100 bg-sky-50/40 p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-sky-900">{t('Shortcuts to try')}</h3>
+              <p className="mt-2 text-sm text-sky-800/80">
+                {t('Search by clinic name, patient ID, or insurance to answer front-desk questions without leaving the dashboard.')}
+              </p>
+              <div className="mt-4 grid gap-3 text-xs text-sky-800/80 md:grid-cols-2">
+                <div className="rounded-2xl bg-white/70 p-3 shadow-sm">
+                  <p className="font-semibold text-sky-900">{t('Need visit history?')}</p>
+                  <p className="mt-1">{t('Open the patient chart from search results to review recent encounters and notes.')}</p>
+                </div>
+                <div className="rounded-2xl bg-white/70 p-3 shadow-sm">
+                  <p className="font-semibold text-sky-900">{t('Looking for trends?')}</p>
+                  <p className="mt-1">{t('Visit reports for clinic-wide metrics and exportable summaries.')}</p>
+                </div>
+              </div>
+            </section>
+          </>
+        );
+    }
+  };
+
   return (
     <DashboardLayout
       title={t('Team Dashboard')}
@@ -1011,161 +1367,207 @@ function TeamDashboard({ role }: { role?: string }) {
       }
       headerChildren={headerSearch}
     >
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        <div className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <RegisterIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">{t('Register New Patient')}</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {t('Capture demographics and intake information for walk-in patients.')}
-              </p>
+      <section className="overflow-hidden rounded-3xl bg-gradient-to-br from-blue-600 via-indigo-500 to-sky-500 p-8 text-white shadow-xl">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-xl">
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/80">{t('Clinic operations')}</p>
+            <h2 className="mt-2 text-3xl font-semibold">{t('EMR portal workspace')}</h2>
+            <p className="mt-3 text-sm text-white/80">
+              {t('Jump between appointments, medications, lab follow-ups, and clinic search without losing context.')}
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3 text-xs font-semibold">
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 shadow">
+                <CalendarIcon className="h-4 w-4 text-white" />
+                <span>{t('Appointments today: {count}', { count: renderCount(statusTotals.total) })}</span>
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 shadow">
+                <PatientsIcon className="h-4 w-4 text-white" />
+                <span>{t('Ready for visit: {count}', { count: renderCount(readyCount) })}</span>
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 shadow">
+                <CheckIcon className="h-4 w-4 text-white" />
+                <span>{tasks.length ? t('{count} priority tasks', { count: tasks.length }) : t('Tasks up to date')}</span>
+              </span>
             </div>
           </div>
-          <div className="mt-6">
-            <Link
-              to="/register"
-              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
-            >
-              {t('Register Patient')}
-            </Link>
+          <div className="w-full max-w-sm rounded-3xl bg-white/10 p-6 text-sm text-white shadow-lg backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-wide text-white/70">{t('Today’s highlights')}</p>
+            <p className="mt-3 text-base font-semibold">{appointmentSummary}</p>
+            <p className="mt-3 text-sm text-white/80">{checkedInSummary}</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <Link
+                to="/appointments/new"
+                className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow transition hover:bg-blue-50"
+              >
+                {t('Book appointment')}
+              </Link>
+              <Link
+                to="/patients"
+                className="inline-flex items-center justify-center rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-white/30"
+              >
+                {t('Find patient')}
+              </Link>
+            </div>
           </div>
         </div>
+      </section>
 
-        <div className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <SearchIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">{t('Search Patient Records')}</h2>
-              <p className="mt-1 text-sm text-gray-600">
-                {t('Look up patients to confirm coverage, history, and contact details.')}
-              </p>
-            </div>
-          </div>
-          <div className="mt-6">
-            <Link
-              to="/patients"
-              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
-            >
-              {t('Search Patient')}
-            </Link>
-          </div>
-        </div>
-
-        <div className="flex flex-col justify-between rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <CalendarIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-500">{t('Appointments Today')}</div>
-              <div className="mt-2 text-4xl font-semibold text-gray-900">{renderCount(statusTotals.total)}</div>
-            </div>
-          </div>
-          <p className="mt-4 text-sm text-gray-600">
-            {error
-              ? error
-              : statusTotals.total > 0
-                ? t('{upcoming} upcoming · {completed} completed', {
-                    upcoming: upcomingCount,
-                    completed: statusTotals.completed,
-                  })
-                : t('No appointments scheduled today.')}
-          </p>
-        </div>
-
-        <div className="flex flex-col justify-between rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-blue-100 p-3 text-blue-600">
-              <PatientsIcon className="h-6 w-6" />
-            </div>
-            <div>
-              <div className="text-sm font-medium text-gray-500">{t('Checked-in Patients')}</div>
-              <div className="mt-2 text-4xl font-semibold text-gray-900">{renderCount(readyCount)}</div>
-            </div>
-          </div>
-          <p className="mt-4 text-sm text-gray-600">
-            {error
-              ? error
-              : readyCount > 0
-                ? t('{count} patients ready for their visit.', { count: readyCount })
-                : waitingCount > 0
-                  ? t('{count} patients waiting to check in.', { count: waitingCount })
-                  : t('No patients have checked in yet.')}
-          </p>
-        </div>
-
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-lg font-semibold text-gray-900">{t('Upcoming Appointments')}</div>
-              {loading && hasAppointments && (
-                <p className="text-xs font-medium text-gray-500">{t('Loading appointments...')}</p>
-              )}
-            </div>
-            <Link to="/appointments" className="text-xs font-semibold text-blue-600 hover:underline">
-              {t('View schedule')}
-            </Link>
-          </div>
-          {error ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          ) : loading && !hasAppointments ? (
-            <p className="mt-4 text-sm text-gray-500">{t('Loading appointments...')}</p>
-          ) : upcomingAppointments.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {upcomingAppointments.map((appointment) => (
-                <li
-                  key={appointment.appointmentId}
-                  className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3"
-                >
-                  <div>
-                    <div className="text-sm font-medium text-gray-900">{appointment.patient.name}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                      <span>{formatDateDisplay(appointment.date)}</span>
-                      <span>•</span>
-                      <span>{formatTimeRange(appointment.startTimeMin, appointment.endTimeMin)}</span>
-                    </div>
-                    <div className="mt-1 text-xs text-gray-400">
-                      {appointment.doctor.name} • {appointment.department}
-                    </div>
-                  </div>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${statusVisuals[appointment.status].chip}`}
+      <div className="mt-10 grid gap-8 xl:grid-cols-[280px_1fr]">
+        <aside className="space-y-6">
+          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">{t('Workspace navigation')}</h3>
+            <p className="mt-1 text-xs text-slate-500">{t('Switch between clinic workflows inspired by the EMR portal layout.')}</p>
+            <div className="mt-4 space-y-2" role="tablist" aria-label={t('Workspace tabs')}>
+              {workspaceOrder.map((tab) => {
+                const config = workspaceTabs[tab];
+                const isActive = tab === activeWorkspace;
+                return (
+                  <button
+                    key={tab}
+                    id={`workspace-tab-${tab}`}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-controls={`workspace-panel-${tab}`}
+                    tabIndex={isActive ? 0 : -1}
+                    onClick={() => setActiveWorkspace(tab)}
+                    className={`group flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-semibold transition focus:outline-none focus:ring-2 ${config.accent.focusRing} ${
+                      isActive
+                        ? `bg-gradient-to-r ${config.accent.navGradient} text-white shadow-lg`
+                        : 'bg-white text-slate-600 shadow-sm hover:bg-slate-50'
+                    }`}
                   >
-                    {statusVisuals[appointment.status].label}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">{t('No upcoming appointments.')}</p>
-          )}
-        </div>
+                    <span
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                        isActive ? 'bg-white/15 text-white' : config.accent.navIcon
+                      }`}
+                    >
+                      <config.icon className="h-5 w-5" />
+                    </span>
+                    <span className="flex-1">{config.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
 
-        <div className="rounded-2xl bg-white p-6 shadow-sm">
-          <div className="text-lg font-semibold text-gray-900">{t('Task Reminders')}</div>
-          {error ? (
-            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
-          ) : loading && !hasAppointments ? (
-            <p className="mt-4 text-sm text-gray-500">{t('Loading appointments...')}</p>
-          ) : tasks.length > 0 ? (
-            <ul className="mt-4 space-y-3">
-              {tasks.map((task) => (
-                <li key={task.key} className="flex items-center gap-3 rounded-xl bg-gray-50 px-4 py-3">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-green-100 text-green-600">
-                    <CheckIcon className="h-4 w-4" />
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-600">
+                <RegisterIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">{t('Register new patient')}</h3>
+                <p className="mt-1 text-sm text-slate-600">{t('Capture demographics and intake details for walk-in patients in minutes.')}</p>
+                <Link
+                  to="/register"
+                  className="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-blue-700"
+                >
+                  {t('Start intake')}
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                <SearchIcon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">{t('Search clinic records')}</h3>
+                <p className="mt-1 text-sm text-slate-600">{t('Look up patient charts, confirm coverage, or find contact details on the fly.')}</p>
+                <Link
+                  to="/patients"
+                  className="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-blue-700"
+                >
+                  {t('Open patient search')}
+                </Link>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">{t('Today at a glance')}</h3>
+            <dl className="mt-4 space-y-4 text-sm text-slate-600">
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Appointments')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(statusTotals.total)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Checked-in')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(readyCount)}</dd>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <dt className="text-xs uppercase tracking-wide text-slate-500">{t('Waiting')}</dt>
+                <dd className="text-lg font-semibold text-slate-900">{renderCount(waitingCount)}</dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-xs text-slate-500">{appointmentSummary}</p>
+          </section>
+        </aside>
+
+        <div
+          id={`workspace-panel-${activeWorkspace}`}
+          role="tabpanel"
+          aria-labelledby={`workspace-tab-${activeWorkspace}`}
+          className="space-y-6"
+        >
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-4">
+                <div
+                  className={`flex h-12 w-12 items-center justify-center rounded-2xl ${activeWorkspaceConfig.accent.headerIcon} ring-4 ${activeWorkspaceConfig.accent.headerIconRing}`}
+                >
+                  <activeWorkspaceConfig.icon className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">{activeWorkspaceConfig.heading}</h3>
+                  <p className="mt-1 text-sm text-slate-600">{activeWorkspaceConfig.description}</p>
+                </div>
+              </div>
+              {activeWorkspaceConfig.stat ? (
+                <div className="rounded-3xl border border-slate-100 bg-slate-50 px-5 py-4 text-center">
+                  <div className="text-2xl font-semibold text-slate-900">{activeWorkspaceConfig.stat.value}</div>
+                  <div className="text-xs font-medium text-slate-500">{activeWorkspaceConfig.stat.label}</div>
+                </div>
+              ) : null}
+            </div>
+            {activeWorkspaceConfig.infoChips?.length ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeWorkspaceConfig.infoChips.map((chip) => (
+                  <span
+                    key={`${activeWorkspace}-${chip.label}`}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${activeWorkspaceConfig.accent.chip}`}
+                  >
+                    <span className="text-sm font-semibold">{chip.value}</span>
+                    <span className="text-xs font-medium">{chip.label}</span>
                   </span>
-                  <span className="text-sm text-gray-700">{task.label}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">{t('No pending tasks for today.')}</p>
-          )}
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-6 flex flex-wrap gap-3">
+              <Link
+                to={activeWorkspaceConfig.primaryAction.to}
+                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
+              >
+                {activeWorkspaceConfig.primaryAction.label}
+              </Link>
+              {activeWorkspaceConfig.secondaryAction ? (
+                <Link
+                  to={activeWorkspaceConfig.secondaryAction.to}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                >
+                  {activeWorkspaceConfig.secondaryAction.label}
+                </Link>
+              ) : null}
+            </div>
+            {activeWorkspaceConfig.footnote ? (
+              <p className="mt-4 text-xs text-slate-500">{activeWorkspaceConfig.footnote}</p>
+            ) : null}
+          </section>
+
+          {renderWorkspaceContent()}
         </div>
       </div>
     </DashboardLayout>
