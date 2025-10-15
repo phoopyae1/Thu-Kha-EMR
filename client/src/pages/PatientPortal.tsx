@@ -32,6 +32,15 @@ interface LoginForm {
   password: string;
 }
 
+interface RegisterForm {
+  name: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  dob: string;
+  contact: string;
+}
+
 interface AppointmentForm {
   doctorId: string;
   date: string;
@@ -257,6 +266,7 @@ function calculateAge(dob?: string | null) {
 }
 
 const defaultLoginForm: LoginForm = { email: 'patient@example.com', password: '' };
+const defaultRegisterForm: RegisterForm = { name: '', email: '', password: '', confirmPassword: '', dob: '', contact: '' };
 const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: '', reason: '' };
 
 export default function PatientPortal() {
@@ -271,6 +281,11 @@ export default function PatientPortal() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginStatus, setLoginStatus] = useState<'idle' | 'loading' | 'success'>('idle');
   const [session, setSession] = useState<PortalSession | null>(null);
+  
+  const [showRegister, setShowRegister] = useState(false);
+  const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [registerStatus, setRegisterStatus] = useState<'idle' | 'loading' | 'success'>('idle');
 
   const [profile, setProfile] = useState<any | null>(null);
   const [appointments, setAppointments] = useState<any | null>(null);
@@ -382,6 +397,46 @@ export default function PatientPortal() {
       const message = error instanceof Error ? error.message : t('Unable to sign in. Please try again.');
       setLoginError(message);
       showToast({ type: 'error', title: t('Sign-in failed'), message });
+    }
+  };
+
+  const handleRegisterChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = event.target;
+    setRegisterForm((previous) => ({ ...previous, [name]: value }));
+  };
+
+  const handleRegisterSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setRegisterError(null);
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setRegisterError(t('Passwords do not match'));
+      return;
+    }
+
+    setRegisterStatus('loading');
+
+    try {
+      // TODO: Call actual registration API when available
+      // For now, show success message
+      setRegisterStatus('success');
+      showToast({ 
+        type: 'success', 
+        title: t('Account created successfully'), 
+        message: t('Please contact your clinic to activate your account.') 
+      });
+      
+      // Reset form and switch to login
+      setTimeout(() => {
+        setRegisterForm(defaultRegisterForm);
+        setShowRegister(false);
+        setRegisterStatus('idle');
+      }, 2000);
+    } catch (error) {
+      setRegisterStatus('idle');
+      const message = error instanceof Error ? error.message : t('Unable to create account. Please try again.');
+      setRegisterError(message);
+      showToast({ type: 'error', title: t('Registration failed'), message });
     }
   };
 
@@ -798,60 +853,188 @@ export default function PatientPortal() {
             ) : null}
           </>
         ) : (
-          <section className="mx-auto w-full max-w-3xl">
-            <div className="rounded-3xl border border-slate-200 bg-white p-10 shadow-xl">
+          <section className="mx-auto w-full max-w-md">
+            <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
               <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
-                {t('Patient portal login')}
+                {showRegister ? t('Create account') : t('Patient portal login')}
               </div>
-              <h1 className="mt-4 text-3xl font-semibold text-slate-900">{t('Sign in to manage your care')}</h1>
+              <h1 className="mt-4 text-2xl font-semibold text-slate-900">
+                {showRegister ? t('Register for patient portal') : t('Sign in to manage your care')}
+              </h1>
               <p className="mt-2 text-sm text-slate-500">
-                {t('Use the credentials shared by your clinic to access your personal records.')}
+                {showRegister 
+                  ? t('Create your account to access your health records.')
+                  : t('Use the credentials shared by your clinic to access your personal records.')
+                }
               </p>
-              <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
-                <div>
-                  <label htmlFor="email" className="text-sm font-medium text-slate-700">
-                    {t('Email address')}
-                  </label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    value={loginForm.email}
-                    onChange={handleLoginChange}
-                    required
-                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="password" className="text-sm font-medium text-slate-700">
-                    {t('Password')}
-                  </label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    value={loginForm.password}
-                    onChange={handleLoginChange}
-                    required
-                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                  />
-                </div>
-                {loginError ? <p className="text-sm text-rose-600">{loginError}</p> : null}
-                <button
-                  type="submit"
-                  disabled={loginStatus === 'loading'}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
-                >
-                  <AvatarIcon className="h-5 w-5" />
-                  {loginStatus === 'loading' ? t('Signing in...') : t('Access my records')}
-                </button>
-                <p className="text-xs text-slate-500">
-                  {t('Tip: You can use the demo account {email} with password {password}.', {
-                    email: 'patient@example.com',
-                    password: 'PatientPass123!',
-                  })}
-                </p>
-              </form>
+
+              {!showRegister ? (
+                <form onSubmit={handleLoginSubmit} className="mt-6 space-y-4">
+                  <div>
+                    <label htmlFor="email" className="text-sm font-medium text-slate-700">
+                      {t('Email address')}
+                    </label>
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      value={loginForm.email}
+                      onChange={handleLoginChange}
+                      required
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="password" className="text-sm font-medium text-slate-700">
+                      {t('Password')}
+                    </label>
+                    <input
+                      id="password"
+                      name="password"
+                      type="password"
+                      value={loginForm.password}
+                      onChange={handleLoginChange}
+                      required
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  {loginError ? <p className="text-sm text-rose-600">{loginError}</p> : null}
+                  <button
+                    type="submit"
+                    disabled={loginStatus === 'loading'}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  >
+                    <AvatarIcon className="h-5 w-5" />
+                    {loginStatus === 'loading' ? t('Signing in...') : t('Access my records')}
+                  </button>
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+                    <p className="text-xs text-slate-500">{t('Don\'t have an account?')}</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowRegister(true)}
+                      className="text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+                    >
+                      {t('Create account')}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleRegisterSubmit} className="mt-6 space-y-4">
+                  <div>
+                    <label htmlFor="register-name" className="text-sm font-medium text-slate-700">
+                      {t('Full name')}
+                    </label>
+                    <input
+                      id="register-name"
+                      name="name"
+                      type="text"
+                      value={registerForm.name}
+                      onChange={handleRegisterChange}
+                      required
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="register-email" className="text-sm font-medium text-slate-700">
+                      {t('Email address')}
+                    </label>
+                    <input
+                      id="register-email"
+                      name="email"
+                      type="email"
+                      value={registerForm.email}
+                      onChange={handleRegisterChange}
+                      required
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="register-dob" className="text-sm font-medium text-slate-700">
+                        {t('Date of birth')}
+                      </label>
+                      <input
+                        id="register-dob"
+                        name="dob"
+                        type="date"
+                        value={registerForm.dob}
+                        onChange={handleRegisterChange}
+                        required
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="register-contact" className="text-sm font-medium text-slate-700">
+                        {t('Contact number')}
+                      </label>
+                      <input
+                        id="register-contact"
+                        name="contact"
+                        type="tel"
+                        value={registerForm.contact}
+                        onChange={handleRegisterChange}
+                        required
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor="register-password" className="text-sm font-medium text-slate-700">
+                      {t('Password')}
+                    </label>
+                    <input
+                      id="register-password"
+                      name="password"
+                      type="password"
+                      value={registerForm.password}
+                      onChange={handleRegisterChange}
+                      required
+                      minLength={8}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="register-confirmPassword" className="text-sm font-medium text-slate-700">
+                      {t('Confirm password')}
+                    </label>
+                    <input
+                      id="register-confirmPassword"
+                      name="confirmPassword"
+                      type="password"
+                      value={registerForm.confirmPassword}
+                      onChange={handleRegisterChange}
+                      required
+                      minLength={8}
+                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                    />
+                  </div>
+                  {registerError ? <p className="text-sm text-rose-600">{registerError}</p> : null}
+                  {registerStatus === 'success' ? (
+                    <p className="text-sm text-emerald-600">{t('Account created! Redirecting to login...')}</p>
+                  ) : null}
+                  <button
+                    type="submit"
+                    disabled={registerStatus === 'loading' || registerStatus === 'success'}
+                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                  >
+                    <AvatarIcon className="h-5 w-5" />
+                    {registerStatus === 'loading' ? t('Creating account...') : t('Create account')}
+                  </button>
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-4">
+                    <p className="text-xs text-slate-500">{t('Already have an account?')}</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowRegister(false);
+                        setRegisterError(null);
+                      }}
+                      className="text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+                    >
+                      {t('Sign in')}
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </section>
         )}
