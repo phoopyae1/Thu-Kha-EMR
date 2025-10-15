@@ -10,6 +10,7 @@ import {
   PharmacyIcon,
   RegisterIcon,
   SearchIcon,
+  LabIcon,
 } from '../components/icons';
 import { useAuth } from '../context/AuthProvider';
 import {
@@ -47,6 +48,20 @@ import {
   type VisitFormSubmitValues,
 } from '../utils/visitForm';
 import { useTranslation } from '../hooks/useTranslation';
+
+type QuickActionId = 'appointments' | 'medications' | 'lab-profile' | 'search-clinic';
+
+type QuickActionConfig = {
+  label: string;
+  heading: string;
+  description: string;
+  icon: typeof CalendarIcon;
+  primaryAction: { to: string; label: string };
+  secondaryAction?: { to: string; label: string };
+  stat?: { label: string; value: string };
+  infoChips?: Array<{ label: string; value: string }>;
+  footnote?: string;
+};
 
 export default function Home() {
   const { user } = useAuth();
@@ -849,6 +864,7 @@ function TeamDashboard({ role }: { role?: string }) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeQuickAction, setActiveQuickAction] = useState<QuickActionId>('appointments');
   const todayKey = useMemo(() => createDateKey(new Date()), []);
   const statusVisuals = getStatusVisuals(t);
 
@@ -1000,6 +1016,70 @@ function TeamDashboard({ role }: { role?: string }) {
     </div>
   );
 
+  const appointmentSummary = error
+    ? error
+    : statusTotals.total > 0
+      ? t('{upcoming} upcoming · {completed} completed', {
+          upcoming: upcomingCount,
+          completed: statusTotals.completed,
+        })
+      : t('No appointments scheduled today.');
+
+  const checkedInSummary = error
+    ? error
+    : readyCount > 0
+      ? t('{count} patients ready for their visit.', { count: readyCount })
+      : waitingCount > 0
+        ? t('{count} patients waiting to check in.', { count: waitingCount })
+        : t('No patients have checked in yet.');
+
+  const quickActions: Record<QuickActionId, QuickActionConfig> = {
+    appointments: {
+      label: t('Appointments'),
+      heading: t('Coordinate today\'s schedule'),
+      description: t('Review the visit queue, update appointment statuses, and keep the day on track.'),
+      icon: CalendarIcon,
+      primaryAction: { to: '/appointments', label: t('Open appointments') },
+      secondaryAction: { to: '/appointments/new', label: t('Book new appointment') },
+      stat: { label: t('Appointments today'), value: renderCount(statusTotals.total) },
+      infoChips: [
+        { label: t('Upcoming'), value: renderCount(upcomingCount) },
+        { label: t('Checked-in'), value: renderCount(readyCount) },
+        { label: t('Completed'), value: renderCount(statusTotals.completed) },
+      ],
+      footnote: appointmentSummary,
+    },
+    medications: {
+      label: t('Medications'),
+      heading: t('Dispense medications with confidence'),
+      description: t('Monitor prescriptions waiting in the queue and confirm inventory before pickup.'),
+      icon: PharmacyIcon,
+      primaryAction: { to: '/pharmacy/queue', label: t('Go to pharmacy queue') },
+      secondaryAction: { to: '/pharmacy/inventory', label: t('Check inventory') },
+      footnote: t('Stay ahead of refill requests and highlight items running low in stock.'),
+    },
+    'lab-profile': {
+      label: t('Lab Profile'),
+      heading: t('Follow up on lab work'),
+      description: t('Track order statuses, review requisitions, and share results with the care team.'),
+      icon: LabIcon,
+      primaryAction: { to: '/lab-orders', label: t('View lab orders') },
+      footnote: t('Ensure specimens are collected on time and results are routed to clinicians.'),
+    },
+    'search-clinic': {
+      label: t('Search Clinic'),
+      heading: t('Find clinic resources fast'),
+      description: t('Look up contact information, panels, and patient groups associated with each clinic.'),
+      icon: SearchIcon,
+      primaryAction: { to: '/patients', label: t('Search clinic records') },
+      secondaryAction: { to: '/reports', label: t('Open reports') },
+      footnote: t('Use filters to locate clinics, confirm coverage, and share updates with the team.'),
+    },
+  };
+
+  const quickActionOrder: QuickActionId[] = ['appointments', 'medications', 'lab-profile', 'search-clinic'];
+  const activeQuickActionConfig = quickActions[activeQuickAction];
+
   return (
     <DashboardLayout
       title={t('Team Dashboard')}
@@ -1011,6 +1091,103 @@ function TeamDashboard({ role }: { role?: string }) {
       }
       headerChildren={headerSearch}
     >
+      <section className="rounded-2xl bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">{t('Quick workspace tabs')}</h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {t('Switch between core clinic workflows without leaving the dashboard.')}
+            </p>
+          </div>
+        </div>
+        <div
+          className="mt-6 flex flex-wrap gap-2"
+          role="tablist"
+          aria-label={t('Clinic workspace tabs')}
+        >
+          {quickActionOrder.map((tab) => {
+            const config = quickActions[tab];
+            const isActive = tab === activeQuickAction;
+            return (
+              <button
+                key={tab}
+                id={`quick-action-tab-${tab}`}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                aria-controls={`quick-action-panel-${tab}`}
+                tabIndex={isActive ? 0 : -1}
+                onClick={() => setActiveQuickAction(tab)}
+                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
+                  isActive
+                    ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+                    : 'border-gray-200 bg-white text-gray-600 hover:border-blue-200 hover:text-blue-600'
+                }`}
+              >
+                <config.icon className="h-4 w-4" />
+                <span>{config.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <div
+          id={`quick-action-panel-${activeQuickAction}`}
+          role="tabpanel"
+          aria-labelledby={`quick-action-tab-${activeQuickAction}`}
+          className="mt-6 rounded-2xl border border-gray-100 bg-gray-50 p-5"
+        >
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-white p-3 text-blue-600 shadow-sm">
+                <activeQuickActionConfig.icon className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{activeQuickActionConfig.heading}</h3>
+                <p className="mt-1 text-sm text-gray-600">{activeQuickActionConfig.description}</p>
+              </div>
+            </div>
+            {activeQuickActionConfig.stat ? (
+              <div className="rounded-xl bg-white px-4 py-3 text-center shadow-sm">
+                <div className="text-2xl font-semibold text-gray-900">{activeQuickActionConfig.stat.value}</div>
+                <div className="text-xs font-medium text-gray-500">{activeQuickActionConfig.stat.label}</div>
+              </div>
+            ) : null}
+          </div>
+          {activeQuickActionConfig.infoChips?.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {activeQuickActionConfig.infoChips.map((chip) => (
+                <span
+                  key={`${activeQuickAction}-${chip.label}`}
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-sm"
+                >
+                  <span className="text-gray-900">{chip.value}</span>
+                  <span className="text-gray-500">{chip.label}</span>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Link
+              to={activeQuickActionConfig.primaryAction.to}
+              className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+            >
+              {activeQuickActionConfig.primaryAction.label}
+            </Link>
+            {activeQuickActionConfig.secondaryAction ? (
+              <Link
+                to={activeQuickActionConfig.secondaryAction.to}
+                className="inline-flex items-center justify-center rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-600 shadow-sm hover:bg-blue-50"
+              >
+                {activeQuickActionConfig.secondaryAction.label}
+              </Link>
+            ) : null}
+          </div>
+          {activeQuickActionConfig.footnote ? (
+            <p className="mt-4 text-xs text-gray-500">{activeQuickActionConfig.footnote}</p>
+          ) : null}
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         <div className="flex flex-col rounded-2xl bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
@@ -1067,14 +1244,7 @@ function TeamDashboard({ role }: { role?: string }) {
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-600">
-            {error
-              ? error
-              : statusTotals.total > 0
-                ? t('{upcoming} upcoming · {completed} completed', {
-                    upcoming: upcomingCount,
-                    completed: statusTotals.completed,
-                  })
-                : t('No appointments scheduled today.')}
+            {appointmentSummary}
           </p>
         </div>
 
@@ -1089,13 +1259,7 @@ function TeamDashboard({ role }: { role?: string }) {
             </div>
           </div>
           <p className="mt-4 text-sm text-gray-600">
-            {error
-              ? error
-              : readyCount > 0
-                ? t('{count} patients ready for their visit.', { count: readyCount })
-                : waitingCount > 0
-                  ? t('{count} patients waiting to check in.', { count: waitingCount })
-                  : t('No patients have checked in yet.')}
+            {checkedInSummary}
           </p>
         </div>
 
