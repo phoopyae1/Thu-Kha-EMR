@@ -60,6 +60,19 @@ export function PharmacyIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+export function LabIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 3.75h6M10.5 3.75v5.25L6.42 16.93A2.25 2.25 0 008.39 20.25h7.22a2.25 2.25 0 001.97-3.32L13.5 9V3.75"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 12h7.5" />
+    </svg>
+  );
+}
+
 export function SettingsIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} {...props}>
