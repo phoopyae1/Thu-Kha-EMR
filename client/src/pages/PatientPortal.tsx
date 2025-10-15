@@ -487,6 +487,28 @@ export default function PatientPortal() {
     { label: t('Payments'), href: '#payments' },
   ];
 
+  const clinicMapLocations = useMemo(
+    () => [
+      {
+        id: 'building-4',
+        code: '4',
+        label: t('Building 4 - Outpatient pavilion'),
+        description: t('Check-in, family medicine, and pharmacy pickup'),
+        x: 28,
+        y: 58,
+      },
+      {
+        id: 'building-5',
+        code: '5',
+        label: t('Building 5 - Diagnostics hub'),
+        description: t('Radiology, lab services, and imaging check-in'),
+        x: 66,
+        y: 32,
+      },
+    ],
+    [t],
+  );
+
   return (
     <div className="min-h-screen bg-slate-100">
       {toast && (
@@ -670,6 +692,58 @@ export default function PatientPortal() {
                       </a>
                     ))}
                   </div>
+                </section>
+
+                <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-slate-900">{t('Clinic campus map')}</h3>
+                    <DashboardIcon className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <p className="mt-2 text-sm text-slate-500">{t('Preview our campus layout and entry points for your visit.')}</p>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-wide text-blue-600">
+                    {t('Tap markers to preview entrances.')}
+                  </p>
+                  <div className="mt-4 rounded-3xl border border-blue-100 bg-gradient-to-br from-blue-50 via-sky-50 to-emerald-50 p-4">
+                    <div className="relative h-48 w-full overflow-hidden rounded-2xl bg-white shadow-inner">
+                      <div
+                        className="absolute inset-0 opacity-90"
+                        style={{
+                          background:
+                            'radial-gradient(circle at 20% 25%, rgba(37, 99, 235, 0.15), transparent 55%), radial-gradient(circle at 70% 40%, rgba(16, 185, 129, 0.15), transparent 60%), linear-gradient(135deg, rgba(14, 116, 144, 0.08), transparent)',
+                        }}
+                      />
+                      <div className="absolute inset-6 grid grid-cols-4 grid-rows-4 gap-3 opacity-60">
+                        {Array.from({ length: 16 }).map((_, index) => (
+                          <div key={index} className="rounded-xl border border-slate-100 bg-slate-50" />
+                        ))}
+                      </div>
+                      {clinicMapLocations.map((location) => (
+                        <button
+                          key={location.id}
+                          type="button"
+                          className="group absolute -translate-x-1/2 -translate-y-1/2 focus:outline-none"
+                          style={{ left: `${location.x}%`, top: `${location.y}%` }}
+                          aria-label={location.label}
+                        >
+                          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-base font-semibold text-white shadow-lg ring-4 ring-white/70">
+                            {location.code}
+                          </span>
+                          <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden w-40 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left text-xs text-slate-600 shadow-lg group-hover:block group-focus-visible:block">
+                            <span className="block font-semibold text-slate-900">{location.label}</span>
+                            <span className="mt-1 block text-slate-500">{location.description}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <ul className="mt-4 space-y-3 text-sm text-slate-600">
+                    {clinicMapLocations.map((location) => (
+                      <li key={location.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                        <div className="text-sm font-semibold text-slate-900">{location.label}</div>
+                        <p className="mt-1 text-xs text-slate-600">{location.description}</p>
+                      </li>
+                    ))}
+                  </ul>
                 </section>
 
                 {latestImmunization ? (
