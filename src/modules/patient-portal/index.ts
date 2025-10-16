@@ -232,13 +232,12 @@ router.post('/register', async (req: Request, res: Response) => {
     const patientRecord = existingPatient
       ? await tx.patient.update({
           where: { patientId: existingPatient.patientId },
-          data: {
-            contact,
-            ...(typeof insurance === 'string' ? { insurance } : {}),
-            ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
-          },
-          data: { contact },
-          select: {
+        data: {
+          contact,
+          ...(typeof insurance === 'string' ? { insurance } : {}),
+          ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
+        },
+        select: {
             patientId: true,
             name: true,
             dob: true,
@@ -271,7 +270,7 @@ router.post('/register', async (req: Request, res: Response) => {
         patientId: patientRecord.patientId,
         email: normalizedEmail,
         passwordHash,
-        status: 'inactive',
+        status: 'active',
       },
       select: portalAccountSelect,
     });
@@ -280,8 +279,7 @@ router.post('/register', async (req: Request, res: Response) => {
   });
 
   res.status(201).json({
-    message:
-      'Account created. A clinic team member must activate your account before you can sign in.',
+    message: 'Account created successfully. You can now sign in to your patient portal.',
     account,
     patient,
   });
@@ -672,7 +670,7 @@ router.post(
     if (overlapping) {
       return res
         .status(409)
-        .json({ error: 'The selected doctor already has an appointment during that time window.' });
+        .json({ error: 'This time slot is already booked. Please choose a different time.' });
     }
 
     const appointment = await prisma.appointment.create({

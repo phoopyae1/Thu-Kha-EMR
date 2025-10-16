@@ -15,10 +15,12 @@ async function seedUsers() {
   const adminEmail = 'admin@example.com';
   const assistantEmail = 'assistant@example.com';
   const doctorEmail = 'drsmith@example.com';
+  const cashierEmail = 'cashier@example.com';
 
   const adminHash = await bcrypt.hash('AdminPass123!', 10);
   const assistantHash = await bcrypt.hash('AssistantPass123!', 10);
   const doctorHash = await bcrypt.hash('DoctorPass123!', 10);
+  const cashierHash = await bcrypt.hash('CashierPass123!', 10);
 
   const doctorRecord = await prisma.doctor.findFirst({
     where: { name: { equals: 'Dr Smith', mode: 'insensitive' } },
@@ -66,7 +68,21 @@ async function seedUsers() {
     await prisma.user.create({ data: doctorData });
   }
 
-  console.log('✅ Users seeded');
+  const cashier = await prisma.user.findUnique({ where: { email: cashierEmail } });
+  const cashierData = {
+    email: cashierEmail,
+    passwordHash: cashierHash,
+    role: 'Cashier',
+    status: 'active',
+    doctorId: null,
+  };
+  if (cashier) {
+    await prisma.user.update({ where: { email: cashierEmail }, data: cashierData });
+  } else {
+    await prisma.user.create({ data: cashierData });
+  }
+
+  console.log('✅ Users seeded (admin, assistant, doctor, cashier)');
 }
 
 async function seedDoctors() {

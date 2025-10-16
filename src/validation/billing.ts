@@ -12,7 +12,7 @@ export const DecimalString = z
     message: 'Invalid monetary amount',
   });
 
-const ItemSourceTypeEnum = z.enum(['SERVICE', 'PHARMACY', 'LAB']);
+const ItemSourceTypeEnum = z.enum(['SERVICE', 'PHARMACY', 'LAB', 'DOCTOR_FEE']);
 const PaymentMethodEnum = z.enum(['CASH', 'CARD', 'MOBILE_WALLET', 'BANK_TRANSFER', 'OTHER']);
 
 export const InvoiceItemInputSchema = z.object({

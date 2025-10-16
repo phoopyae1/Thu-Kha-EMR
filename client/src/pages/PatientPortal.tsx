@@ -110,7 +110,8 @@ function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
       <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="absolute right-4 top-4 flex items-center gap-2">
+        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6">
+          <div className="flex items-center justify-end gap-2 mb-4">
           <button
             type="button"
             onClick={handlePrint}
@@ -128,7 +129,6 @@ function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, 
           </button>
         </div>
 
-        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               {logo ? (
@@ -144,7 +144,7 @@ function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, 
               </div>
             </div>
             <div className="text-right text-xs text-slate-500">
-              <div>{t('Invoice #{number}', { number: invoiceNumber })}</div>
+              <div className="font-semibold text-slate-700">{t('Invoice #{number}', { number: invoiceNumber })}</div>
               <div>{invoiceDate}</div>
             </div>
           </div>
@@ -509,7 +509,17 @@ export default function PatientPortal() {
       setAppointmentStatus('idle');
     } catch (error) {
       setPortalLoading(false);
-      const message = error instanceof Error ? error.message : t('Unable to load patient data.');
+      let message = t('Unable to load patient data.');
+      if (error instanceof Error) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed && typeof parsed.error === 'string') {
+            message = parsed.error;
+          }
+        } catch {
+          message = error.message;
+        }
+      }
       showToast({ type: 'error', title: t('Portal data unavailable'), message });
     }
   };
@@ -548,10 +558,25 @@ export default function PatientPortal() {
       });
       setAppointmentStatus('success');
       setAppointmentForm((previous) => ({ ...previous, reason: '' }));
+      showToast({ 
+        type: 'success', 
+        title: t('Appointment scheduled'), 
+        message: t('Your appointment has been successfully scheduled.')
+      });
       await loadPortalData(session);
     } catch (error) {
       setAppointmentStatus('idle');
-      const message = error instanceof Error ? error.message : t('Unable to schedule appointment.');
+      let message = t('Unable to schedule appointment.');
+      if (error instanceof Error) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed && typeof parsed.error === 'string') {
+            message = parsed.error;
+          }
+        } catch {
+          message = error.message;
+        }
+      }
       setAppointmentError(message);
       showToast({ type: 'error', title: t('Appointment request failed'), message });
     }
@@ -875,7 +900,7 @@ export default function PatientPortal() {
                     </div>
               </aside>
               <div className="flex-1 space-y-8">{activeContent}</div>
-            </div>
+                    </div>
 
             {receiptInvoice ? (
               <PaymentReceiptModal
@@ -887,14 +912,14 @@ export default function PatientPortal() {
                 logo={logo}
                 formatCurrency={formatCurrency}
               />
-            ) : null}
+                    ) : null}
           </>
         ) : (
           <section className="mx-auto w-full max-w-md">
             <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
               <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">
                 {showRegister ? t('Create account') : t('Patient portal login')}
-              </div>
+                            </div>
               <h1 className="mt-4 text-2xl font-semibold text-slate-900">
                 {showRegister ? t('Register for patient portal') : t('Sign in to manage your care')}
               </h1>
@@ -920,8 +945,8 @@ export default function PatientPortal() {
                       required
                       className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
-                  </div>
-                  <div>
+                            </div>
+                    <div>
                     <label htmlFor="password" className="text-sm font-medium text-slate-700">
                       {t('Password')}
                     </label>
@@ -934,7 +959,7 @@ export default function PatientPortal() {
                       required
                       className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
-                  </div>
+                    </div>
                   {loginError ? <p className="text-sm text-rose-600">{loginError}</p> : null}
                   <button
                     type="submit"
@@ -970,56 +995,56 @@ export default function PatientPortal() {
                       required
                       className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
-                  </div>
-                  <div>
+                    </div>
+                    <div>
                     <label htmlFor="register-email" className="text-sm font-medium text-slate-700">
                       {t('Email address')}
-                    </label>
+                          </label>
                     <input
                       id="register-email"
                       name="email"
                       type="email"
                       value={registerForm.email}
                       onChange={handleRegisterChange}
-                      required
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            required
+                            className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                     />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <div>
                       <label htmlFor="register-dob" className="text-sm font-medium text-slate-700">
                         {t('Date of birth')}
-                      </label>
-                      <input
+                            </label>
+                            <input
                         id="register-dob"
                         name="dob"
-                        type="date"
+                              type="date"
                         value={registerForm.dob}
                         onChange={handleRegisterChange}
-                        required
-                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                      />
-                    </div>
-                    <div>
+                              required
+                              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            />
+                          </div>
+                          <div>
                       <label htmlFor="register-contact" className="text-sm font-medium text-slate-700">
                         {t('Contact number')}
-                      </label>
-                      <input
+                            </label>
+                            <input
                         id="register-contact"
                         name="contact"
                         type="tel"
                         value={registerForm.contact}
                         onChange={handleRegisterChange}
-                        required
-                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                      />
-                    </div>
-                  </div>
+                              required
+                              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            />
+                          </div>
+                        </div>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
+                        <div>
                       <label htmlFor="register-insurance" className="text-sm font-medium text-slate-700">
                         {t('Insurance provider (optional)')}
-                      </label>
+                          </label>
                       <input
                         id="register-insurance"
                         name="insurance"
@@ -1027,9 +1052,9 @@ export default function PatientPortal() {
                         value={registerForm.insurance}
                         onChange={handleRegisterChange}
                         placeholder={t('Self-pay')}
-                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                      />
-                    </div>
+                            className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                          />
+                        </div>
                     <div>
                       <label htmlFor="register-drugAllergies" className="text-sm font-medium text-slate-700">
                         {t('Drug allergies (optional)')}
@@ -1043,50 +1068,50 @@ export default function PatientPortal() {
                         placeholder={t('None')}
                         className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                       />
-                    </div>
-                  </div>
-                  <div>
+            </div>
+              </div>
+                <div>
                     <label htmlFor="register-password" className="text-sm font-medium text-slate-700">
                       {t('Password')}
-                    </label>
-                    <input
+                  </label>
+                  <input
                       id="register-password"
                       name="password"
                       type="password"
                       value={registerForm.password}
                       onChange={handleRegisterChange}
-                      required
+                    required
                       minLength={8}
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    />
-                  </div>
-                  <div>
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
+                <div>
                     <label htmlFor="register-confirmPassword" className="text-sm font-medium text-slate-700">
                       {t('Confirm password')}
-                    </label>
-                    <input
+                  </label>
+                  <input
                       id="register-confirmPassword"
                       name="confirmPassword"
-                      type="password"
+                    type="password"
                       value={registerForm.confirmPassword}
                       onChange={handleRegisterChange}
-                      required
+                    required
                       minLength={8}
-                      className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                    />
-                  </div>
+                    className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                  />
+                </div>
                   {registerError ? <p className="text-sm text-rose-600">{registerError}</p> : null}
                   {registerStatus === 'success' ? (
                     <p className="text-sm text-emerald-600">{t('Account created! You can sign in now.')}</p>
                   ) : null}
-                  <button
-                    type="submit"
+                <button
+                  type="submit"
                     disabled={registerStatus === 'loading' || registerStatus === 'success'}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
-                  >
-                    <AvatarIcon className="h-5 w-5" />
+                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-400"
+                >
+                  <AvatarIcon className="h-5 w-5" />
                     {registerStatus === 'loading' ? t('Creating account...') : t('Create account')}
-                  </button>
+                </button>
                   <div className="flex items-center justify-between border-t border-slate-200 pt-4">
                     <p className="text-xs text-slate-500">{t('Already have an account?')}</p>
                     <button
@@ -1100,7 +1125,7 @@ export default function PatientPortal() {
                       {t('Sign in')}
                     </button>
                   </div>
-                </form>
+              </form>
               )}
             </div>
           </section>
@@ -1132,6 +1157,11 @@ function OverviewSection({
             <h2 className="mt-2 text-2xl font-semibold text-slate-900">
               {patientDetails?.name ?? t('Patient profile pending')}
             </h2>
+            {patientDetails?.patientId && (
+              <p className="mt-1 text-xs font-medium text-blue-600">
+                {t('ID: {id}', { id: patientDetails.patientId })}
+              </p>
+            )}
           <p className="mt-2 text-sm text-slate-500">
               {patientDetails
                 ? t('DOB {dob} • {gender}', {

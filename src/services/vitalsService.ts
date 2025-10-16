@@ -3,6 +3,13 @@ import type { CreateVitalsInput } from '../validation/clinical.js';
 
 const prisma = new PrismaClient();
 
+type VitalsResponse = Omit<Vitals, 'temperature' | 'heightCm' | 'weightKg' | 'bmi'> & {
+  temperature: number | null;
+  heightCm: number | null;
+  weightKg: number | null;
+  bmi: number | null;
+};
+
 function calculateBmi(weightKg?: number | null, heightCm?: number | null): number | null {
   if (weightKg == null || heightCm == null || heightCm === 0) {
     return null;
@@ -18,10 +25,20 @@ function calculateBmi(weightKg?: number | null, heightCm?: number | null): numbe
   return Number(bmi.toFixed(2));
 }
 
-export async function createVitals(userId: string, payload: CreateVitalsInput): Promise<Vitals> {
+function serializeVitals(vitals: Vitals): VitalsResponse {
+  return {
+    ...vitals,
+    temperature: vitals.temperature ? Number(vitals.temperature) : null,
+    heightCm: vitals.heightCm ? Number(vitals.heightCm) : null,
+    weightKg: vitals.weightKg ? Number(vitals.weightKg) : null,
+    bmi: vitals.bmi ? Number(vitals.bmi) : null,
+  };
+}
+
+export async function createVitals(userId: string, payload: CreateVitalsInput): Promise<VitalsResponse> {
   const bmi = calculateBmi(payload.weightKg ?? null, payload.heightCm ?? null);
 
-  return prisma.vitals.create({
+  const vitals = await prisma.vitals.create({
     data: {
       visitId: payload.visitId,
       patientId: payload.patientId,
@@ -37,17 +54,21 @@ export async function createVitals(userId: string, payload: CreateVitalsInput): 
       notes: payload.notes ?? null,
     },
   });
+
+  return serializeVitals(vitals);
 }
 
 export async function listVitals(
   patientId: string,
   opts: { limit?: number } = {},
-): Promise<Vitals[]> {
-  return prisma.vitals.findMany({
+): Promise<VitalsResponse[]> {
+  const vitals = await prisma.vitals.findMany({
     where: { patientId },
     orderBy: { recordedAt: 'desc' },
     take: opts.limit ?? 50,
   });
+
+  return vitals.map(serializeVitals);
 }
 
 export { calculateBmi };
