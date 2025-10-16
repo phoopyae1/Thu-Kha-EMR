@@ -541,10 +541,67 @@ addPath('/health', 'get', {
   responses: { '200': { description: 'OK' } }
 });
 
-addPath('/auth/register', 'post', {
-  summary: 'Register user',
+addPath('/patient-portal/register', 'post', {
+  summary: 'Register patient portal account',
   security: [],
-  responses: { '201': { description: 'Created' } }
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['name', 'email', 'password', 'dob', 'contact'],
+          properties: {
+            name: { type: 'string' },
+            email: { type: 'string', format: 'email' },
+            password: { type: 'string', minLength: 8 },
+            dob: { type: 'string', format: 'date' },
+            contact: { type: 'string' },
+            insurance: { type: 'string', nullable: true },
+            drugAllergies: { type: 'string', nullable: true },
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    '201': {
+      description: 'Created',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              message: { type: 'string' },
+              account: {
+                type: 'object',
+                properties: {
+                  accountId: { type: 'string', format: 'uuid' },
+                  patientId: { type: 'string', format: 'uuid' },
+                  email: { type: 'string', format: 'email' },
+                  status: { type: 'string' },
+                  lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
+                  createdAt: { type: 'string', format: 'date-time' },
+                  updatedAt: { type: 'string', format: 'date-time' },
+                },
+              },
+              patient: {
+                type: 'object',
+                properties: {
+                  patientId: { type: 'string', format: 'uuid' },
+                  name: { type: 'string' },
+                  dob: { type: 'string', format: 'date' },
+                  contact: { type: 'string', nullable: true },
+                  insurance: { type: 'string', nullable: true },
+                  drugAllergies: { type: 'string', nullable: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
 });
 
 addPath('/auth/login', 'post', {

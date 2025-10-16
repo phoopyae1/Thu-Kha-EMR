@@ -23,6 +23,7 @@ import {
   fetchSpecialists,
   fetchMedications,
   loginPatient,
+  registerPatientPortalAccount,
   type SpecialistResponse,
 } from '../api/patientPortal';
 import brillarLogo from '../public/brillar.avif';
@@ -39,6 +40,8 @@ interface RegisterForm {
   confirmPassword: string;
   dob: string;
   contact: string;
+  insurance: string;
+  drugAllergies: string;
 }
 
 interface AppointmentForm {
@@ -266,7 +269,16 @@ function calculateAge(dob?: string | null) {
 }
 
 const defaultLoginForm: LoginForm = { email: 'patient@example.com', password: '' };
-const defaultRegisterForm: RegisterForm = { name: '', email: '', password: '', confirmPassword: '', dob: '', contact: '' };
+const defaultRegisterForm: RegisterForm = {
+  name: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  dob: '',
+  contact: '',
+  insurance: '',
+  drugAllergies: '',
+};
 const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: '', reason: '' };
 
 export default function PatientPortal() {
@@ -417,15 +429,29 @@ export default function PatientPortal() {
     setRegisterStatus('loading');
 
     try {
-      // TODO: Call actual registration API when available
-      // For now, show success message
+      const payload = {
+        name: registerForm.name.trim(),
+        email: registerForm.email.trim(),
+        password: registerForm.password,
+        dob: registerForm.dob,
+        contact: registerForm.contact.trim(),
+        ...(registerForm.insurance.trim()
+          ? { insurance: registerForm.insurance.trim() }
+          : {}),
+        ...(registerForm.drugAllergies.trim()
+          ? { drugAllergies: registerForm.drugAllergies.trim() }
+          : {}),
+      };
+
+      const response = await registerPatientPortalAccount(payload);
+
       setRegisterStatus('success');
-      showToast({ 
-        type: 'success', 
-        title: t('Account created successfully'), 
-        message: t('Please contact your clinic to activate your account.') 
+      showToast({
+        type: 'success',
+        title: t('Account created successfully'),
+        message: response?.message || t('You can now sign in to your patient portal account.'),
       });
-      
+
       // Reset form and switch to login
       setTimeout(() => {
         setRegisterForm(defaultRegisterForm);
@@ -434,7 +460,17 @@ export default function PatientPortal() {
       }, 2000);
     } catch (error) {
       setRegisterStatus('idle');
-      const message = error instanceof Error ? error.message : t('Unable to create account. Please try again.');
+      let message = t('Unable to create account. Please try again.');
+      if (error instanceof Error) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed && typeof parsed.error === 'string') {
+            message = parsed.error;
+          }
+        } catch {
+          message = error.message;
+        }
+      }
       setRegisterError(message);
       showToast({ type: 'error', title: t('Registration failed'), message });
     }
@@ -978,6 +1014,36 @@ export default function PatientPortal() {
                       />
                     </div>
                   </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label htmlFor="register-insurance" className="text-sm font-medium text-slate-700">
+                        {t('Insurance provider (optional)')}
+                      </label>
+                      <input
+                        id="register-insurance"
+                        name="insurance"
+                        type="text"
+                        value={registerForm.insurance}
+                        onChange={handleRegisterChange}
+                        placeholder={t('Self-pay')}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="register-drugAllergies" className="text-sm font-medium text-slate-700">
+                        {t('Drug allergies (optional)')}
+                      </label>
+                      <input
+                        id="register-drugAllergies"
+                        name="drugAllergies"
+                        type="text"
+                        value={registerForm.drugAllergies}
+                        onChange={handleRegisterChange}
+                        placeholder={t('None')}
+                        className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                      />
+                    </div>
+                  </div>
                   <div>
                     <label htmlFor="register-password" className="text-sm font-medium text-slate-700">
                       {t('Password')}
@@ -1010,7 +1076,7 @@ export default function PatientPortal() {
                   </div>
                   {registerError ? <p className="text-sm text-rose-600">{registerError}</p> : null}
                   {registerStatus === 'success' ? (
-                    <p className="text-sm text-emerald-600">{t('Account created! Redirecting to login...')}</p>
+                    <p className="text-sm text-emerald-600">{t('Account created! You can sign in now.')}</p>
                   ) : null}
                   <button
                     type="submit"

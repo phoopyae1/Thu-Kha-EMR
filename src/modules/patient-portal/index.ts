@@ -41,6 +41,16 @@ const portalAccountUpdateSchema = z.object({
   status: z.enum(['active', 'inactive']).optional(),
 });
 
+const portalAccountRegisterSchema = z.object({
+  name: z.string().trim().min(1),
+  email: z.string().trim().email(),
+  password: z.string().min(8),
+  dob: z.coerce.date(),
+  contact: z.string().trim().min(1),
+  insurance: z.string().trim().min(1).optional(),
+  drugAllergies: z.string().trim().min(1).optional(),
+});
+
 staffRouter.use(requireAuth);
 staffRouter.use(requireRole('AdminAssistant', 'ITAdmin'));
 
@@ -177,6 +187,103 @@ staffRouter.patch(
 );
 
 router.use('/accounts', staffRouter);
+
+router.post('/register', async (req: Request, res: Response) => {
+  const parsed = portalAccountRegisterSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+
+  const { name, email, password, dob, contact, insurance, drugAllergies } = parsed.data;
+  const normalizedEmail = email.toLowerCase();
+
+  const existingAccount = await prisma.patientPortalAccount.findUnique({
+    where: { email: normalizedEmail },
+    select: { accountId: true },
+  });
+
+  if (existingAccount) {
+    return res.status(409).json({ error: 'An account already exists for that email address' });
+  }
+
+  const existingPatient = await prisma.patient.findFirst({
+    where: {
+      OR: [
+        { AND: [{ dob }, { name: { equals: name, mode: 'insensitive' } }] },
+        { AND: [{ dob }, { contact: { equals: contact, mode: 'insensitive' } }] },
+      ],
+    },
+    select: {
+      patientId: true,
+      contact: true,
+      insurance: true,
+      drugAllergies: true,
+      portalAccount: { select: { accountId: true } },
+    },
+  });
+
+  if (existingPatient?.portalAccount) {
+    return res.status(409).json({ error: 'A portal account already exists for this patient' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  const { patient, account } = await prisma.$transaction(async (tx) => {
+    const patientRecord = existingPatient
+      ? await tx.patient.update({
+          where: { patientId: existingPatient.patientId },
+          data: {
+            contact,
+            ...(typeof insurance === 'string' ? { insurance } : {}),
+            ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
+          },
+          select: {
+            patientId: true,
+            name: true,
+            dob: true,
+            contact: true,
+            insurance: true,
+            drugAllergies: true,
+          },
+        })
+      : await tx.patient.create({
+          data: {
+            name,
+            dob,
+            gender: 'M',
+            contact,
+            ...(typeof insurance === 'string' ? { insurance } : {}),
+            ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
+          },
+          select: {
+            patientId: true,
+            name: true,
+            dob: true,
+            contact: true,
+            insurance: true,
+            drugAllergies: true,
+          },
+        });
+
+    const createdAccount = await tx.patientPortalAccount.create({
+      data: {
+        patientId: patientRecord.patientId,
+        email: normalizedEmail,
+        passwordHash,
+        status: 'active',
+      },
+      select: portalAccountSelect,
+    });
+
+    return { patient: patientRecord, account: createdAccount };
+  });
+
+  res.status(201).json({
+    message: 'Account created. You can now sign in with your email and password.',
+    account,
+    patient,
+  });
+});
 
 // Helper functions for JWT
 function createAccessToken(account: { accountId: string; patientId: string; email: string }) {
