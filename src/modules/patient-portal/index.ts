@@ -47,6 +47,8 @@ const portalAccountRegisterSchema = z.object({
   password: z.string().min(8),
   dob: z.coerce.date(),
   contact: z.string().trim().min(1),
+  insurance: z.string().trim().min(1).optional(),
+  drugAllergies: z.string().trim().min(1).optional(),
 });
 
 staffRouter.use(requireAuth);
@@ -192,7 +194,7 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const { name, email, password, dob, contact } = parsed.data;
+  const { name, email, password, dob, contact, insurance, drugAllergies } = parsed.data;
   const normalizedEmail = email.toLowerCase();
 
   const existingAccount = await prisma.patientPortalAccount.findUnique({
@@ -214,6 +216,8 @@ router.post('/register', async (req: Request, res: Response) => {
     select: {
       patientId: true,
       contact: true,
+      insurance: true,
+      drugAllergies: true,
       portalAccount: { select: { accountId: true } },
     },
   });
@@ -228,12 +232,19 @@ router.post('/register', async (req: Request, res: Response) => {
     const patientRecord = existingPatient
       ? await tx.patient.update({
           where: { patientId: existingPatient.patientId },
+          data: {
+            contact,
+            ...(typeof insurance === 'string' ? { insurance } : {}),
+            ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
+          },
           data: { contact },
           select: {
             patientId: true,
             name: true,
             dob: true,
             contact: true,
+            insurance: true,
+            drugAllergies: true,
           },
         })
       : await tx.patient.create({
@@ -242,12 +253,16 @@ router.post('/register', async (req: Request, res: Response) => {
             dob,
             gender: 'M',
             contact,
+            ...(typeof insurance === 'string' ? { insurance } : {}),
+            ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
           },
           select: {
             patientId: true,
             name: true,
             dob: true,
             contact: true,
+            insurance: true,
+            drugAllergies: true,
           },
         });
 

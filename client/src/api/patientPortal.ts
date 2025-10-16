@@ -14,6 +14,8 @@ export interface PatientPortalRegisterInput {
   password: string;
   dob: string;
   contact: string;
+  insurance?: string;
+  drugAllergies?: string;
 }
 
 export interface PatientPortalRegisterResponse {
@@ -32,6 +34,8 @@ export interface PatientPortalRegisterResponse {
     name: string;
     dob: string;
     contact: string | null;
+    insurance: string | null;
+    drugAllergies: string | null;
   };
 }
 
