@@ -237,6 +237,7 @@ router.post('/register', async (req: Request, res: Response) => {
             ...(typeof insurance === 'string' ? { insurance } : {}),
             ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
           },
+          data: { contact },
           select: {
             patientId: true,
             name: true,
@@ -270,7 +271,7 @@ router.post('/register', async (req: Request, res: Response) => {
         patientId: patientRecord.patientId,
         email: normalizedEmail,
         passwordHash,
-        status: 'active',
+        status: 'inactive',
       },
       select: portalAccountSelect,
     });
@@ -279,7 +280,8 @@ router.post('/register', async (req: Request, res: Response) => {
   });
 
   res.status(201).json({
-    message: 'Account created. You can now sign in with your email and password.',
+    message:
+      'Account created. A clinic team member must activate your account before you can sign in.',
     account,
     patient,
   });

@@ -450,6 +450,7 @@ export default function PatientPortal() {
         type: 'success',
         title: t('Account created successfully'),
         message: response?.message || t('You can now sign in to your patient portal account.'),
+ 
       });
 
       // Reset form and switch to login
