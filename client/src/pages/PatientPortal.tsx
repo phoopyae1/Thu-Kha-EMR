@@ -23,6 +23,7 @@ import {
   fetchSpecialists,
   fetchMedications,
   loginPatient,
+  registerPatientPortalAccount,
   type SpecialistResponse,
 } from '../api/patientPortal';
 import brillarLogo from '../public/brillar.avif';
@@ -417,15 +418,23 @@ export default function PatientPortal() {
     setRegisterStatus('loading');
 
     try {
-      // TODO: Call actual registration API when available
-      // For now, show success message
+      const payload = {
+        name: registerForm.name.trim(),
+        email: registerForm.email.trim(),
+        password: registerForm.password,
+        dob: registerForm.dob,
+        contact: registerForm.contact.trim(),
+      };
+
+      const response = await registerPatientPortalAccount(payload);
+
       setRegisterStatus('success');
-      showToast({ 
-        type: 'success', 
-        title: t('Account created successfully'), 
-        message: t('Please contact your clinic to activate your account.') 
+      showToast({
+        type: 'success',
+        title: t('Account created successfully'),
+        message: response?.message || t('Please contact your clinic to activate your account.'),
       });
-      
+
       // Reset form and switch to login
       setTimeout(() => {
         setRegisterForm(defaultRegisterForm);
@@ -434,7 +443,17 @@ export default function PatientPortal() {
       }, 2000);
     } catch (error) {
       setRegisterStatus('idle');
-      const message = error instanceof Error ? error.message : t('Unable to create account. Please try again.');
+      let message = t('Unable to create account. Please try again.');
+      if (error instanceof Error) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed && typeof parsed.error === 'string') {
+            message = parsed.error;
+          }
+        } catch {
+          message = error.message;
+        }
+      }
       setRegisterError(message);
       showToast({ type: 'error', title: t('Registration failed'), message });
     }

@@ -8,6 +8,33 @@ export interface PatientLoginResponse {
   } | null;
 }
 
+export interface PatientPortalRegisterInput {
+  name: string;
+  email: string;
+  password: string;
+  dob: string;
+  contact: string;
+}
+
+export interface PatientPortalRegisterResponse {
+  message: string;
+  account: {
+    accountId: string;
+    patientId: string;
+    email: string;
+    status: string;
+    lastLoginAt: string | null;
+    createdAt: string;
+    updatedAt: string;
+  };
+  patient: {
+    patientId: string;
+    name: string;
+    dob: string;
+    contact: string | null;
+  };
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -25,6 +52,16 @@ export async function loginPatient(email: string, password: string): Promise<Pat
   })) as PatientLoginResponse;
 
   return result;
+}
+
+export async function registerPatientPortalAccount(
+  input: PatientPortalRegisterInput,
+): Promise<PatientPortalRegisterResponse> {
+  return request('/api/patient-portal/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  }) as Promise<PatientPortalRegisterResponse>;
 }
 
 function authFetch(path: string, token: string, init: RequestInit = {}) {

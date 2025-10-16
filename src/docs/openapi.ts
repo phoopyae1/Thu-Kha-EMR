@@ -541,8 +541,8 @@ addPath('/health', 'get', {
   responses: { '200': { description: 'OK' } }
 });
 
-addPath('/auth/register', 'post', {
-  summary: 'Register user',
+addPath('/patient-portal/register', 'post', {
+  summary: 'Register patient portal account',
   security: [],
   responses: { '201': { description: 'Created' } }
 });
