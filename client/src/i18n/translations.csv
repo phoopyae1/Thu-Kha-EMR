@@ -191,6 +191,12 @@ Sign-in failed,Sign-in failed,ဝင်ရောက်မှု မအောင�
 Portal data unavailable,Portal data unavailable,ပေါ်တယ် ဒေတာ မရနိုင်ပါ
 Appointment request failed,Appointment request failed,ချိန်းစာရင်း တောင်းဆိုမှု မအောင်မြင်ပါ
 Dismiss,Dismiss,ပယ်ဖျက်ပါ
+Appointment reminder,Appointment reminder,Appointment reminder
+You have an appointment today with {name}.,You have an appointment today with {name}.,You have an appointment today with {name}.
+Please arrive by {time} at {location}.,Please arrive by {time} at {location}.,Please arrive by {time} at {location}.
+Dismiss reminder,Dismiss reminder,Dismiss reminder
+your care team,your care team,your care team
+the clinic,the clinic,the clinic
 Department pending,Department pending,ဌာန မသတ်မှတ်ရသေးပါ
 None reported,None reported,တင်သွင်းထားသော မှတ်တမ်းမရှိပါ
 {count} years old,{count} years old,အသက် {count} နှစ်

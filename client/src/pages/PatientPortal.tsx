@@ -309,6 +309,8 @@ export default function PatientPortal() {
   const [medications, setMedications] = useState<any[]>([]);
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [todaysAppointment, setTodaysAppointment] = useState<any | null>(null);
+  const [reminderDismissed, setReminderDismissed] = useState(false);
 
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(defaultAppointmentForm);
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'success'>('idle');
@@ -510,10 +512,32 @@ export default function PatientPortal() {
       setPayments(paymentData);
       setMedications(medicationData);
       setPrescriptions(prescriptionData);
+
+      const appointmentToday = (appointmentData?.upcoming ?? []).find((appointment: any) => {
+        const appointmentDate = new Date(appointment.date);
+        if (Number.isNaN(appointmentDate.getTime())) {
+          return false;
+        }
+        const now = new Date();
+        return (
+          appointmentDate.getFullYear() === now.getFullYear() &&
+          appointmentDate.getMonth() === now.getMonth() &&
+          appointmentDate.getDate() === now.getDate()
+        );
+      });
+
+      if (appointmentToday) {
+        setTodaysAppointment(appointmentToday);
+        setReminderDismissed(false);
+      } else {
+        setTodaysAppointment(null);
+      }
       setPortalLoading(false);
       setAppointmentStatus('idle');
     } catch (error) {
       setPortalLoading(false);
+      setTodaysAppointment(null);
+      setReminderDismissed(false);
       let message = t('Unable to load patient data.');
       if (error instanceof Error) {
         try {
@@ -603,6 +627,8 @@ export default function PatientPortal() {
     setAppointmentForm(defaultAppointmentForm);
     setAppointmentStatus('idle');
     setReceiptInvoice(null);
+    setTodaysAppointment(null);
+    setReminderDismissed(false);
   };
 
   const invoiceSummary = profile?.invoiceSummary;
@@ -676,6 +702,10 @@ export default function PatientPortal() {
 
   const latestLab = labs[0] ?? null;
   const latestRadiology = radiologyReports[0] ?? null;
+  const showAppointmentReminder = todaysAppointment && !reminderDismissed;
+  const reminderDoctorName = todaysAppointment?.doctor?.name?.trim() || t('your care team');
+  const reminderLocation =
+    todaysAppointment?.location?.trim() || todaysAppointment?.department?.trim() || t('the clinic');
 
   const activeContent = (() => {
     switch (activeTab) {
@@ -865,6 +895,38 @@ export default function PatientPortal() {
                 </div>
               </div>
             </section>
+
+            {showAppointmentReminder ? (
+              <section
+                className="mt-6 flex flex-col gap-3 rounded-3xl border border-amber-200 bg-amber-50 p-6 text-amber-800 shadow-sm"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
+                      {t('Appointment reminder')}
+                    </p>
+                    <h3 className="mt-1 text-lg font-semibold text-amber-900">
+                      {t('You have an appointment today with {name}.', { name: reminderDoctorName })}
+                    </h3>
+                    <p className="mt-2 text-sm text-amber-800">
+                      {t('Please arrive by {time} at {location}.', {
+                        time: formatMinutes(todaysAppointment.startTimeMin ?? 0),
+                        location: reminderLocation,
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReminderDismissed(true)}
+                    className="inline-flex items-center justify-center rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100"
+                  >
+                    {t('Dismiss reminder')}
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             <div className="mt-10 flex flex-col gap-8 md:flex-row">
               <aside className="hidden md:block md:w-64 lg:w-72">
