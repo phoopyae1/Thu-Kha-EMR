@@ -858,6 +858,84 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
   res.json(formatted);
 });
 
+router.get('/prescriptions/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  const prescriptions = await prisma.prescription.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 25,
+    select: {
+      prescriptionId: true,
+      status: true,
+      notes: true,
+      createdAt: true,
+      updatedAt: true,
+      doctor: {
+        select: {
+          doctorId: true,
+          name: true,
+          department: true,
+        },
+      },
+      visit: {
+        select: {
+          visitId: true,
+          visitDate: true,
+          department: true,
+        },
+      },
+      items: {
+        select: {
+          itemId: true,
+          dose: true,
+          route: true,
+          frequency: true,
+          durationDays: true,
+          quantityPrescribed: true,
+          prn: true,
+          notes: true,
+          drug: {
+            select: {
+              drugId: true,
+              name: true,
+              strength: true,
+              form: true,
+            },
+          },
+        },
+      },
+      dispenses: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          dispenseId: true,
+          status: true,
+          dispensedAt: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  res.json(
+    prescriptions.map((prescription) => ({
+      ...prescription,
+      items: prescription.items.map((item) => ({
+        ...item,
+        drug: item.drug
+          ? {
+              ...item.drug,
+            }
+          : null,
+      })),
+    })),
+  );
+});
+
 router.get('/medications/:patientId', async (req: Request, res: Response) => {
   const { patientId } = req.params;
 
