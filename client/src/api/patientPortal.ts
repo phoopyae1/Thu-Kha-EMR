@@ -177,3 +177,7 @@ export async function fetchPayments(token: string, patientId: string) {
 export async function fetchMedications(token: string, patientId: string) {
   return authFetch(`/api/patient-portal/medications/${patientId}`, token);
 }
+
+export async function fetchPrescriptions(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/prescriptions/${patientId}`, token);
+}
