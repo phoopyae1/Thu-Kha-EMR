@@ -230,7 +230,7 @@ Dispensed {date},Dispensed {date},Dispensed {date}
 Not yet dispensed,Not yet dispensed,Not yet dispensed
 Fulfilment status: {status},Fulfilment status: {status},Fulfilment status: {status}
 Items ordered,Items ordered,Items ordered
-Medication,Medication,Medication
+Prescription item,Prescription item,Prescription item
 Duration: {days} days,Duration: {days} days,Duration: {days} days
 Quantity prescribed: {quantity},Quantity prescribed: {quantity},Quantity prescribed: {quantity}
 As needed,As needed,As needed
@@ -240,3 +240,15 @@ Pending,Pending,Pending
 Ready,Ready,Ready
 Partial,Partial,Partial
 Linked visit {date},Linked visit {date},Linked visit {date}
+Prescription ready to share,Prescription ready to share,Prescription ready to share
+Order details copied. Share with the hospital or client to arrange medication.,Order details copied. Share with the hospital or client to arrange medication.,Order details copied. Share with the hospital or client to arrange medication.
+Unable to copy prescription,Unable to copy prescription,Unable to copy prescription
+Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.
+Order medication,Order medication,Order medication
+View details,View details,View details
+Hide details,Hide details,Hide details
+Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.
+Prescription history,Prescription history,Prescription history
+No prescription history recorded yet.,No prescription history recorded yet.,No prescription history recorded yet.
+Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.
+No active prescriptions recorded.,No active prescriptions recorded.,No active prescriptions recorded.
