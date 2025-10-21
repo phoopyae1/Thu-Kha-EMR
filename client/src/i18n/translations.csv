@@ -90,6 +90,9 @@ Update Visit,Update Visit,လည်ပတ်မှုကို အသစ်ပ�
 Save Visit & Complete,Save Visit & Complete,လည်ပတ်မှုကို သိမ်းပြီး ပြီးမြောက်စေပါ
 Inviting...,Inviting...,ဖိတ်ခေါ်နေသည်...
 Invite Patient,Invite Patient,လူနာကို ဖိတ်ခေါ်ပါ
+Check In,Check In,စစ်ဆေးဖြည့်ပါ
+Checking In...,Checking In...,စစ်ဆေးဖြည့်နေသည်...
+{name} has been checked in.,{name} has been checked in.,{name} ကို စစ်ဆေးဖြည့်ပြီးပါပြီ။
 Loading visit form...,Loading visit form...,လည်ပတ် ဖောင်ကို တင်နေပါသည်...
 Select a patient from the queue to begin charting their visit.,Select a patient from the queue to begin charting their visit.,လည်ပတ် မှတ်တမ်းရေးခြင်းစတင်ရန် စာရင်းစဉ်မှ လူနာတစ်ဦးကို ရွေးချယ်ပါ။
 Scheduled,Scheduled,ချိန်းထားပြီး

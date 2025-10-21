@@ -1484,9 +1484,17 @@ function DoctorQueueDashboard() {
     setSuccess(null);
     setError(null);
     try {
-      await patchStatus(appointment.appointmentId, { status: 'InProgress' });
+      // Determine next status based on current status
+      // Scheduled → CheckedIn → InProgress
+      const nextStatus = appointment.status === 'Scheduled' ? 'CheckedIn' : 'InProgress';
+      await patchStatus(appointment.appointmentId, { status: nextStatus });
       await loadQueue();
-      setSuccess(t('Invited {name} to the consultation room.', { name: appointment.patient.name }));
+      
+      const successMessage = nextStatus === 'CheckedIn'
+        ? t('{name} has been checked in.', { name: appointment.patient.name })
+        : t('Invited {name} to the consultation room.', { name: appointment.patient.name });
+      
+      setSuccess(successMessage);
       setSelectedId(appointment.appointmentId);
     } catch (err) {
       setError(parseErrorMessage(err, t('Unable to update appointment status.')));
@@ -1747,8 +1755,8 @@ function DoctorQueueDashboard() {
                                 }`}
                               >
                                 {invitingId === selected.appointmentId
-                                  ? t('Inviting...')
-                                  : t('Invite Patient')}
+                                  ? (selected.status === 'Scheduled' ? t('Checking In...') : t('Inviting...'))
+                                  : (selected.status === 'Scheduled' ? t('Check In') : t('Invite Patient'))}
                               </button>
                             )
                           : null
