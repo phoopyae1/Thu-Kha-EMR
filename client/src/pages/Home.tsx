@@ -1050,13 +1050,13 @@ function TeamDashboard({ role }: { role?: string }) {
       footnote: appointmentSummary,
     },
     medications: {
-      label: t('Medications'),
-      heading: t('Dispense medications with confidence'),
-      description: t('Monitor prescriptions waiting in the queue and confirm inventory before pickup.'),
+      label: t('Prescriptions'),
+      heading: t('Coordinate prescription fulfillment'),
+      description: t('Review prescription orders waiting in the queue and confirm stock for hospital or client delivery.'),
       icon: PharmacyIcon,
       primaryAction: { to: '/pharmacy/queue', label: t('Go to pharmacy queue') },
       secondaryAction: { to: '/pharmacy/inventory', label: t('Check inventory') },
-      footnote: t('Stay ahead of refill requests and highlight items running low in stock.'),
+      footnote: t('Keep pharmacy teams informed of outstanding medication orders and inventory gaps.'),
     },
     'lab-profile': {
       label: t('Lab Profile'),

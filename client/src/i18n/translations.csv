@@ -78,6 +78,12 @@ Current patient,Current patient,လက်ရှိ လူနာ
 No visit reason recorded.,No visit reason recorded.,လည်ပတ်ရသည့် အကြောင်းရင်း မမှတ်တမ်းတင်ထားပါ။
 Room assignment pending,Room assignment pending,အခန်းခွဲ ထုတ်ပြန်ရန် စောင့်ဆိုင်းဆဲ
 Scheduled time,Scheduled time,ချိန်းချိန်
+Add Prescription,Add Prescription,Add Prescription
+Prescription Name,Prescription Name,Prescription Name
+No prescriptions documented.,No prescriptions documented.,No prescriptions documented.
+Coordinate prescription fulfillment,Coordinate prescription fulfillment,Coordinate prescription fulfillment
+Review prescription orders waiting in the queue and confirm stock for hospital or client delivery.,Review prescription orders waiting in the queue and confirm stock for hospital or client delivery.,Review prescription orders waiting in the queue and confirm stock for hospital or client delivery.
+Keep pharmacy teams informed of outstanding medication orders and inventory gaps.,Keep pharmacy teams informed of outstanding medication orders and inventory gaps.,Keep pharmacy teams informed of outstanding medication orders and inventory gaps.
 Status,Status,အခြေအနေ
 Visit documentation,Visit documentation,လည်ပတ် မှတ်တမ်းရေးရာ
 Update Visit,Update Visit,လည်ပတ်မှုကို အသစ်ပြင်ပါ
