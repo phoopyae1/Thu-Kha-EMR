@@ -341,8 +341,8 @@ export default function PatientPortal() {
       },
       {
         id: 'medications' as const,
-        label: t('Medications'),
-        description: t('Therapies, immunisations, and instructions.'),
+        label: t('Prescriptions'),
+        description: t('Review prescriptions, immunisations, and pharmacy orders.'),
         icon: PharmacyIcon,
       },
       {
@@ -364,6 +364,67 @@ export default function PatientPortal() {
   const showToast = useCallback((nextToast: ToastState) => {
     setToast(nextToast);
   }, []);
+
+  const handleMedicationOrder = useCallback(
+    async (prescription: any) => {
+      if (!prescription) return;
+
+      const rxCode = prescription.prescriptionId ? prescription.prescriptionId.slice(0, 8).toUpperCase() : '';
+      const summaryLines: string[] = [];
+
+      if (rxCode) {
+        summaryLines.push(t('Rx #{id}', { id: rxCode }));
+      }
+
+      summaryLines.push(t('Items ordered'));
+
+      if (Array.isArray(prescription.items) && prescription.items.length > 0) {
+        prescription.items.forEach((item: any, index: number) => {
+          const drugName = item.drug
+            ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
+            : t('Prescription item');
+          const instructionParts = [item.dose, item.route, item.frequency]
+            .filter((part) => part && String(part).trim().length > 0)
+            .join(' • ');
+          const orderDetails = [
+            `${index + 1}. ${drugName}`,
+            instructionParts ? `   ${instructionParts}` : null,
+            item.durationDays ? `   ${t('Duration: {days} days', { days: item.durationDays })}` : null,
+            item.quantityPrescribed
+              ? `   ${t('Quantity prescribed: {quantity}', { quantity: item.quantityPrescribed })}`
+              : null,
+            item.prn ? `   ${t('As needed')}` : null,
+            item.notes ? `   ${item.notes}` : null,
+          ].filter(Boolean);
+
+          summaryLines.push(orderDetails.join('\n'));
+        });
+      }
+
+      const summary = summaryLines.join('\n');
+
+      try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(summary);
+          showToast({
+            type: 'success',
+            title: t('Prescription ready to share'),
+            message: t('Order details copied. Share with the hospital or client to arrange medication.'),
+          });
+        } else {
+          throw new Error('clipboard-unavailable');
+        }
+      } catch (error) {
+        console.error('Unable to copy prescription details', error);
+        showToast({
+          type: 'error',
+          title: t('Unable to copy prescription'),
+          message: t('Please copy the details manually from the prescription view.'),
+        });
+      }
+    },
+    [showToast, t],
+  );
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -744,6 +805,7 @@ export default function PatientPortal() {
             immunizations={immunizations}
             medications={medications}
             prescriptions={prescriptions}
+            onOrderMedication={handleMedicationOrder}
           />
         );
       case 'labs':
@@ -1573,7 +1635,7 @@ function AppointmentsSection({
   );
 }
 
-function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions }: any) {
+function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, onOrderMedication }: any) {
   const prescriptionStatusLabels: Record<string, string> = {
     PENDING: t('Pending'),
     PARTIAL: t('Partially dispensed'),
@@ -1589,6 +1651,15 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
   };
 
   const formatStatus = (status: string, dictionary: Record<string, string>) => dictionary[status] ?? status;
+
+  const [expandedPrescriptions, setExpandedPrescriptions] = useState<Record<string, boolean>>({});
+
+  const togglePrescriptionDetails = (prescriptionId: string) => {
+    setExpandedPrescriptions((previous) => ({
+      ...previous,
+      [prescriptionId]: !previous[prescriptionId],
+    }));
+  };
 
   return (
     <div className="space-y-8">
@@ -1613,6 +1684,9 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
           <h3 className="text-lg font-semibold text-slate-900">{t('Prescriptions')}</h3>
           <PharmacyIcon className="h-5 w-5 text-blue-600" />
         </div>
+        <p className="mt-2 text-sm text-slate-500">
+          {t('Select a prescription to review details and share with our pharmacy.')}
+        </p>
         {prescriptions.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">{t('No prescriptions have been issued yet.')}</p>
         ) : (
@@ -1637,6 +1711,7 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                 : null;
 
               const rxCode = prescription.prescriptionId.slice(0, 8).toUpperCase();
+              const isExpanded = Boolean(expandedPrescriptions[prescription.prescriptionId]);
 
               return (
                 <li key={prescription.prescriptionId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
@@ -1662,10 +1737,27 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                       <div>{dispenseMessage}</div>
                     </div>
                   </div>
-                  {prescription.notes ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOrderMedication?.(prescription)}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      <PharmacyIcon className="h-4 w-4" />
+                      {t('Order medication')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePrescriptionDetails(prescription.prescriptionId)}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                    >
+                      {isExpanded ? t('Hide details') : t('View details')}
+                    </button>
+                  </div>
+                  {isExpanded && prescription.notes ? (
                     <p className="mt-2 text-xs text-slate-500">{prescription.notes}</p>
                   ) : null}
-                  {prescription.items && prescription.items.length > 0 ? (
+                  {isExpanded && prescription.items && prescription.items.length > 0 ? (
                     <div className="mt-3">
                       <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                         {t('Items ordered')}
@@ -1674,7 +1766,7 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                         {prescription.items.map((item: any) => {
                           const drugName = item.drug
                             ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
-                            : t('Medication');
+                            : t('Prescription item');
                           const instructionParts = [item.dose, item.route, item.frequency]
                             .filter((part) => part && String(part).trim().length > 0)
                             .join(' • ');
@@ -1718,11 +1810,11 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">{t('Medication history')}</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t('Prescription history')}</h3>
           <PharmacyIcon className="h-5 w-5 text-blue-600" />
         </div>
         {medications.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">{t('No medications have been recorded yet.')}</p>
+          <p className="mt-4 text-sm text-slate-500">{t('No prescription history recorded yet.')}</p>
         ) : (
           <ul className="mt-4 space-y-3 text-sm text-slate-600">
             {medications.map((medication: any) => (
@@ -1802,9 +1894,9 @@ function LabsSection({ t, labs, medications, immunizations, radiologyReports }: 
               )}
             </div>
             <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
-              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{t('Medications')}</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-600">{t('Prescriptions')}</div>
               {medications.length === 0 ? (
-                <p className="mt-2 text-xs text-emerald-700">{t('No active medications recorded.')}</p>
+                <p className="mt-2 text-xs text-emerald-700">{t('No active prescriptions recorded.')}</p>
               ) : (
                 <ul className="mt-2 space-y-2 text-xs text-emerald-700">
                 {medications.slice(0, 3).map((medication: any) => (

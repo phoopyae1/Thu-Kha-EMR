@@ -316,8 +316,8 @@ export default function VisitDetail() {
           <section className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Medications</h3>
-                <p className="mt-1 text-sm text-gray-600">Therapies prescribed during the encounter.</p>
+                <h3 className="text-lg font-semibold text-gray-900">Prescriptions</h3>
+                <p className="mt-1 text-sm text-gray-600">Orders written for pharmacy fulfillment during the encounter.</p>
               </div>
             </div>
             {visit.medications.length > 0 ? (
@@ -338,7 +338,7 @@ export default function VisitDetail() {
                 ))}
               </div>
             ) : (
-              <p className="mt-4 text-sm text-gray-500">No medications recorded for this visit.</p>
+              <p className="mt-4 text-sm text-gray-500">No prescriptions recorded for this visit.</p>
             )}
           </section>
 

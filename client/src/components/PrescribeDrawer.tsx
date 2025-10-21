@@ -193,7 +193,7 @@ export default function PrescribeDrawer({ visitId, patientId, doctorOrders }: Pr
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Prescribe (MVP)</h2>
           <p className="text-xs text-gray-500">
-            Match the physician&rsquo;s documented medications with in-stock medicines to queue them for dispensing.
+            Match the physician&rsquo;s prescriptions with in-stock medicines to queue medication orders for hospital or client delivery.
           </p>
         </div>
         <button
@@ -206,7 +206,7 @@ export default function PrescribeDrawer({ visitId, patientId, doctorOrders }: Pr
       </div>
       {doctorOrders.length === 0 && (
         <p className="mt-3 text-xs text-gray-500">
-          No physician medications were recorded for this visit. Add custom lines below to queue a prescription.
+          No physician prescriptions were recorded for this visit. Add custom lines below to queue a prescription order.
         </p>
       )}
       <div className="mt-4 space-y-4">

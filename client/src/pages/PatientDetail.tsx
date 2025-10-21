@@ -590,7 +590,7 @@ export default function PatientDetail() {
                         </div>
 
                         <div>
-                          <div className="text-sm font-semibold text-gray-900">{t('Medications')}</div>
+                          <div className="text-sm font-semibold text-gray-900">{t('Prescriptions')}</div>
                           {medications.length > 0 ? (
                             <div className="mt-2 flex flex-wrap gap-2">
                               {medications.map((med, index) => {
@@ -606,7 +606,7 @@ export default function PatientDetail() {
                               })}
                             </div>
                           ) : (
-                            <p className="mt-2 text-sm text-gray-500">{t('No medications documented.')}</p>
+                            <p className="mt-2 text-sm text-gray-500">{t('No prescriptions documented.')}</p>
                           )}
                         </div>
                       </div>
