@@ -5,6 +5,7 @@ import { z } from 'zod';
 
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole, type AuthRequest } from '../auth/index.js';
+import { toDateOnly } from '../../utils/time.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -655,7 +656,7 @@ router.post(
       return res.status(404).json({ error: 'Doctor not found' });
     }
 
-    const dateOnly = new Date(body.date.getFullYear(), body.date.getMonth(), body.date.getDate());
+    const dateOnly = toDateOnly(body.date.toISOString().slice(0, 10));
 
     const overlapping = await prisma.appointment.findFirst({
       where: {
@@ -977,6 +978,372 @@ router.get('/medications/:patientId', async (req: Request, res: Response) => {
   }));
 
   res.json(formatted);
+});
+
+// Comprehensive endpoint that returns ALL patient data in one call
+router.get('/complete/:patientId', async (req: Request, res: Response) => {
+  const { patientId } = req.params;
+
+  if (!patientId) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  try {
+    // Fetch patient demographics
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: {
+        patientId: true,
+        name: true,
+        dob: true,
+        gender: true,
+        contact: true,
+        insurance: true,
+        drugAllergies: true,
+      },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    // Fetch all data in parallel for performance
+    const [
+      appointments,
+      visits,
+      invoices,
+      immunizations,
+      labResults,
+      radiologyReports,
+      medications,
+      prescriptions,
+    ] = await Promise.all([
+      // Appointments
+      prisma.appointment.findMany({
+        where: { patientId, status: { not: 'Cancelled' } },
+        orderBy: { date: 'asc' },
+        take: 50,
+        select: {
+          appointmentId: true,
+          date: true,
+          startTimeMin: true,
+          endTimeMin: true,
+          status: true,
+          department: true,
+          location: true,
+          reason: true,
+          doctor: {
+            select: {
+              doctorId: true,
+              name: true,
+              department: true,
+            },
+          },
+        },
+      }),
+
+      // Visits
+      prisma.visit.findMany({
+        where: { patientId },
+        orderBy: { visitDate: 'desc' },
+        take: 10,
+        select: {
+          visitId: true,
+          visitDate: true,
+          department: true,
+          doctor: { select: { name: true } },
+        },
+      }),
+
+      // Invoices
+      prisma.invoice.findMany({
+        where: { patientId },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        include: {
+          Visit: {
+            select: {
+              visitId: true,
+              visitDate: true,
+              department: true,
+              doctor: {
+                select: {
+                  doctorId: true,
+                  name: true,
+                  department: true,
+                },
+              },
+            },
+          },
+          items: {
+            select: {
+              itemId: true,
+              description: true,
+              quantity: true,
+              unitPrice: true,
+              lineTotal: true,
+              sourceType: true,
+              sourceRefId: true,
+            },
+          },
+          payments: {
+            orderBy: { paidAt: 'desc' },
+            select: {
+              paymentId: true,
+              method: true,
+              amount: true,
+              paidAt: true,
+              referenceNo: true,
+              note: true,
+            },
+          },
+        },
+      }),
+
+      // Immunizations
+      prisma.immunizationRecord.findMany({
+        where: { patientId },
+        orderBy: { administeredAt: 'desc' },
+        take: 25,
+        select: {
+          immunizationId: true,
+          vaccineName: true,
+          lotNumber: true,
+          administeredAt: true,
+          provider: true,
+          notes: true,
+        },
+      }),
+
+      // Lab Results
+      prisma.labResult.findMany({
+        where: { patientId },
+        orderBy: { resultedAt: 'desc' },
+        take: 50,
+        select: {
+          labResultId: true,
+          resultValue: true,
+          resultValueNum: true,
+          unit: true,
+          referenceLow: true,
+          referenceHigh: true,
+          abnormalFlag: true,
+          resultedAt: true,
+          notes: true,
+          LabOrder: {
+            select: {
+              labOrderId: true,
+              status: true,
+              doctorId: true,
+            },
+          },
+          LabOrderItem: {
+            select: {
+              testCode: true,
+              testName: true,
+            },
+          },
+        },
+      }),
+
+      // Radiology Reports
+      prisma.radiologyReport.findMany({
+        where: { patientId },
+        orderBy: { reportDate: 'desc' },
+        take: 25,
+        select: {
+          reportId: true,
+          modality: true,
+          reportDate: true,
+          impression: true,
+          findings: true,
+          imageUrl: true,
+          visit: {
+            select: {
+              visitId: true,
+              visitDate: true,
+              department: true,
+              doctor: { select: { name: true, department: true } },
+            },
+          },
+        },
+      }),
+
+      // Medications
+      prisma.medication.findMany({
+        where: { visit: { patientId } },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: {
+          medId: true,
+          drugName: true,
+          dosage: true,
+          instructions: true,
+          createdAt: true,
+          visit: {
+            select: {
+              visitId: true,
+              visitDate: true,
+              department: true,
+              doctor: {
+                select: { name: true },
+              },
+            },
+          },
+        },
+      }),
+
+      // Prescriptions
+      prisma.prescription.findMany({
+        where: { patientId },
+        orderBy: { createdAt: 'desc' },
+        take: 25,
+        select: {
+          prescriptionId: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+          doctor: {
+            select: {
+              doctorId: true,
+              name: true,
+              department: true,
+            },
+          },
+          visit: {
+            select: {
+              visitId: true,
+              visitDate: true,
+              department: true,
+            },
+          },
+          items: {
+            select: {
+              itemId: true,
+              dose: true,
+              route: true,
+              frequency: true,
+              durationDays: true,
+              quantityPrescribed: true,
+              prn: true,
+              notes: true,
+              drug: {
+                select: {
+                  drugId: true,
+                  name: true,
+                  strength: true,
+                  form: true,
+                },
+              },
+            },
+          },
+          dispenses: {
+            orderBy: { createdAt: 'desc' },
+            select: {
+              dispenseId: true,
+              status: true,
+              dispensedAt: true,
+              createdAt: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Split appointments into upcoming and past
+    const { upcoming, past } = splitAppointments(appointments);
+
+    // Calculate invoice summary
+    const invoiceSummary = invoices.reduce(
+      (acc, invoice) => {
+        const due = Number(invoice.amountDue);
+        const total = Number(invoice.grandTotal);
+        const paid = Number(invoice.amountPaid);
+        return {
+          outstanding: acc.outstanding + due,
+          lifetimeValue: acc.lifetimeValue + total,
+          paidTotal: acc.paidTotal + paid,
+        };
+      },
+      { outstanding: 0, lifetimeValue: 0, paidTotal: 0 }
+    );
+
+    // Format lab results (convert Decimal to Number)
+    const formattedLabs = labResults.map((result) => ({
+      ...result,
+      resultValueNum: result.resultValueNum ? Number(result.resultValueNum) : null,
+      referenceLow: result.referenceLow ? Number(result.referenceLow) : null,
+      referenceHigh: result.referenceHigh ? Number(result.referenceHigh) : null,
+    }));
+
+    // Format invoices (convert Decimal to Number)
+    const formattedInvoices = invoices.map((invoice: any) => ({
+      invoiceId: invoice.invoiceId,
+      invoiceNo: invoice.invoiceNo,
+      status: invoice.status,
+      grandTotal: Number(invoice.grandTotal),
+      amountPaid: Number(invoice.amountPaid),
+      amountDue: Number(invoice.amountDue),
+      subTotal: Number(invoice.subTotal),
+      discountAmt: Number(invoice.discountAmt),
+      taxAmt: Number(invoice.taxAmt),
+      note: invoice.note,
+      createdAt: invoice.createdAt,
+      updatedAt: invoice.updatedAt,
+      visit: invoice.Visit || null,
+      items: (invoice.items || []).map((item: any) => ({
+        itemId: item.itemId,
+        description: item.description,
+        quantity: item.quantity,
+        unitPrice: Number(item.unitPrice),
+        lineTotal: Number(item.lineTotal),
+        sourceType: item.sourceType,
+        sourceRefId: item.sourceRefId,
+      })),
+      payments: (invoice.payments || []).map((payment: any) => ({
+        paymentId: payment.paymentId,
+        method: payment.method,
+        amount: Number(payment.amount),
+        paidAt: payment.paidAt,
+        referenceNo: payment.referenceNo,
+        note: payment.note,
+      })),
+    }));
+
+    // Prepare comprehensive response
+    const response = {
+      patient: {
+        patientId: patient.patientId,
+        name: patient.name,
+        dob: patient.dob,
+        gender: patient.gender,
+        contact: patient.contact,
+        insurance: patient.insurance,
+        drugAllergies: patient.drugAllergies,
+      },
+      appointments: {
+        upcoming,
+        past,
+      },
+      visits: visits,
+      prescriptions: prescriptions,
+      medications: medications,
+      labs: formattedLabs,
+      immunizations: immunizations,
+      radiology: radiologyReports,
+      billing: {
+        summary: invoiceSummary,
+        invoices: formattedInvoices,
+      },
+      latestImmunization: immunizations[0] ?? null,
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error('Error fetching complete patient data:', error);
+    res.status(500).json({ error: 'Failed to fetch patient data' });
+  }
 });
 
 export default router;

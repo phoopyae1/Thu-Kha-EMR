@@ -21,10 +21,9 @@ import patientPortalRouter from './modules/patient-portal/index.js';
 
 export const apiRouter = Router();
 
-// Mount patient portal first (public routes)
+// Public routes (no auth required)
+apiRouter.use(docsRouter);
 apiRouter.use('/patient-portal', patientPortalRouter);
-
-// Auth routes (public login)
 apiRouter.use('/auth', authRouter);
 
 // Protected routes
@@ -46,6 +45,5 @@ apiRouter.use('/reports', reportsRouter);
 apiRouter.use('/pharmacy', pharmacyRouter);
 apiRouter.use(billingRouter);
 apiRouter.use(clinicalRouter);
-apiRouter.use(docsRouter);
 
 export default apiRouter;

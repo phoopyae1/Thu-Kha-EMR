@@ -66,8 +66,37 @@ Try the scheduling workflow after seeding demo data:
 2. Attempt to create another appointment for the same provider and timeslot — the system should block the double booking.
 3. Mark the original appointment as complete and verify that the visit appears in the visit list.
 
-## API Docs
-The OpenAPI specification is served at `/api/docs/openapi.json`.
+## API Documentation
+
+### Swagger UI (Interactive Docs)
+Access the full interactive API documentation at:
+```
+http://localhost:8080/api/docs
+```
+
+Features:
+- Try all APIs directly from browser
+- Authentication testing built-in
+- Complete OpenAPI 3.0 specification
+- Organized by tags (Patient Portal, Atenxion, etc.)
+
+### API Test Page
+Visual testing interface for patient portal APIs:
+```
+http://localhost:5173/api-test.html
+```
+
+### OpenAPI JSON
+Raw specification available at:
+```
+http://localhost:5000/api/docs/openapi.json
+```
+
+### Documentation Files
+- `docs/atenxion_agent.md` - Atenxion integration guide
+- `docs/atenxion-patient-portal-apis.md` - Patient portal API reference
+- `docs/PM_ATENXION_SETUP_GUIDE.md` - PM meeting guide
+- `ATENXION_READY.md` - Quick start for Atenxion integration
 
 ## Deploying to Render
 1. Create a new Web Service and connect this repository.

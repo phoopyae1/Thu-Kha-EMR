@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import swaggerUi from 'swagger-ui-express';
 
 const appointmentExample = {
   appointmentId: 'a3f2bfae-1234-4e5f-9f4e-9d1d0c6bb001',
@@ -81,8 +82,9 @@ const visitCreatedExample = {
 const openapi: any = {
   openapi: '3.0.0',
   info: {
-    title: 'EMR API',
-    version: '1.0.0'
+    title: 'Thu-Kha EMR API',
+    version: '1.0.0',
+    description: 'Complete API documentation for Thu-Kha EMR system including Patient Portal APIs for Atenxion agent integration',
   },
   servers: [{ url: '/api' }],
   components: {
@@ -541,8 +543,11 @@ addPath('/health', 'get', {
   responses: { '200': { description: 'OK' } }
 });
 
+// Patient Portal APIs
 addPath('/patient-portal/register', 'post', {
-  summary: 'Register patient portal account',
+  summary: '[Patient Portal] Register new account',
+  description: 'Create a new patient portal account. Account is activated immediately.',
+  tags: ['Patient Portal'],
   security: [],
   requestBody: {
     required: true,
@@ -552,13 +557,13 @@ addPath('/patient-portal/register', 'post', {
           type: 'object',
           required: ['name', 'email', 'password', 'dob', 'contact'],
           properties: {
-            name: { type: 'string' },
-            email: { type: 'string', format: 'email' },
-            password: { type: 'string', minLength: 8 },
-            dob: { type: 'string', format: 'date' },
-            contact: { type: 'string' },
-            insurance: { type: 'string', nullable: true },
-            drugAllergies: { type: 'string', nullable: true },
+            name: { type: 'string', example: 'John Doe' },
+            email: { type: 'string', format: 'email', example: 'john@example.com' },
+            password: { type: 'string', minLength: 8, example: 'SecurePass123!' },
+            dob: { type: 'string', format: 'date', example: '1990-01-15' },
+            contact: { type: 'string', example: '09123456789' },
+            insurance: { type: 'string', nullable: true, example: 'ACME Insurance' },
+            drugAllergies: { type: 'string', nullable: true, example: 'Penicillin' },
           },
         },
       },
@@ -566,7 +571,7 @@ addPath('/patient-portal/register', 'post', {
   },
   responses: {
     '201': {
-      description: 'Created',
+      description: 'Account created successfully',
       content: {
         'application/json': {
           schema: {
@@ -579,7 +584,7 @@ addPath('/patient-portal/register', 'post', {
                   accountId: { type: 'string', format: 'uuid' },
                   patientId: { type: 'string', format: 'uuid' },
                   email: { type: 'string', format: 'email' },
-                  status: { type: 'string' },
+                  status: { type: 'string', enum: ['active', 'inactive'] },
                   lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
                   createdAt: { type: 'string', format: 'date-time' },
                   updatedAt: { type: 'string', format: 'date-time' },
@@ -601,17 +606,227 @@ addPath('/patient-portal/register', 'post', {
         },
       },
     },
+    '409': { description: 'Email already in use' },
   },
 });
 
-addPath('/auth/login', 'post', {
-  summary: 'Login',
+addPath('/patient-portal/login', 'post', {
+  summary: '[Patient Portal] Login',
+  description: 'Authenticate and get access token for patient portal',
+  tags: ['Patient Portal'],
   security: [],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['email', 'password'],
+          properties: {
+            email: { type: 'string', format: 'email', example: 'patient@example.com' },
+            password: { type: 'string', example: 'PatientPass123!' },
+          },
+        },
+      },
+    },
+  },
   responses: {
     '200': {
-      description: 'Tokens',
-      content: { 'application/json': { schema: { $ref: '#/components/schemas/Tokens' } } }
-    }
+      description: 'Login successful',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              accessToken: { type: 'string' },
+              patient: {
+                type: 'object',
+                properties: {
+                  patientId: { type: 'string', format: 'uuid' },
+                  name: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    '401': { description: 'Invalid credentials or account inactive' },
+  },
+});
+
+addPath('/patient-portal/profile/{patientId}', 'get', {
+  summary: '[Patient Portal] Get patient profile',
+  description: 'Get comprehensive patient profile with visits, appointments, and billing summary',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [
+    { name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+  ],
+  responses: {
+    '200': { description: 'Patient profile data' },
+    '401': { description: 'Unauthorized' },
+    '404': { description: 'Patient not found' },
+  },
+});
+
+addPath('/patient-portal/appointments/{patientId}', 'get', {
+  summary: '[Patient Portal] Get patient appointments',
+  description: 'Get all appointments for a patient (upcoming and past)',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [
+    { name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+  ],
+  responses: {
+    '200': {
+      description: 'Appointments split into upcoming and past',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              upcoming: { type: 'array', items: { $ref: '#/components/schemas/Appointment' } },
+              past: { type: 'array', items: { $ref: '#/components/schemas/Appointment' } },
+            },
+          },
+        },
+      },
+    },
+  },
+});
+
+addPath('/patient-portal/appointments', 'post', {
+  summary: '[Patient Portal] Schedule appointment',
+  description: 'Create a new appointment for a patient. For Atenxion agent scheduling.',
+  tags: ['Patient Portal', 'Atenxion'],
+  security: [{ bearerAuth: [] }],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['patientId', 'doctorId', 'date', 'startTimeMin'],
+          properties: {
+            patientId: { type: 'string', format: 'uuid' },
+            doctorId: { type: 'string', format: 'uuid' },
+            department: { type: 'string', example: 'Cardiology' },
+            date: { type: 'string', format: 'date', example: '2025-10-25' },
+            startTimeMin: { type: 'integer', minimum: 0, maximum: 1440, example: 540, description: 'Minutes from midnight (540 = 9:00 AM)' },
+            endTimeMin: { type: 'integer', minimum: 0, maximum: 1440, example: 570 },
+            reason: { type: 'string', example: 'Annual physical checkup' },
+            location: { type: 'string', example: 'Main Clinic' },
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    '201': { description: 'Appointment created', content: { 'application/json': { schema: { $ref: '#/components/schemas/Appointment' } } } },
+    '409': { description: 'Time slot already booked' },
+  },
+});
+
+addPath('/patient-portal/labs/{patientId}', 'get', {
+  summary: '[Patient Portal] Get lab results',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Lab results' } },
+});
+
+addPath('/patient-portal/medications/{patientId}', 'get', {
+  summary: '[Patient Portal] Get medications',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Medications' } },
+});
+
+addPath('/patient-portal/immunizations/{patientId}', 'get', {
+  summary: '[Patient Portal] Get immunizations',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Immunization records' } },
+});
+
+addPath('/patient-portal/radiology/{patientId}', 'get', {
+  summary: '[Patient Portal] Get radiology reports',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Radiology reports' } },
+});
+
+addPath('/patient-portal/payments/{patientId}', 'get', {
+  summary: '[Patient Portal] Get invoices and payments',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Invoices with payment history' } },
+});
+
+addPath('/patient-portal/specialists', 'get', {
+  summary: '[Patient Portal] Get specialists',
+  description: 'Public endpoint to list available doctors/specialists. No authentication required.',
+  tags: ['Patient Portal', 'Public'],
+  security: [],
+  parameters: [
+    { name: 'department', in: 'query', schema: { type: 'string' }, example: 'Cardiology' },
+    { name: 'search', in: 'query', schema: { type: 'string' }, example: 'smith' },
+  ],
+  responses: { '200': { description: 'List of specialists' } },
+});
+
+addPath('/patient-portal/facilities', 'get', {
+  summary: '[Patient Portal] Get facilities',
+  description: 'Public endpoint to list clinic facilities. No authentication required.',
+  tags: ['Patient Portal', 'Public'],
+  security: [],
+  parameters: [
+    { name: 'type', in: 'query', schema: { type: 'string', enum: ['HOSPITAL', 'GP_CLINIC', 'DIAGNOSTIC_CENTER'] } },
+    { name: 'search', in: 'query', schema: { type: 'string' } },
+  ],
+  responses: { '200': { description: 'List of facilities' } },
+});
+
+addPath('/auth/login', 'post', {
+  summary: '[Staff] Login',
+  description: 'Staff authentication endpoint. Returns JWT access token.',
+  tags: ['Authentication'],
+  security: [],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['email', 'password'],
+          properties: {
+            email: { type: 'string', format: 'email', example: 'admin@example.com' },
+            password: { type: 'string', example: 'AdminPass123!' },
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    '200': {
+      description: 'Login successful',
+      content: { 
+        'application/json': { 
+          schema: { 
+            type: 'object',
+            properties: {
+              accessToken: { type: 'string', description: 'JWT Bearer token' },
+            },
+          },
+        },
+      },
+    },
+    '401': { description: 'Invalid credentials' },
   }
 });
 
@@ -1346,8 +1561,20 @@ addPath('/audit', 'get', {
 openapi.paths = paths;
 
 export const docsRouter = Router();
+
+// Serve OpenAPI JSON
 docsRouter.get('/docs/openapi.json', (_req: Request, res: Response) => {
   res.json(openapi);
 });
+
+// Swagger UI
+const swaggerOptions = {
+  customCss: '.swagger-ui .topbar { display: none }',
+  customSiteTitle: 'Thu-Kha EMR API Docs',
+  customfavIcon: '/favicon.ico',
+};
+
+docsRouter.use('/docs', swaggerUi.serve);
+docsRouter.get('/docs', swaggerUi.setup(openapi, swaggerOptions));
 
 export default docsRouter;

@@ -280,7 +280,7 @@ export default function VisitDetail() {
             </div>
           </section>
 
-          {user?.role === 'Pharmacist' && (
+          {(user?.role === 'Doctor' || user?.role === 'Pharmacist' || user?.role === 'ITAdmin') && (
             <section className="rounded-2xl bg-white p-6 shadow-sm">
               <PrescribeDrawer
                 visitId={visit.visitId}
