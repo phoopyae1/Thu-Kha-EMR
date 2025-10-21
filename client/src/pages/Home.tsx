@@ -260,7 +260,7 @@ function ITAdminDashboard() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
           <div className="rounded-2xl bg-white p-6 shadow-sm xl:col-span-2">
             <div className="flex items-center justify-between">
               <div>
@@ -1611,7 +1611,7 @@ function DoctorQueueDashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-[1.2fr_1.8fr] lg:grid-cols-[2fr_3fr]">
           <section className="rounded-2xl bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">{t('Upcoming patients')}</h2>
