@@ -17,6 +17,8 @@ export function validate(schema: Schema) {
       next();
     } catch (err) {
       if (err instanceof ZodError) {
+        console.error('Validation error:', JSON.stringify(err.flatten(), null, 2));
+        console.error('Request body:', JSON.stringify(req.body, null, 2));
         return next(new HttpError(400, 'Invalid request', err.flatten()));
       }
       next(err);

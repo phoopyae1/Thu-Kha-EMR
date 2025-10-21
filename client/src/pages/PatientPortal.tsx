@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   CalendarIcon,
   CheckIcon,
@@ -283,6 +283,7 @@ const defaultRegisterForm: RegisterForm = {
 const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: '', reason: '' };
 
 export default function PatientPortal() {
+  const { patientId: urlPatientId } = useParams<{ patientId?: string }>();
   const { appName } = useSettings();
   const { t } = useTranslation();
   const logo = brillarLogo;
@@ -293,7 +294,18 @@ export default function PatientPortal() {
   const [loginForm, setLoginForm] = useState<LoginForm>(defaultLoginForm);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginStatus, setLoginStatus] = useState<'idle' | 'loading' | 'success'>('idle');
-  const [session, setSession] = useState<PortalSession | null>(null);
+  const [session, setSession] = useState<PortalSession | null>(() => {
+    // Load session from localStorage on mount
+    try {
+      const stored = localStorage.getItem('patient_portal_session');
+      if (stored) {
+        return JSON.parse(stored) as PortalSession;
+      }
+    } catch {
+      // Ignore errors
+    }
+    return null;
+  });
   
   const [showRegister, setShowRegister] = useState(false);
   const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
@@ -476,6 +488,28 @@ export default function PatientPortal() {
     const handle = window.setTimeout(() => setToast(null), 6000);
     return () => window.clearTimeout(handle);
   }, [toast]);
+
+  // Persist session to localStorage
+  useEffect(() => {
+    try {
+      if (session) {
+        localStorage.setItem('patient_portal_session', JSON.stringify(session));
+      } else {
+        localStorage.removeItem('patient_portal_session');
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+  }, [session]);
+
+  // Validate session matches URL patientId (if provided)
+  useEffect(() => {
+    if (urlPatientId && session && session.patientId !== urlPatientId) {
+      // Clear session if it doesn't match the URL patientId
+      setSession(null);
+      setLoginError(t('Please log in with the correct patient account.'));
+    }
+  }, [urlPatientId, session, t]);
 
   useEffect(() => {
     fetchSpecialists()
@@ -986,6 +1020,9 @@ export default function PatientPortal() {
                   <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Secure session')}</p>
                   <h2 className="mt-2 text-3xl font-semibold text-slate-900">{t('Your care workspace')}</h2>
                   <p className="mt-2 text-sm text-slate-500">{t('Signed in as {email}', { email: session.email })}</p>
+                  <p className="mt-1 font-mono text-xs text-slate-400">
+                    {t('Patient ID')}: {session.patientId}
+                  </p>
                 </div>
                 <div className="flex flex-col items-start gap-3 text-sm text-slate-600 sm:flex-row sm:items-center">
                   <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-700">
@@ -1791,14 +1828,17 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                     </div>
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOrderMedication?.(prescription)}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-                    >
-                      <PharmacyIcon className="h-4 w-4" />
-                      {t('Order medication')}
-                    </button>
+                    {/* Only show order button if prescription status is PENDING and not already dispensed */}
+                    {prescription.status === 'PENDING' && !lastDispense ? (
+                      <button
+                        type="button"
+                        onClick={() => onOrderMedication?.(prescription)}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+                      >
+                        <PharmacyIcon className="h-4 w-4" />
+                        {t('Request pharmacy order')}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => togglePrescriptionDetails(prescription.prescriptionId)}
@@ -1863,11 +1903,14 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">{t('Prescription history')}</h3>
-          <PharmacyIcon className="h-5 w-5 text-blue-600" />
+          <h3 className="text-lg font-semibold text-slate-900">{t('Past Medications (Visit History)')}</h3>
+          <PharmacyIcon className="h-5 w-5 text-slate-400" />
         </div>
+        <p className="mt-2 text-sm text-slate-500">
+          {t('Medications from previous visits. For active prescriptions, see above.')}
+        </p>
         {medications.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">{t('No prescription history recorded yet.')}</p>
+          <p className="mt-4 text-sm text-slate-500">{t('No past medications recorded.')}</p>
         ) : (
           <ul className="mt-4 space-y-3 text-sm text-slate-600">
             {medications.map((medication: any) => {
@@ -1892,33 +1935,18 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                       </div>
                     ) : null}
                   </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onOrderMedication?.(medication)}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-                    >
-                      <PharmacyIcon className="h-4 w-4" />
-                      {t('Order medication')}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => toggleMedicationDetails(medication.medId)}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
-                    >
-                      {isExpanded ? t('Hide details') : t('View details')}
-                    </button>
-                  </div>
-                  {isExpanded ? (
-                    <div className="mt-3 space-y-2 text-xs text-slate-600">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {t('Doctor instructions')}
-                      </p>
+                  {medication.dosage || medication.instructions ? (
+                    <div className="mt-3 space-y-1 text-xs">
+                      {medication.dosage ? (
+                        <div className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Dosage:</span> {medication.dosage}
+                        </div>
+                      ) : null}
                       {medication.instructions ? (
-                        <p className="text-xs text-slate-500">{medication.instructions}</p>
-                      ) : (
-                        <p className="text-xs text-slate-500">{t('No instructions recorded for this medication.')}</p>
-                      )}
+                        <div className="text-slate-600">
+                          <span className="font-semibold text-slate-700">Instructions:</span> {medication.instructions}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                 </li>

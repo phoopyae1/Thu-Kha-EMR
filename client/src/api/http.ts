@@ -1,4 +1,13 @@
+const ACCESS_TOKEN_KEY = 'emr_access_token';
+
+// Initialize from localStorage
 let accessToken: string | null = null;
+try {
+  accessToken = localStorage.getItem(ACCESS_TOKEN_KEY);
+} catch {
+  // Ignore localStorage errors
+}
+
 let listeners: Array<(token: string | null) => void> = [];
 
 export function getAccessToken() {
@@ -7,6 +16,18 @@ export function getAccessToken() {
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
+  
+  // Persist to localStorage
+  try {
+    if (token) {
+      localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    } else {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+  
   listeners.forEach((cb) => cb(token));
 }
 

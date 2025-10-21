@@ -5,8 +5,8 @@ export const RxItemSchema = z.object({
   dose: z.string().min(1),
   route: z.string().min(1),
   frequency: z.string().min(1),
-  durationDays: z.number().int().positive().max(30),
-  quantityPrescribed: z.number().int().positive().max(200),
+  durationDays: z.number().int().positive().max(365),
+  quantityPrescribed: z.number().int().positive().max(1000),
   prn: z.boolean().optional().default(false),
   allowGeneric: z.boolean().optional().default(true),
   notes: z.string().max(300).optional(),
@@ -14,7 +14,7 @@ export const RxItemSchema = z.object({
 
 export const CreateRxSchema = z.object({
   patientId: z.string().uuid().optional(),
-  notes: z.string().max(500).optional(),
+  notes: z.string().max(2000).optional(),
   items: z.array(RxItemSchema).min(1).max(10),
 });
 

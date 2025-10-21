@@ -213,6 +213,10 @@ Next appointment,Next appointment,နောက်လာမည့်ချိန�
 Most recent visit,Most recent visit,နောက်ဆုံးအကြိမ် သွားရောက်မှု
 Unable to schedule appointment.,Unable to schedule appointment.,ချိန်းစာရင်းကို စီစဉ်၍ မရနိုင်ပါ။
 Unable to sign in. Please try again.,Unable to sign in. Please try again.,ဝင်ရောက်၍ မရနိုင်ပါ။ ထပ်မံကြိုးစားပါ။
+Please log in with the correct patient account.,Please log in with the correct patient account.,မှန်ကန်သော လူနာအကောင့်ဖြင့် ဝင်ရောက်ပါ။
+Patient ID,Patient ID,လူနာ ID
+ID: {id},ID: {id},ID: {id}
+Please log in with the account linked to this patient ID.,Please log in with the account linked to this patient ID.,ဤလူနာ ID နှင့် ချိတ်ဆက်ထားသော အကောင့်ဖြင့် ဝင်ရောက်ပါ။
 "Tap markers to preview entrances.","Tap markers to preview entrances.","ဝင်ပေါက်များကို ကြည့်ရှုရန် မားကာများကို နှိပ်ပါ။"
 "Clinic campus map","Clinic campus map","ဆေးခန်းဧရိယာ မြေပုံ"
 "Preview our campus layout and entry points for your visit.","Preview our campus layout and entry points for your visit.","ဆေးခန်းဧရိယာ အပြင်အဆင်နှင့် ဝင်ပေါက်များကို ကြိုတင်ကြည့်ရှုပါ။"
@@ -249,15 +253,13 @@ Unable to copy instructions,Unable to copy instructions,Unable to copy instructi
 Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.
 Please copy the details manually from the medication view.,Please copy the details manually from the medication view.,Please copy the details manually from the medication view.
 Order medication,Order medication,Order medication
+Request pharmacy order,Request pharmacy order,ဆေးဆိုင်မှာကြားချက်တောင်းဆိုပါ
 View details,View details,View details
 Hide details,Hide details,Hide details
 Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.
-Prescription history,Prescription history,Prescription history
-No prescription history recorded yet.,No prescription history recorded yet.,No prescription history recorded yet.
-Dosage: {dosage},Dosage: {dosage},Dosage: {dosage}
-Instructions: {instructions},Instructions: {instructions},Instructions: {instructions}
+Past Medications (Visit History),Past Medications (Visit History),အတိတ်က ဆေးဝါးများ (လည်ပတ်မှတ်တမ်း)
+Medications from previous visits. For active prescriptions, see above.,Medications from previous visits. For active prescriptions, see above.,ယခင် လည်ပတ်မှုများမှ ဆေးဝါးများ။ လက်ရှိ ဆေးညွှန်းများအတွက် အပေါ်တွင်ကြည့်ပါ။
+No past medications recorded.,No past medications recorded.,အတိတ်က ဆေးဝါးမှတ်တမ်း မရှိပါ။
 Visit date: {date},Visit date: {date},Visit date: {date}
-Doctor instructions,Doctor instructions,Doctor instructions
-No instructions recorded for this medication.,No instructions recorded for this medication.,No instructions recorded for this medication.
 Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.
 No active prescriptions recorded.,No active prescriptions recorded.,No active prescriptions recorded.

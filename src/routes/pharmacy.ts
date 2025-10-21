@@ -153,7 +153,7 @@ router.post(
 
 router.get(
   '/inventory/search',
-  requireRole('Pharmacist', 'PharmacyTech', 'InventoryManager', 'ITAdmin'),
+  requireRole('Pharmacist', 'PharmacyTech', 'InventoryManager', 'ITAdmin', 'Doctor', 'Nurse'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const parsed = SearchInventorySchema.safeParse(req.query);
