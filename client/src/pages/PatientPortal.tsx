@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   CalendarIcon,
   CheckIcon,
@@ -284,6 +284,7 @@ const defaultAppointmentForm: AppointmentForm = { doctorId: '', date: '', time: 
 
 export default function PatientPortal() {
   const { patientId: urlPatientId } = useParams<{ patientId?: string }>();
+  const navigate = useNavigate();
   const { appName } = useSettings();
   const { t } = useTranslation();
   const logo = brillarLogo;
@@ -502,14 +503,21 @@ export default function PatientPortal() {
     }
   }, [session]);
 
-  // Validate session matches URL patientId (if provided)
+  // Ensure the URL reflects the active session
   useEffect(() => {
-    if (urlPatientId && session && session.patientId !== urlPatientId) {
-      // Clear session if it doesn't match the URL patientId
-      setSession(null);
-      setLoginError(t('Please log in with the correct patient account.'));
+    if (!session) return;
+
+    if (!urlPatientId || session.patientId !== urlPatientId) {
+      navigate(`/patient-portal/${session.patientId}`, { replace: true });
     }
-  }, [urlPatientId, session, t]);
+  }, [navigate, session, urlPatientId]);
+
+  // Redirect unauthenticated users away from patient-specific routes
+  useEffect(() => {
+    if (!session && urlPatientId) {
+      navigate('/patient-portal/login', { replace: true });
+    }
+  }, [navigate, session, urlPatientId]);
 
   useEffect(() => {
     fetchSpecialists()
@@ -965,7 +973,7 @@ export default function PatientPortal() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Link
-              to="/patient-portal"
+              to={session ? `/patient-portal/${session.patientId}` : '/patient-portal'}
               className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
             >
               {t('Portal home')}
