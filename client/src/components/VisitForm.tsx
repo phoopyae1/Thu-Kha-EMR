@@ -284,7 +284,7 @@ export default function VisitForm({
 
       <div>
         <div className="flex items-center justify-between">
-          <label className="block text-sm font-medium text-gray-700">{t('Medications')}</label>
+          <label className="block text-sm font-medium text-gray-700">{t('Prescriptions')}</label>
           <button
             type="button"
             onClick={() =>
@@ -295,7 +295,7 @@ export default function VisitForm({
             }
             className="inline-flex items-center rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-600 hover:bg-blue-100"
           >
-            + {t('Add Medication')}
+            + {t('Add Prescription')}
           </button>
         </div>
         <div className="mt-2 space-y-3">
@@ -303,7 +303,7 @@ export default function VisitForm({
             <div key={`medication-${index}`} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500">{t('Medication Name')}</label>
+                  <label className="block text-xs font-semibold text-gray-500">{t('Prescription Name')}</label>
                   <input
                     type="text"
                     value={medication.drugName}
