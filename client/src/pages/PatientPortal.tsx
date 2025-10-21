@@ -366,60 +366,105 @@ export default function PatientPortal() {
   }, []);
 
   const handleMedicationOrder = useCallback(
-    async (prescription: any) => {
-      if (!prescription) return;
+    async (entry: any) => {
+      if (!entry) return;
 
-      const rxCode = prescription.prescriptionId ? prescription.prescriptionId.slice(0, 8).toUpperCase() : '';
+      const isPrescription = typeof entry.prescriptionId === 'string' && entry.prescriptionId.length > 0;
       const summaryLines: string[] = [];
 
-      if (rxCode) {
-        summaryLines.push(t('Rx #{id}', { id: rxCode }));
+      if (isPrescription) {
+        const rxCode = entry.prescriptionId ? entry.prescriptionId.slice(0, 8).toUpperCase() : '';
+
+        if (rxCode) {
+          summaryLines.push(t('Rx #{id}', { id: rxCode }));
+        }
+
+        summaryLines.push(t('Items ordered'));
+
+        if (Array.isArray(entry.items) && entry.items.length > 0) {
+          entry.items.forEach((item: any, index: number) => {
+            const drugName = item.drug
+              ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
+              : t('Prescription item');
+            const instructionParts = [item.dose, item.route, item.frequency]
+              .filter((part) => part && String(part).trim().length > 0)
+              .join(' • ');
+            const orderDetails = [
+              `${index + 1}. ${drugName}`,
+              instructionParts ? `   ${instructionParts}` : null,
+              item.durationDays ? `   ${t('Duration: {days} days', { days: item.durationDays })}` : null,
+              item.quantityPrescribed
+                ? `   ${t('Quantity prescribed: {quantity}', { quantity: item.quantityPrescribed })}`
+                : null,
+              item.prn ? `   ${t('As needed')}` : null,
+              item.notes ? `   ${item.notes}` : null,
+            ].filter(Boolean);
+
+            summaryLines.push(orderDetails.join('\n'));
+          });
+        }
+      } else {
+        summaryLines.push(t('Medication order'));
+
+        const drugName = entry.drugName ? String(entry.drugName).trim() : '';
+        if (drugName) {
+          summaryLines.push(drugName);
+        }
+
+        if (entry.dosage) {
+          summaryLines.push(t('Dosage: {dosage}', { dosage: entry.dosage }));
+        }
+
+        if (entry.instructions) {
+          summaryLines.push(t('Instructions: {instructions}', { instructions: entry.instructions }));
+        }
+
+        const visitDoctor = entry.visit?.doctor?.name ? String(entry.visit.doctor.name).trim() : '';
+        if (visitDoctor) {
+          summaryLines.push(t('Ordered by {name}', { name: visitDoctor }));
+        }
+
+        if (entry.visit?.visitDate) {
+          summaryLines.push(
+            t('Visit date: {date}', { date: new Date(entry.visit.visitDate).toLocaleDateString() }),
+          );
+        }
+
+        if (entry.visit?.department) {
+          summaryLines.push(entry.visit.department);
+        }
       }
 
-      summaryLines.push(t('Items ordered'));
+      const summary = summaryLines.join('\n').trim();
 
-      if (Array.isArray(prescription.items) && prescription.items.length > 0) {
-        prescription.items.forEach((item: any, index: number) => {
-          const drugName = item.drug
-            ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
-            : t('Prescription item');
-          const instructionParts = [item.dose, item.route, item.frequency]
-            .filter((part) => part && String(part).trim().length > 0)
-            .join(' • ');
-          const orderDetails = [
-            `${index + 1}. ${drugName}`,
-            instructionParts ? `   ${instructionParts}` : null,
-            item.durationDays ? `   ${t('Duration: {days} days', { days: item.durationDays })}` : null,
-            item.quantityPrescribed
-              ? `   ${t('Quantity prescribed: {quantity}', { quantity: item.quantityPrescribed })}`
-              : null,
-            item.prn ? `   ${t('As needed')}` : null,
-            item.notes ? `   ${item.notes}` : null,
-          ].filter(Boolean);
-
-          summaryLines.push(orderDetails.join('\n'));
-        });
+      if (!summary) {
+        return;
       }
-
-      const summary = summaryLines.join('\n');
 
       try {
         if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
           await navigator.clipboard.writeText(summary);
           showToast({
             type: 'success',
-            title: t('Prescription ready to share'),
+            title: isPrescription ? t('Prescription ready to share') : t('Instructions ready to share'),
             message: t('Order details copied. Share with the hospital or client to arrange medication.'),
           });
         } else {
           throw new Error('clipboard-unavailable');
         }
       } catch (error) {
-        console.error('Unable to copy prescription details', error);
+        const errorLabel = isPrescription
+          ? t('Unable to copy prescription')
+          : t('Unable to copy instructions');
+        const errorMessage = isPrescription
+          ? t('Please copy the details manually from the prescription view.')
+          : t('Please copy the details manually from the medication view.');
+
+        console.error('Unable to copy order details', error);
         showToast({
           type: 'error',
-          title: t('Unable to copy prescription'),
-          message: t('Please copy the details manually from the prescription view.'),
+          title: errorLabel,
+          message: errorMessage,
         });
       }
     },
@@ -1636,6 +1681,7 @@ function AppointmentsSection({
 }
 
 function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, onOrderMedication }: any) {
+  const [expandedMedications, setExpandedMedications] = useState<Record<string, boolean>>({});
   const prescriptionStatusLabels: Record<string, string> = {
     PENDING: t('Pending'),
     PARTIAL: t('Partially dispensed'),
@@ -1658,6 +1704,13 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
     setExpandedPrescriptions((previous) => ({
       ...previous,
       [prescriptionId]: !previous[prescriptionId],
+    }));
+  };
+
+  const toggleMedicationDetails = (medicationId: string) => {
+    setExpandedMedications((previous) => ({
+      ...previous,
+      [medicationId]: !previous[medicationId],
     }));
   };
 
@@ -1817,26 +1870,60 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
           <p className="mt-4 text-sm text-slate-500">{t('No prescription history recorded yet.')}</p>
         ) : (
           <ul className="mt-4 space-y-3 text-sm text-slate-600">
-            {medications.map((medication: any) => (
-              <li key={medication.medId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="font-semibold text-slate-900">{medication.drugName}</div>
-                    {medication.dosage ? <div className="text-sm text-slate-600">{medication.dosage}</div> : null}
-                    {medication.instructions ? (
-                      <div className="text-xs text-slate-500">{medication.instructions}</div>
+            {medications.map((medication: any) => {
+              const isExpanded = Boolean(expandedMedications[medication.medId]);
+              const visitDoctor = medication.visit?.doctor?.name ?? '';
+              const visitDate = medication.visit?.visitDate
+                ? new Date(medication.visit.visitDate).toLocaleDateString()
+                : null;
+
+              return (
+                <li key={medication.medId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div className="space-y-1 text-xs text-slate-500">
+                      <div className="text-sm font-semibold text-slate-900">{medication.drugName}</div>
+                      {medication.dosage ? <div className="text-sm text-slate-600">{medication.dosage}</div> : null}
+                      {visitDate ? <div>{t('Visit date: {date}', { date: visitDate })}</div> : null}
+                    </div>
+                    {medication.visit ? (
+                      <div className="text-right text-xs text-slate-500">
+                        {visitDoctor ? <div>{t('Ordered by {name}', { name: visitDoctor })}</div> : null}
+                        <div>{medication.visit.department}</div>
+                      </div>
                     ) : null}
                   </div>
-                  {medication.visit ? (
-                    <div className="text-right text-xs text-slate-500">
-                      <div>{new Date(medication.visit.visitDate).toLocaleDateString()}</div>
-                      <div>{medication.visit.doctor?.name ?? ''}</div>
-                      <div>{medication.visit.department}</div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onOrderMedication?.(medication)}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
+                    >
+                      <PharmacyIcon className="h-4 w-4" />
+                      {t('Order medication')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleMedicationDetails(medication.medId)}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                    >
+                      {isExpanded ? t('Hide details') : t('View details')}
+                    </button>
+                  </div>
+                  {isExpanded ? (
+                    <div className="mt-3 space-y-2 text-xs text-slate-600">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        {t('Doctor instructions')}
+                      </p>
+                      {medication.instructions ? (
+                        <p className="text-xs text-slate-500">{medication.instructions}</p>
+                      ) : (
+                        <p className="text-xs text-slate-500">{t('No instructions recorded for this medication.')}</p>
+                      )}
                     </div>
                   ) : null}
-                </div>
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

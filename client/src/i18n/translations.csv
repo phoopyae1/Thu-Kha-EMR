@@ -231,6 +231,7 @@ Not yet dispensed,Not yet dispensed,Not yet dispensed
 Fulfilment status: {status},Fulfilment status: {status},Fulfilment status: {status}
 Items ordered,Items ordered,Items ordered
 Prescription item,Prescription item,Prescription item
+Medication order,Medication order,Medication order
 Duration: {days} days,Duration: {days} days,Duration: {days} days
 Quantity prescribed: {quantity},Quantity prescribed: {quantity},Quantity prescribed: {quantity}
 As needed,As needed,As needed
@@ -241,14 +242,22 @@ Ready,Ready,Ready
 Partial,Partial,Partial
 Linked visit {date},Linked visit {date},Linked visit {date}
 Prescription ready to share,Prescription ready to share,Prescription ready to share
+Instructions ready to share,Instructions ready to share,Instructions ready to share
 Order details copied. Share with the hospital or client to arrange medication.,Order details copied. Share with the hospital or client to arrange medication.,Order details copied. Share with the hospital or client to arrange medication.
 Unable to copy prescription,Unable to copy prescription,Unable to copy prescription
+Unable to copy instructions,Unable to copy instructions,Unable to copy instructions
 Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.,Please copy the details manually from the prescription view.
+Please copy the details manually from the medication view.,Please copy the details manually from the medication view.,Please copy the details manually from the medication view.
 Order medication,Order medication,Order medication
 View details,View details,View details
 Hide details,Hide details,Hide details
 Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.,Select a prescription to review details and share with our pharmacy.
 Prescription history,Prescription history,Prescription history
 No prescription history recorded yet.,No prescription history recorded yet.,No prescription history recorded yet.
+Dosage: {dosage},Dosage: {dosage},Dosage: {dosage}
+Instructions: {instructions},Instructions: {instructions},Instructions: {instructions}
+Visit date: {date},Visit date: {date},Visit date: {date}
+Doctor instructions,Doctor instructions,Doctor instructions
+No instructions recorded for this medication.,No instructions recorded for this medication.,No instructions recorded for this medication.
 Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.
 No active prescriptions recorded.,No active prescriptions recorded.,No active prescriptions recorded.
