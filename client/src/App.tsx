@@ -31,68 +31,17 @@ import './styles/App.css';
 function App() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/patient-portal" element={<PatientPortalLanding />} />
-      <Route path="/patient-portal/login" element={<PatientPortal />} />
-      <Route path="/patient-portal/:patientId" element={<PatientPortal />} />
+      {/* Patient Portal Routes - Root Level */}
+      <Route path="/" element={<PatientPortalLanding />} />
+      <Route path="/login" element={<PatientPortal />} />
+      <Route path="/:patientId" element={<PatientPortal />} />
+      
+      {/* Admin Login */}
+      <Route path="/admin/login" element={<Login />} />
+      
+      {/* Admin Routes - Protected with /admin/{adminId} format */}
       <Route
-        path="/patients"
-        element={
-          <RouteGuard>
-            <Patients />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/patients/:id"
-        element={
-          <RouteGuard>
-            <PatientDetail />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/patients/:patientId/problems"
-        element={
-          <RouteGuard allowedRoles={['Doctor', 'Nurse', 'ITAdmin']}>
-            <ProblemList />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/appointments"
-        element={
-          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
-            <AppointmentsPage />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/appointments/new"
-        element={
-          <RouteGuard allowedRoles={['AdminAssistant']}>
-            <AppointmentForm />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/appointments/:id"
-        element={
-          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
-            <AppointmentDetail />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/patients/:id/visits/new"
-        element={
-          <RouteGuard>
-            <AddVisit />
-          </RouteGuard>
-        }
-      />
-      <Route
-        path="/"
+        path="/admin/:adminId"
         element={
           <RouteGuard>
             <Home />
@@ -100,7 +49,63 @@ function App() {
         }
       />
       <Route
-        path="/register"
+        path="/admin/:adminId/patients"
+        element={
+          <RouteGuard>
+            <Patients />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/patients/:id"
+        element={
+          <RouteGuard>
+            <PatientDetail />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/patients/:patientId/problems"
+        element={
+          <RouteGuard allowedRoles={['Doctor', 'Nurse', 'ITAdmin']}>
+            <ProblemList />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/appointments"
+        element={
+          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
+            <AppointmentsPage />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/appointments/new"
+        element={
+          <RouteGuard allowedRoles={['AdminAssistant']}>
+            <AppointmentForm />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/appointments/:id"
+        element={
+          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
+            <AppointmentDetail />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/patients/:id/visits/new"
+        element={
+          <RouteGuard>
+            <AddVisit />
+          </RouteGuard>
+        }
+      />
+      <Route
+        path="/admin/:adminId/register"
         element={
           <RouteGuard allowedRoles={['AdminAssistant', 'ITAdmin']}>
             <RegisterPatient />
@@ -108,7 +113,7 @@ function App() {
         }
       />
       <Route
-        path="/visits/:id"
+        path="/admin/:adminId/visits/:id"
         element={
           <RouteGuard>
             <VisitDetail />
@@ -116,7 +121,7 @@ function App() {
         }
       />
       <Route
-        path="/cohort"
+        path="/admin/:adminId/cohort"
         element={
           <RouteGuard>
             <Cohort />
@@ -124,7 +129,7 @@ function App() {
         }
       />
       <Route
-        path="/reports"
+        path="/admin/:adminId/reports"
         element={
           <RouteGuard>
             <Reports />
@@ -132,7 +137,7 @@ function App() {
         }
       />
       <Route
-        path="/lab-orders"
+        path="/admin/:adminId/lab-orders"
         element={
           <RouteGuard allowedRoles={['Doctor', 'LabTech', 'ITAdmin']}>
             <LabOrdersPage />
@@ -140,7 +145,7 @@ function App() {
         }
       />
       <Route
-        path="/lab-orders/:labOrderId"
+        path="/admin/:adminId/lab-orders/:labOrderId"
         element={
           <RouteGuard allowedRoles={['Doctor', 'LabTech', 'ITAdmin']}>
             <LabOrderDetailPage />
@@ -148,7 +153,7 @@ function App() {
         }
       />
       <Route
-        path="/pharmacy/queue"
+        path="/admin/:adminId/pharmacy/queue"
         element={
           <RouteGuard allowedRoles={['Pharmacist', 'PharmacyTech', 'InventoryManager', 'ITAdmin']}>
             <PharmacyQueue />
@@ -156,7 +161,7 @@ function App() {
         }
       />
       <Route
-        path="/pharmacy/inventory"
+        path="/admin/:adminId/pharmacy/inventory"
         element={
           <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin']}>
             <PharmacyInventory />
@@ -164,7 +169,7 @@ function App() {
         }
       />
       <Route
-        path="/pharmacy/drugs/new"
+        path="/admin/:adminId/pharmacy/drugs/new"
         element={
           <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin']}>
             <AddDrug />
@@ -172,7 +177,7 @@ function App() {
         }
       />
       <Route
-        path="/billing/workspace"
+        path="/admin/:adminId/billing/workspace"
         element={
           <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Doctor', 'Pharmacist']}>
             <BillingWorkspace />
@@ -180,7 +185,7 @@ function App() {
         }
       />
       <Route
-        path="/billing/visit/:visitId"
+        path="/admin/:adminId/billing/visit/:visitId"
         element={
           <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Doctor', 'Pharmacist']}>
             <VisitBilling />
@@ -188,7 +193,7 @@ function App() {
         }
       />
       <Route
-        path="/billing/pos"
+        path="/admin/:adminId/billing/pos"
         element={
           <RouteGuard allowedRoles={['Cashier', 'ITAdmin']}>
             <PosList />
@@ -196,7 +201,7 @@ function App() {
         }
       />
       <Route
-        path="/pharmacy/dispense/:prescriptionId"
+        path="/admin/:adminId/pharmacy/dispense/:prescriptionId"
         element={
           <RouteGuard allowedRoles={['Pharmacist', 'PharmacyTech']}>
             <DispenseDetail />
@@ -204,7 +209,7 @@ function App() {
         }
       />
       <Route
-        path="/settings"
+        path="/admin/:adminId/settings"
         element={
           <RouteGuard allowedRoles={['ITAdmin']}>
             <Settings />
@@ -212,7 +217,7 @@ function App() {
         }
       />
       <Route
-        path="/settings/services"
+        path="/admin/:adminId/settings/services"
         element={
           <RouteGuard allowedRoles={['ITAdmin']}>
             <SettingsServices />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import LoginCard from '../components/LoginCard';
@@ -11,10 +11,17 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const { login } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
   const { appName, logo } = useSettings();
   const { t } = useTranslation();
+
+  // Handle redirect after successful login
+  useEffect(() => {
+    if (user?.userId) {
+      navigate(`/admin/${user.userId}`);
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,7 +30,6 @@ export default function Login() {
     try {
       await login(email, password);
       setSuccess(t('Login successful'));
-      navigate('/');
     } catch (err: any) {
       setError(err.message);
     }

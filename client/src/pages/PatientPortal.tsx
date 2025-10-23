@@ -508,14 +508,26 @@ export default function PatientPortal() {
     if (!session) return;
 
     if (!urlPatientId || session.patientId !== urlPatientId) {
-      navigate(`/patient-portal/${session.patientId}`, { replace: true });
+      navigate(`/${session.patientId}`, { replace: true });
     }
   }, [navigate, session, urlPatientId]);
+
+  // Clear any stale session data when on login page
+  useEffect(() => {
+    if (!urlPatientId && !session) {
+      // Clear any stale session data when on login page
+      try {
+        localStorage.removeItem('patient_portal_session');
+      } catch {
+        // Ignore localStorage errors
+      }
+    }
+  }, [urlPatientId, session]);
 
   // Redirect unauthenticated users away from patient-specific routes
   useEffect(() => {
     if (!session && urlPatientId) {
-      navigate('/patient-portal/login', { replace: true });
+      navigate('/login', { replace: true });
     }
   }, [navigate, session, urlPatientId]);
 
@@ -760,6 +772,13 @@ export default function PatientPortal() {
   };
 
   const handleLogout = () => {
+    // Clear localStorage
+    try {
+      localStorage.removeItem('patient_portal_session');
+    } catch {
+      // Ignore localStorage errors
+    }
+    
     setSession(null);
     setLoginForm(defaultLoginForm);
     setLoginError(null);
@@ -972,14 +991,17 @@ export default function PatientPortal() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <Link
-              to={session ? `/patient-portal/${session.patientId}` : '/patient-portal'}
+            <button
+              onClick={() => {
+                handleLogout();
+                navigate('/');
+              }}
               className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
             >
               {t('Portal home')}
-            </Link>
+            </button>
             <Link
-              to="/login"
+              to="/admin/login"
               className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
             >
               {t('Return to staff login')}

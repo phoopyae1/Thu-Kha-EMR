@@ -1,5 +1,5 @@
 import { useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
   AvatarIcon,
   CalendarIcon,
@@ -34,16 +34,7 @@ type NavigationItem = {
   to?: string;
 };
 
-const navigation: NavigationItem[] = [
-  { key: 'dashboard', name: 'Dashboard', icon: DashboardIcon, to: '/' },
-  { key: 'patients', name: 'Patients', icon: PatientsIcon, to: '/patients' },
-  { key: 'appointments', name: 'Appointments', icon: CalendarIcon, to: '/appointments' },
-  { key: 'billing', name: 'Billing', icon: ReportsIcon, to: '/billing/workspace' },
-  { key: 'pharmacy', name: 'Pharmacy', icon: PharmacyIcon, to: '/pharmacy/queue' },
-  { key: 'lab', name: 'Lab Orders', icon: ReportsIcon, to: '/lab-orders' },
-  { key: 'reports', name: 'Reports', icon: ReportsIcon, to: '/reports' },
-  { key: 'settings', name: 'Settings', icon: SettingsIcon, to: '/settings' },
-];
+// Navigation will be created dynamically based on adminId
 
 interface DashboardLayoutProps {
   title: string;
@@ -77,7 +68,21 @@ export default function DashboardLayout({
   const { accessToken, user } = useAuth();
   const { appName, logo } = useSettings();
   const { t } = useTranslation();
+  const { adminId } = useParams<{ adminId: string }>();
   const roleLabel = user ? t(ROLE_LABELS[user.role] ?? 'Team Member') : t('Team Member');
+  
+  // Create navigation dynamically based on adminId
+  const navigation: NavigationItem[] = [
+    { key: 'dashboard', name: 'Dashboard', icon: DashboardIcon, to: `/admin/${adminId}` },
+    { key: 'patients', name: 'Patients', icon: PatientsIcon, to: `/admin/${adminId}/patients` },
+    { key: 'appointments', name: 'Appointments', icon: CalendarIcon, to: `/admin/${adminId}/appointments` },
+    { key: 'billing', name: 'Billing', icon: ReportsIcon, to: `/admin/${adminId}/billing/workspace` },
+    { key: 'pharmacy', name: 'Pharmacy', icon: PharmacyIcon, to: `/admin/${adminId}/pharmacy/queue` },
+    { key: 'lab', name: 'Lab Orders', icon: ReportsIcon, to: `/admin/${adminId}/lab-orders` },
+    { key: 'reports', name: 'Reports', icon: ReportsIcon, to: `/admin/${adminId}/reports` },
+    { key: 'settings', name: 'Settings', icon: SettingsIcon, to: `/admin/${adminId}/settings` },
+  ];
+  
   const navItems = navigation.filter((item) => {
     if (item.key === 'settings') {
       return user?.role === 'ITAdmin';

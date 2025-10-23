@@ -83,13 +83,13 @@ export default function PatientPortalLanding() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Link
-            to="/login"
+            to="/admin/login"
             className="rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
           >
-            {t('Return to staff login')}
+            {t('Return to admin login')}
           </Link>
           <Link
-            to="/patient-portal/login"
+            to="/login"
             className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
           >
             {t('Access patient portal')}
@@ -147,7 +147,7 @@ export default function PatientPortalLanding() {
               </div>
             </div>
             <Link
-              to="/patient-portal/login"
+              to="/login"
               className="mt-8 inline-flex items-center justify-center rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
             >
               {t('Sign in to continue')}

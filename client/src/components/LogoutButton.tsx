@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 
 interface Props {
@@ -10,10 +10,16 @@ export default function LogoutButton({
 }: Props) {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   function handleClick() {
     logout();
-    navigate('/login');
+    // Check if we're in admin routes or patient routes
+    if (location.pathname.startsWith('/admin')) {
+      navigate('/admin/login');
+    } else {
+      navigate('/login');
+    }
   }
 
   return (
