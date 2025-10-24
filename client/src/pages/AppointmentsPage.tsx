@@ -207,7 +207,7 @@ export default function AppointmentsPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [dateMode, setDateMode] = useState<DateMode>('single');
-  const [singleDate, setSingleDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [singleDate, setSingleDate] = useState(() => toDateKey(new Date()));
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [doctorId, setDoctorId] = useState('');
@@ -231,7 +231,7 @@ export default function AppointmentsPage() {
     }
   }, [isDoctorUser, user?.doctorId]);
 
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayKey = useMemo(() => toDateKey(new Date()), []);
   const focusDateKey = useMemo(() => {
     if (dateMode === 'single') {
       return singleDate || todayKey;
