@@ -10,6 +10,7 @@ import {
   type InvoiceScanResult,
 } from '../api/client';
 import { useTranslation } from '../hooks/useTranslation';
+import useAdminBasePath from '../hooks/useAdminBasePath';
 
 interface DrugFormState {
   name: string;
@@ -31,6 +32,7 @@ const EMPTY_FORM: DrugFormState = {
 
 export default function AddDrug() {
   const { t } = useTranslation();
+  const adminBasePath = useAdminBasePath();
   const [form, setForm] = useState<DrugFormState>({ ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -170,7 +172,7 @@ export default function AddDrug() {
       activeItem="pharmacy"
       headerChildren={
         <Link
-          to="/pharmacy/inventory"
+          to={`${adminBasePath}/pharmacy/inventory`}
           className="inline-flex items-center justify-center rounded-full bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-100"
         >
           {t('Back to inventory')}
@@ -193,7 +195,7 @@ export default function AddDrug() {
                   {createdDrug.name} {createdDrug.strength}
                 </span>
                 <Link
-                  to="/pharmacy/inventory"
+                  to={`${adminBasePath}/pharmacy/inventory`}
                   className="inline-flex items-center justify-center rounded-full bg-green-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-green-700"
                 >
                   {t('Manage inventory for this medication')}
