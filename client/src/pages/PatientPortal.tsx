@@ -1053,9 +1053,21 @@ export default function PatientPortal() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {session ? (
+              <button
+                type="button"
+                onClick={() => {
+                  handleLogout();
+                  navigate('/login', { replace: true });
+                }}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                {t('Sign out')}
+              </button>
+            ) : null}
             <button
+              type="button"
               onClick={() => {
-                handleLogout();
                 navigate('/');
               }}
               className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
