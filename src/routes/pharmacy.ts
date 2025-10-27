@@ -1,6 +1,11 @@
 import { Router, type NextFunction, type Response } from 'express';
 import multer from 'multer';
-import { PrismaClient, PrescriptionStatus, type Prisma } from '@prisma/client';
+import {
+  PrismaClient,
+  PrescriptionStatus,
+  MedicationOrderStatus,
+  type Prisma,
+} from '@prisma/client';
 import { z } from 'zod';
 
 import { requireAuth, requireRole, type AuthRequest } from '../modules/auth/index.js';
@@ -26,6 +31,7 @@ import {
 } from '../services/pharmacyService.js';
 import { InvoiceScanError, scanInvoice as analyzeInvoice } from '../services/invoiceScanner.js';
 import { postPharmacyCharges } from '../services/billingService.js';
+import { medicationOrderSelect } from '../services/medicationOrderService.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -52,6 +58,24 @@ const SearchInventorySchema = z.object({
   q: z.string().trim().min(1),
   limit: z.coerce.number().int().positive().max(50).optional(),
   includeAll: z.coerce.boolean().optional(),
+});
+
+const MedicationOrderStatusEnum = z.nativeEnum(MedicationOrderStatus);
+
+const MedicationOrderListQuerySchema = z.object({
+  status: z
+    .union([MedicationOrderStatusEnum, z.array(MedicationOrderStatusEnum)])
+    .optional(),
+  patientId: z.string().uuid().optional(),
+});
+
+const MedicationOrderUpdateSchema = z.object({
+  status: MedicationOrderStatusEnum.optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+const MedicationOrderParamsSchema = z.object({
+  orderId: z.string().uuid(),
 });
 
 const ListStockSchema = z.object({
@@ -328,6 +352,96 @@ router.patch(
         invoiceId = invoice?.invoiceId ?? null;
       }
       res.json({ ...result, invoiceId });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  '/medication-orders',
+  requireRole('Pharmacist', 'PharmacyTech', 'ITAdmin'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const parsed = MedicationOrderListQuerySchema.safeParse(req.query);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
+      }
+
+      const { status, patientId } = parsed.data;
+      const statuses = Array.isArray(status) ? status : status ? [status] : [];
+
+      const orders = await prisma.medicationOrder.findMany({
+        where: {
+          ...(patientId ? { patientId } : {}),
+          ...(statuses.length ? { status: { in: statuses } } : {}),
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        select: medicationOrderSelect,
+      });
+
+      res.json({ data: orders });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.patch(
+  '/medication-orders/:orderId',
+  requireRole('Pharmacist', 'ITAdmin'),
+  validate({ params: MedicationOrderParamsSchema, body: MedicationOrderUpdateSchema }),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { orderId } = req.params as z.infer<typeof MedicationOrderParamsSchema>;
+      const { status, notes } = req.body as z.infer<typeof MedicationOrderUpdateSchema>;
+
+      if (!status && notes === undefined) {
+        return res.status(400).json({ error: 'No updates supplied' });
+      }
+
+      const existing = await prisma.medicationOrder.findUnique({
+        where: { orderId },
+        select: {
+          orderId: true,
+          status: true,
+          approvedAt: true,
+        },
+      });
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Medication order not found' });
+      }
+
+      const updateData: Prisma.MedicationOrderUpdateInput = {};
+
+      if (status) {
+        updateData.status = status;
+        if (status === MedicationOrderStatus.APPROVED) {
+          updateData.approvedAt = existing.approvedAt ?? new Date();
+          if (req.user) {
+            updateData.approvedBy = { connect: { userId: req.user.userId } };
+          }
+        }
+      }
+
+      if (notes !== undefined) {
+        const trimmed = notes.trim();
+        updateData.notes = trimmed.length > 0 ? trimmed : null;
+      }
+
+      if (req.user) {
+        updateData.updatedBy = { connect: { userId: req.user.userId } };
+      }
+
+      const order = await prisma.medicationOrder.update({
+        where: { orderId },
+        data: updateData,
+        select: medicationOrderSelect,
+      });
+
+      res.json(order);
     } catch (error) {
       next(error);
     }

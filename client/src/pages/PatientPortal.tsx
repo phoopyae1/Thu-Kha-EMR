@@ -23,9 +23,12 @@ import {
   fetchSpecialists,
   fetchMedications,
   fetchPrescriptions,
+  fetchMedicationOrders,
+  createMedicationOrder,
   loginPatient,
   registerPatientPortalAccount,
   type SpecialistResponse,
+  type MedicationOrderResponse,
 } from '../api/patientPortal';
 import brillarLogo from '../public/brillar.avif';
 
@@ -320,6 +323,7 @@ export default function PatientPortal() {
   const [radiologyReports, setRadiologyReports] = useState<any[]>([]);
   const [payments, setPayments] = useState<any[]>([]);
   const [medications, setMedications] = useState<any[]>([]);
+  const [medicationOrders, setMedicationOrders] = useState<MedicationOrderResponse[]>([]);
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
   const [todaysAppointment, setTodaysAppointment] = useState<any | null>(null);
@@ -381,17 +385,32 @@ export default function PatientPortal() {
   const handleMedicationOrder = useCallback(
     async (entry: any) => {
       if (!entry) return;
+      if (!session) {
+        showToast({
+          type: 'error',
+          title: t('Medication order unavailable'),
+          message: t('Please sign in to submit a medication order.'),
+        });
+        return;
+      }
 
       const isPrescription = typeof entry.prescriptionId === 'string' && entry.prescriptionId.length > 0;
       const summaryLines: string[] = [];
+      const payload: {
+        patientId: string;
+        prescriptionId?: string;
+        drugName?: string;
+        dosage?: string;
+        instructions?: string;
+        quantity?: number;
+      } = { patientId: session.patientId };
 
       if (isPrescription) {
+        payload.prescriptionId = entry.prescriptionId;
         const rxCode = entry.prescriptionId ? entry.prescriptionId.slice(0, 8).toUpperCase() : '';
-
         if (rxCode) {
           summaryLines.push(t('Rx #{id}', { id: rxCode }));
         }
-
         summaryLines.push(t('Items ordered'));
 
         if (Array.isArray(entry.items) && entry.items.length > 0) {
@@ -417,19 +436,32 @@ export default function PatientPortal() {
           });
         }
       } else {
-        summaryLines.push(t('Medication order'));
-
         const drugName = entry.drugName ? String(entry.drugName).trim() : '';
-        if (drugName) {
-          summaryLines.push(drugName);
+        if (!drugName) {
+          showToast({
+            type: 'error',
+            title: t('Medication order unavailable'),
+            message: t('Medication name is required to submit an order.'),
+          });
+          return;
+        }
+        payload.drugName = drugName;
+        if (entry.dosage) payload.dosage = String(entry.dosage);
+        if (entry.instructions) payload.instructions = String(entry.instructions);
+        if (entry.quantity) {
+          const numericQty = Number(entry.quantity);
+          if (!Number.isNaN(numericQty) && numericQty > 0) {
+            payload.quantity = numericQty;
+          }
         }
 
-        if (entry.dosage) {
-          summaryLines.push(t('Dosage: {dosage}', { dosage: entry.dosage }));
+        summaryLines.push(t('Medication order'));
+        summaryLines.push(drugName);
+        if (payload.dosage) {
+          summaryLines.push(t('Dosage: {dosage}', { dosage: payload.dosage }));
         }
-
-        if (entry.instructions) {
-          summaryLines.push(t('Instructions: {instructions}', { instructions: entry.instructions }));
+        if (payload.instructions) {
+          summaryLines.push(t('Instructions: {instructions}', { instructions: payload.instructions }));
         }
 
         const visitDoctor = entry.visit?.doctor?.name ? String(entry.visit.doctor.name).trim() : '';
@@ -450,38 +482,58 @@ export default function PatientPortal() {
 
       const summary = summaryLines.join('\n').trim();
 
-      if (!summary) {
-        return;
-      }
-
       try {
-        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(summary);
-          showToast({
-            type: 'success',
-            title: isPrescription ? t('Prescription ready to share') : t('Instructions ready to share'),
-            message: t('Order details copied. Share with the hospital or client to arrange medication.'),
-          });
-        } else {
-          throw new Error('clipboard-unavailable');
-        }
-      } catch (error) {
-        const errorLabel = isPrescription
-          ? t('Unable to copy prescription')
-          : t('Unable to copy instructions');
-        const errorMessage = isPrescription
-          ? t('Please copy the details manually from the prescription view.')
-          : t('Please copy the details manually from the medication view.');
+        const order = await createMedicationOrder(session.token, payload);
+        setMedicationOrders((previous) => {
+          const next = [order, ...previous.filter((existing) => existing.orderId !== order.orderId)];
+          return next.sort(
+            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+          );
+        });
 
-        console.error('Unable to copy order details', error);
+        let successMessage = isPrescription
+          ? t('Our pharmacy team will review your prescription shortly.')
+          : t('Your medication request has been sent to the pharmacy.');
+
+        if (summary) {
+          try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+              await navigator.clipboard.writeText(summary);
+              successMessage = t(
+                'Order details copied. Share with the hospital or client to arrange medication.',
+              );
+            }
+          } catch (clipboardError) {
+            console.error('Unable to copy order details', clipboardError);
+          }
+        }
+
+        showToast({
+          type: 'success',
+          title: t('Medication order submitted'),
+          message: successMessage,
+        });
+      } catch (error) {
+        let message = t('Unable to place medication order.');
+        if (error instanceof Error) {
+          try {
+            const parsed = JSON.parse(error.message);
+            if (parsed && typeof parsed.error === 'string') {
+              message = parsed.error;
+            }
+          } catch {
+            message = error.message;
+          }
+        }
+
         showToast({
           type: 'error',
-          title: errorLabel,
-          message: errorMessage,
+          title: t('Medication order failed'),
+          message,
         });
       }
     },
-    [showToast, t],
+    [session, setMedicationOrders, showToast, t],
   );
 
   useEffect(() => {
@@ -653,6 +705,7 @@ export default function PatientPortal() {
         paymentData,
         medicationData,
         prescriptionData,
+        medicationOrderData,
       ] = await Promise.all([
         fetchPatientProfile(activeSession.token, activeSession.patientId),
         fetchPatientAppointments(activeSession.token, activeSession.patientId),
@@ -662,6 +715,7 @@ export default function PatientPortal() {
         fetchPayments(activeSession.token, activeSession.patientId),
         fetchMedications(activeSession.token, activeSession.patientId),
         fetchPrescriptions(activeSession.token, activeSession.patientId),
+        fetchMedicationOrders(activeSession.token, activeSession.patientId),
       ]);
 
       setProfile(profileData);
@@ -672,6 +726,7 @@ export default function PatientPortal() {
       setPayments(paymentData);
       setMedications(medicationData);
       setPrescriptions(prescriptionData);
+      setMedicationOrders(medicationOrderData);
 
       const appointmentToday = (appointmentData?.upcoming ?? []).find((appointment: any) => {
         const appointmentDate = new Date(appointment.date);
@@ -698,6 +753,7 @@ export default function PatientPortal() {
       setPortalLoading(false);
       setTodaysAppointment(null);
       setReminderDismissed(false);
+      setMedicationOrders([]);
       let message = t('Unable to load patient data.');
       if (error instanceof Error) {
         try {
@@ -722,6 +778,7 @@ export default function PatientPortal() {
   useEffect(() => {
     if (!session) {
       setActiveTab('overview');
+      setMedicationOrders([]);
     }
   }, [session]);
 
@@ -791,6 +848,7 @@ export default function PatientPortal() {
     setRadiologyReports([]);
     setPayments([]);
     setMedications([]);
+    setMedicationOrders([]);
     setAppointmentForm(defaultAppointmentForm);
     setAppointmentStatus('idle');
     setReceiptInvoice(null);
@@ -911,6 +969,7 @@ export default function PatientPortal() {
             immunizations={immunizations}
             medications={medications}
             prescriptions={prescriptions}
+            orders={medicationOrders}
             onOrderMedication={handleMedicationOrder}
           />
         );
@@ -1747,7 +1806,18 @@ function AppointmentsSection({
   );
 }
 
-function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, onOrderMedication }: any) {
+function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, orders, onOrderMedication }: any) {
+  const medicationOrdersList = Array.isArray(orders) ? orders : [];
+  const orderStatusLabels: Record<string, string> = {
+    PENDING: t('Pending approval'),
+    APPROVED: t('Approved'),
+    SHIPPING: t('Shipping'),
+    ON_THE_WAY: t('On the way'),
+    SHIPPED: t('Shipped'),
+    DELIVERED: t('Delivered'),
+    CANCELLED: t('Cancelled'),
+  };
+
   const [expandedMedications, setExpandedMedications] = useState<Record<string, boolean>>({});
   const prescriptionStatusLabels: Record<string, string> = {
     PENDING: t('Pending'),
@@ -1922,6 +1992,94 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                           );
                         })}
                       </ul>
+                    </div>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">{t('Medication orders')}</h3>
+          <PharmacyIcon className="h-5 w-5 text-emerald-600" />
+        </div>
+        <p className="mt-2 text-sm text-slate-500">
+          {t('Track pharmacy approvals, shipping updates, and delivery milestones.')}
+        </p>
+        {medicationOrdersList.length === 0 ? (
+          <p className="mt-4 text-sm text-slate-500">{t('No medication orders submitted yet.')}</p>
+        ) : (
+          <ul className="mt-4 space-y-3 text-sm text-slate-600">
+            {medicationOrdersList.map((order: any) => {
+              const statusLabel = orderStatusLabels[order.status] ?? order.status;
+              const createdAt = order.createdAt ? new Date(order.createdAt) : null;
+              const updatedAt = order.updatedAt ? new Date(order.updatedAt) : null;
+              const approvedAt = order.approvedAt ? new Date(order.approvedAt) : null;
+              const prescriptionCode = order.prescription?.prescriptionId
+                ? order.prescription.prescriptionId.slice(0, 8).toUpperCase()
+                : null;
+              const sourceLabel = prescriptionCode
+                ? t('Prescription #{id}', { id: prescriptionCode })
+                : order.drugName || t('Medication order');
+              const prescriptionItems = Array.isArray(order.prescription?.items)
+                ? order.prescription.items
+                    .map((item: any) =>
+                      item.drug
+                        ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
+                        : item.dose,
+                    )
+                    .filter(Boolean)
+                    .join(', ')
+                : null;
+
+              return (
+                <li key={order.orderId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1 text-xs text-slate-500">
+                      <div className="text-sm font-semibold text-slate-900">{sourceLabel}</div>
+                      <div>{t('Status: {status}', { status: statusLabel })}</div>
+                      {createdAt ? (
+                        <div>{t('Requested {date}', { date: createdAt.toLocaleString() })}</div>
+                      ) : null}
+                      {approvedAt ? (
+                        <div>{t('Approved {date}', { date: approvedAt.toLocaleString() })}</div>
+                      ) : null}
+                      {order.notes ? (
+                        <div>{t('Notes: {notes}', { notes: order.notes })}</div>
+                      ) : null}
+                    </div>
+                    <div className="text-right text-xs text-slate-500">
+                      {updatedAt ? (
+                        <div>{t('Updated {date}', { date: updatedAt.toLocaleString() })}</div>
+                      ) : null}
+                      {order.quantity ? (
+                        <div>{t('Quantity: {quantity}', { quantity: order.quantity })}</div>
+                      ) : null}
+                      {order.prescription?.doctor?.name ? (
+                        <div>{t('Doctor: {name}', { name: order.prescription.doctor.name })}</div>
+                      ) : null}
+                      {order.prescription?.doctor?.department ? (
+                        <div>{order.prescription.doctor.department}</div>
+                      ) : null}
+                      {order.approvedBy?.email ? (
+                        <div>{t('Handled by {email}', { email: order.approvedBy.email })}</div>
+                      ) : null}
+                    </div>
+                  </div>
+                  {prescriptionItems ? (
+                    <div className="mt-2 text-xs text-slate-500">{prescriptionItems}</div>
+                  ) : null}
+                  {!order.prescription && (order.dosage || order.instructions) ? (
+                    <div className="mt-2 space-y-1 text-xs text-slate-500">
+                      {order.dosage ? (
+                        <div>{t('Dosage: {dosage}', { dosage: order.dosage })}</div>
+                      ) : null}
+                      {order.instructions ? (
+                        <div>{t('Instructions: {instructions}', { instructions: order.instructions })}</div>
+                      ) : null}
                     </div>
                   ) : null}
                 </li>
