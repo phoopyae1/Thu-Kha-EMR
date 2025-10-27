@@ -13,6 +13,13 @@ export const medicationOrderSelect = {
   approvedAt: true,
   createdAt: true,
   updatedAt: true,
+  patient: {
+    select: {
+      patientId: true,
+      name: true,
+      contact: true,
+    },
+  },
   prescription: {
     select: {
       prescriptionId: true,
