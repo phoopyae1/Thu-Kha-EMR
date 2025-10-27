@@ -11,6 +11,13 @@ describe('Patient portal integration embeds', () => {
     'MONGODB_DATA_COLLECTION',
     'MONGODB_DATA_API_URL',
     'MONGODB_DATA_API_FIND_URL',
+    'PATIENT_PORTAL_WIDGET_URL',
+    'PATIENT_PORTAL_WIDGET_IFRAME',
+    'PATIENT_PORTAL_WIDGET_CONTEXT_KEY',
+    'PATIENT_PORTAL_WIDGET_ALLOW',
+    'PATIENT_PORTAL_WIDGET_STYLE',
+    'PATIENT_PORTAL_WIDGET_TITLE',
+    'PATIENT_PORTAL_WIDGET_LOADING',
   ] as const;
 
   const originalEnv: Record<(typeof envKeys)[number], string | undefined> = {
@@ -19,6 +26,14 @@ describe('Patient portal integration embeds', () => {
     MONGODB_DATA_DATABASE: process.env.MONGODB_DATA_DATABASE,
     MONGODB_DATA_COLLECTION: process.env.MONGODB_DATA_COLLECTION,
     MONGODB_DATA_API_URL: process.env.MONGODB_DATA_API_URL,
+    MONGODB_DATA_API_FIND_URL: process.env.MONGODB_DATA_API_FIND_URL,
+    PATIENT_PORTAL_WIDGET_URL: process.env.PATIENT_PORTAL_WIDGET_URL,
+    PATIENT_PORTAL_WIDGET_IFRAME: process.env.PATIENT_PORTAL_WIDGET_IFRAME,
+    PATIENT_PORTAL_WIDGET_CONTEXT_KEY: process.env.PATIENT_PORTAL_WIDGET_CONTEXT_KEY,
+    PATIENT_PORTAL_WIDGET_ALLOW: process.env.PATIENT_PORTAL_WIDGET_ALLOW,
+    PATIENT_PORTAL_WIDGET_STYLE: process.env.PATIENT_PORTAL_WIDGET_STYLE,
+    PATIENT_PORTAL_WIDGET_TITLE: process.env.PATIENT_PORTAL_WIDGET_TITLE,
+    PATIENT_PORTAL_WIDGET_LOADING: process.env.PATIENT_PORTAL_WIDGET_LOADING,
   };
 
   beforeEach(() => {
@@ -131,5 +146,18 @@ describe('Patient portal integration embeds', () => {
 
     expect(res.status).toBe(404);
     expect(res.body.error).toContain('No integration embed configured');
+  });
+
+  it('returns integration embed configured via environment variables', async () => {
+    process.env.PATIENT_PORTAL_WIDGET_URL = 'https://demo.atenxion.ai/chat-widget?agentchainId=test';
+    process.env.PATIENT_PORTAL_WIDGET_CONTEXT_KEY = 'ENV-CTX-123';
+    const fetchSpy = jest.spyOn(global, 'fetch');
+
+    const res = await request(app).get('/api/patient-portal/integration-embeds/latest');
+
+    expect(res.status).toBe(200);
+    expect(res.body.embed.contextKey).toBe('ENV-CTX-123');
+    expect(res.body.embed.iframeCode).toContain('https://demo.atenxion.ai/chat-widget?agentchainId=test');
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

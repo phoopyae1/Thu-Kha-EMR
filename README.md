@@ -40,6 +40,9 @@ Thu Kha (သုခ) EMR is a reference implementation of an electronic medical r
    - `MONGODB_DATA_SOURCE`
    - `MONGODB_DATA_DATABASE`
    - Optional: `MONGODB_DATA_COLLECTION` (defaults to `integrationEmbeds`)
+   If you prefer to hard-code a widget without MongoDB, set:
+   - `PATIENT_PORTAL_WIDGET_IFRAME` with the full `<iframe>` snippet **or** `PATIENT_PORTAL_WIDGET_URL` with the iframe `src`
+   - Optional: `PATIENT_PORTAL_WIDGET_CONTEXT_KEY`, `PATIENT_PORTAL_WIDGET_TITLE`, `PATIENT_PORTAL_WIDGET_ALLOW`, `PATIENT_PORTAL_WIDGET_STYLE`, `PATIENT_PORTAL_WIDGET_LOADING`
 3. **Provision the database** – Ensure the target PostgreSQL instance is running and reachable from your development machine.
 4. **Apply migrations and seed demo data**
    ```bash
