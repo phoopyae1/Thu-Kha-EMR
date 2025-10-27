@@ -715,6 +715,56 @@ addPath('/health', 'get', {
 });
 
 // Patient Portal APIs
+addPath('/patient-portal/integration-embeds', 'post', {
+  summary: '[Patient Portal] Save integration embed configuration',
+  description:
+    'Persist an iframe snippet and contextual access key so external sites can securely embed the patient portal. Data is stored through the MongoDB Data API.',
+  tags: ['Patient Portal'],
+  security: [],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['iframeCode', 'contextKey'],
+          properties: {
+            iframeCode: {
+              type: 'string',
+              description: 'Complete iframe HTML snippet that will host the embedded portal.',
+              example:
+                '<iframe src="https://patient-portal.example.com/embed" data-context-key="CTX-123" style="border:0;width:100%;min-height:720px;"></iframe>',
+            },
+            contextKey: {
+              type: 'string',
+              description: 'Signed context key or token that the embed will exchange for patient data.',
+              example: 'CTX-1234567890',
+            },
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    '201': {
+      description: 'Integration settings saved to MongoDB',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', nullable: true, description: 'MongoDB document identifier when available.' },
+            },
+          },
+        },
+      },
+    },
+    '400': { description: 'Validation error' },
+    '502': { description: 'MongoDB Data API request failed' },
+    '503': { description: 'MongoDB configuration not available' },
+  },
+});
+
 addPath('/patient-portal/register', 'post', {
   summary: '[Patient Portal] Register new account',
   description: 'Create a new patient portal account. Account is activated immediately.',

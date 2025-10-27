@@ -89,6 +89,12 @@ export default function PatientPortalLanding() {
             {t('Return to admin login')}
           </Link>
           <Link
+            to="/integration"
+            className="rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-50"
+          >
+            {t('Embed the portal')}
+          </Link>
+          <Link
             to="/login"
             className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
           >
