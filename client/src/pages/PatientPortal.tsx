@@ -1819,6 +1819,14 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
   };
 
   const [expandedMedications, setExpandedMedications] = useState<Record<string, boolean>>({});
+  const [customOrder, setCustomOrder] = useState({
+    medication: '',
+    dosageMg: '',
+    quantity: '',
+    instructions: '',
+  });
+  const [customOrderError, setCustomOrderError] = useState<string | null>(null);
+  const [isSubmittingCustomOrder, setIsSubmittingCustomOrder] = useState(false);
   const prescriptionStatusLabels: Record<string, string> = {
     PENDING: t('Pending'),
     PARTIAL: t('Partially dispensed'),
@@ -1851,6 +1859,57 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
     }));
   };
 
+  const handleCustomOrderChange = (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = event.target;
+    setCustomOrder((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleCustomOrderSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setCustomOrderError(null);
+
+    const trimmedMedication = customOrder.medication.trim();
+    if (!trimmedMedication) {
+      setCustomOrderError(t('Medication name is required.'));
+      return;
+    }
+
+    const payload: {
+      drugName: string;
+      dosage?: string;
+      quantity?: number;
+      instructions?: string;
+    } = {
+      drugName: trimmedMedication,
+    };
+
+    const dosageValue = customOrder.dosageMg.trim();
+    if (dosageValue) {
+      payload.dosage = `${dosageValue} ${t('mg')}`;
+    }
+
+    const parsedQuantity = Number(customOrder.quantity);
+    if (!Number.isNaN(parsedQuantity) && parsedQuantity > 0) {
+      payload.quantity = parsedQuantity;
+    }
+
+    const trimmedInstructions = customOrder.instructions.trim();
+    if (trimmedInstructions) {
+      payload.instructions = trimmedInstructions;
+    }
+
+    try {
+      setIsSubmittingCustomOrder(true);
+      await onOrderMedication?.(payload);
+      setCustomOrder({ medication: '', dosageMg: '', quantity: '', instructions: '' });
+    } finally {
+      setIsSubmittingCustomOrder(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {latestImmunization ? (
@@ -1868,6 +1927,84 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
           ) : null}
         </section>
       ) : null}
+
+      <section className="rounded-3xl border border-blue-200 bg-blue-50/60 p-6 shadow-sm">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-slate-900">
+            {t('Request medication from pharmacy')}
+          </h3>
+          <PharmacyIcon className="h-5 w-5 text-blue-600" />
+        </div>
+        <p className="mt-2 text-sm text-slate-600">
+          {t('Let us know which medication you need and the strength in milligrams. Our pharmacy team will follow up with you.')}
+        </p>
+        <form className="mt-4 space-y-4" onSubmit={handleCustomOrderSubmit}>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">
+              {t('Medication name')}
+              <input
+                type="text"
+                name="medication"
+                value={customOrder.medication}
+                onChange={handleCustomOrderChange}
+                placeholder={t('e.g. Amoxicillin')}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                required
+              />
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              {t('Dosage (mg)')}
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                name="dosageMg"
+                value={customOrder.dosageMg}
+                onChange={handleCustomOrderChange}
+                placeholder={t('e.g. 500')}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="text-sm font-medium text-slate-700">
+              {t('Quantity (optional)')}
+              <input
+                type="number"
+                min="0"
+                step="1"
+                name="quantity"
+                value={customOrder.quantity}
+                onChange={handleCustomOrderChange}
+                placeholder={t('Number of tablets or capsules')}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+            <label className="text-sm font-medium text-slate-700">
+              {t('Instructions for the pharmacist (optional)')}
+              <textarea
+                name="instructions"
+                value={customOrder.instructions}
+                onChange={handleCustomOrderChange}
+                placeholder={t('Add any notes such as refill request or preferred pickup time')}
+                rows={3}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-200"
+              />
+            </label>
+          </div>
+          {customOrderError ? <p className="text-sm text-rose-600">{customOrderError}</p> : null}
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="submit"
+              disabled={isSubmittingCustomOrder}
+              className="inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+            >
+              <PharmacyIcon className="h-4 w-4" />
+              {isSubmittingCustomOrder ? t('Sending request…') : t('Send request to pharmacy')}
+            </button>
+          </div>
+        </form>
+      </section>
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
