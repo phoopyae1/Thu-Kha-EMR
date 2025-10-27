@@ -1053,9 +1053,21 @@ export default function PatientPortal() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {session ? (
+              <button
+                type="button"
+                onClick={() => {
+                  handleLogout();
+                  navigate('/login', { replace: true });
+                }}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              >
+                {t('Sign out')}
+              </button>
+            ) : null}
             <button
+              type="button"
               onClick={() => {
-                handleLogout();
                 navigate('/');
               }}
               className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
@@ -1068,15 +1080,6 @@ export default function PatientPortal() {
             >
               {t('Return to staff login')}
             </Link>
-            {session ? (
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700"
-              >
-                {t('Sign out')}
-              </button>
-            ) : null}
           </div>
         </div>
         {session ? (
@@ -1118,17 +1121,12 @@ export default function PatientPortal() {
                   </p>
                 </div>
                 <div className="flex flex-col items-start gap-3 text-sm text-slate-600 sm:flex-row sm:items-center">
-                  <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-700">
-                    <CheckIcon className="h-5 w-5" />
-                    {portalLoading ? t('Syncing data...') : t('Portal connected')}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-4 py-2 font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-                  >
-                    {t('Sign out')}
-                  </button>
+                  {portalLoading ? (
+                    <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-2 font-semibold text-emerald-700">
+                      <CheckIcon className="h-5 w-5" />
+                      {t('Syncing data...')}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </section>
