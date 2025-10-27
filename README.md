@@ -33,6 +33,12 @@ Thu Kha (သုခ) EMR is a reference implementation of an electronic medical r
    cp .env.example .env
    ```
    Fill in database credentials (`DATABASE_URL`, `DIRECT_URL`), `JWT_SECRET`, rate-limit settings, and optional `OPENAI_API_KEY`/`OPENAI_INVOICE_MODEL` values.
+   To persist patient portal integration snippets to MongoDB Atlas via the Data API, configure:
+   - `MONGODB_DATA_API_URL`
+   - `MONGODB_DATA_API_KEY`
+   - `MONGODB_DATA_SOURCE`
+   - `MONGODB_DATA_DATABASE`
+   - Optional: `MONGODB_DATA_COLLECTION` (defaults to `integrationEmbeds`)
 3. **Provision the database** – Ensure the target PostgreSQL instance is running and reachable from your development machine.
 4. **Apply migrations and seed demo data**
    ```bash
