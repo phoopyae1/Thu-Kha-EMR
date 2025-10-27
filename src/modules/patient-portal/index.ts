@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole, type AuthRequest } from '../auth/index.js';
 import { toDateOnly } from '../../utils/time.js';
+import { medicationOrderSelect } from '../../services/medicationOrderService.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -50,6 +51,33 @@ const portalAccountRegisterSchema = z.object({
   contact: z.string().trim().min(1),
   insurance: z.string().trim().min(1).optional(),
   drugAllergies: z.string().trim().min(1).optional(),
+});
+
+const medicationOrderCreateSchema = z
+  .object({
+    patientId: z.string().uuid(),
+    prescriptionId: z.string().uuid().optional(),
+    drugName: z.string().trim().min(1).optional(),
+    dosage: z.string().trim().min(1).optional(),
+    instructions: z.string().trim().min(1).optional(),
+    quantity: z.coerce.number().int().positive().max(10000).optional(),
+    notes: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!value.prescriptionId) {
+      const name = value.drugName?.trim() ?? '';
+      if (!name) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'drugName is required when no prescriptionId is provided',
+          path: ['drugName'],
+        });
+      }
+    }
+  });
+
+const medicationOrderPatientParams = z.object({
+  patientId: z.string().uuid(),
 });
 
 staffRouter.use(requireAuth);
@@ -937,6 +965,107 @@ router.get('/prescriptions/:patientId', async (req: Request, res: Response) => {
   );
 });
 
+router.post(
+  '/orders',
+  validate({ body: medicationOrderCreateSchema }),
+  async (req: Request, res: Response) => {
+    const payload = req.body as z.infer<typeof medicationOrderCreateSchema>;
+    const { patientId, prescriptionId } = payload;
+
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: { patientId: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    let derivedDrugName: string | null = null;
+    if (prescriptionId) {
+      const prescription = await prisma.prescription.findUnique({
+        where: { prescriptionId },
+        select: {
+          prescriptionId: true,
+          patientId: true,
+          items: {
+            orderBy: { itemId: 'asc' },
+            take: 1,
+            select: {
+              drug: {
+                select: {
+                  name: true,
+                  strength: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!prescription || prescription.patientId !== patientId) {
+        return res.status(400).json({ error: 'Prescription not found for this patient' });
+      }
+
+      const firstDrug = prescription.items[0]?.drug;
+      if (firstDrug) {
+        const parts = [firstDrug.name, firstDrug.strength].filter(
+          (part) => typeof part === 'string' && part.trim().length > 0,
+        );
+        derivedDrugName = parts.length ? parts.join(' ') : null;
+      }
+    }
+
+    const trimmedDrugName = typeof payload.drugName === 'string' ? payload.drugName.trim() : undefined;
+    const trimmedDosage = typeof payload.dosage === 'string' ? payload.dosage.trim() : undefined;
+    const trimmedInstructions =
+      typeof payload.instructions === 'string' ? payload.instructions.trim() : undefined;
+    const trimmedNotes = typeof payload.notes === 'string' ? payload.notes.trim() : undefined;
+
+    const order = await prisma.medicationOrder.create({
+      data: {
+        patientId,
+        prescriptionId: prescriptionId ?? null,
+        drugName: trimmedDrugName ?? derivedDrugName,
+        dosage: trimmedDosage ?? null,
+        instructions: trimmedInstructions ?? null,
+        quantity: payload.quantity ?? null,
+        notes: trimmedNotes && trimmedNotes.length > 0 ? trimmedNotes : null,
+      },
+      select: medicationOrderSelect,
+    });
+
+    res.status(201).json(order);
+  },
+);
+
+router.get('/orders/:patientId', async (req: Request, res: Response) => {
+  const parsed = medicationOrderPatientParams.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  const { patientId } = parsed.data;
+
+  const patient = await prisma.patient.findUnique({
+    where: { patientId },
+    select: { patientId: true },
+  });
+
+  if (!patient) {
+    return res.status(404).json({ error: 'Patient not found' });
+  }
+
+  const orders = await prisma.medicationOrder.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: medicationOrderSelect,
+  });
+
+  res.json(orders);
+});
+
 router.get('/medications/:patientId', async (req: Request, res: Response) => {
   const { patientId } = req.params;
 
@@ -1017,6 +1146,7 @@ router.get('/complete/:patientId', async (req: Request, res: Response) => {
       radiologyReports,
       medications,
       prescriptions,
+      medicationOrders,
     ] = await Promise.all([
       // Appointments
       prisma.appointment.findMany({
@@ -1249,6 +1379,12 @@ router.get('/complete/:patientId', async (req: Request, res: Response) => {
           },
         },
       }),
+      prisma.medicationOrder.findMany({
+        where: { patientId },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+        select: medicationOrderSelect,
+      }),
     ]);
 
     // Split appointments into upcoming and past
@@ -1328,6 +1464,7 @@ router.get('/complete/:patientId', async (req: Request, res: Response) => {
       },
       visits: visits,
       prescriptions: prescriptions,
+      medicationOrders,
       medications: medications,
       labs: formattedLabs,
       immunizations: immunizations,
