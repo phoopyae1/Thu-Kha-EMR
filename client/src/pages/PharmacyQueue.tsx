@@ -7,11 +7,13 @@ import {
   type PharmacyQueueStatus,
 } from '../api/pharmacy';
 import { useAuth } from '../context/AuthProvider';
+import useAdminBasePath from '../hooks/useAdminBasePath';
 
 const STATUS_OPTIONS: PharmacyQueueStatus[] = ['PENDING', 'PARTIAL', 'DISPENSED'];
 
 export default function PharmacyQueue() {
   const { user } = useAuth();
+  const adminBasePath = useAdminBasePath();
   const [status, setStatus] = useState<PharmacyQueueStatus>('PENDING');
   const [data, setData] = useState<PharmacyQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,7 +64,7 @@ export default function PharmacyQueue() {
           <div className="flex flex-wrap items-center gap-3">
             {canManageInventory ? (
               <Link
-                to="/pharmacy/inventory"
+                to={`${adminBasePath}/pharmacy/inventory`}
                 className="rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 transition hover:bg-blue-50"
               >
                 Manage inventory
@@ -123,7 +125,7 @@ export default function PharmacyQueue() {
 
                   {canDispense ? (
                     <Link
-                      to={`/pharmacy/dispense/${item.prescriptionId}`}
+                      to={`${adminBasePath}/pharmacy/dispense/${item.prescriptionId}`}
                       className="mt-4 inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
                     >
                       Start Dispense

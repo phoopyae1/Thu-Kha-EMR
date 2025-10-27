@@ -14,6 +14,7 @@ import {
   searchInventoryDrugs,
   scanInvoiceForInventory,
 } from '../api/client';
+import useAdminBasePath from '../hooks/useAdminBasePath';
 
 interface ReceiveFormState {
   batchNo: string;
@@ -41,6 +42,7 @@ function formatDate(iso?: string | null) {
 }
 
 export default function PharmacyInventory() {
+  const adminBasePath = useAdminBasePath();
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestions, setSuggestions] = useState<InventoryDrug[]>([]);
   const [selectedDrug, setSelectedDrug] = useState<InventoryDrug | null>(null);
@@ -365,7 +367,7 @@ export default function PharmacyInventory() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                to="/pharmacy/drugs/new"
+                to={`${adminBasePath}/pharmacy/drugs/new`}
                 className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
               >
                 Add new medication

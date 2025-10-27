@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import {
   AISummaryIcon,
@@ -48,6 +48,7 @@ import {
   type VisitFormSubmitValues,
 } from '../utils/visitForm';
 import { useTranslation } from '../hooks/useTranslation';
+import useAdminBasePath from '../hooks/useAdminBasePath';
 
 type QuickActionId = 'appointments' | 'medications' | 'lab-profile' | 'search-clinic';
 
@@ -62,11 +63,6 @@ type QuickActionConfig = {
   infoChips?: Array<{ label: string; value: string }>;
   footnote?: string;
 };
-
-function useAdminBasePath() {
-  const { adminId } = useParams<{ adminId: string }>();
-  return adminId ? `/admin/${adminId}` : '/admin';
-}
 
 export default function Home() {
   const { user } = useAuth();

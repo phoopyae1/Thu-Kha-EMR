@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { fetchJSON } from '../api/http';
+import useAdminBasePath from '../hooks/useAdminBasePath';
 
 interface PrescriptionItem {
   itemId: string;
@@ -29,6 +30,7 @@ interface DispenseSession {
 export default function DispenseDetail() {
   const { prescriptionId } = useParams<{ prescriptionId: string }>();
   const navigate = useNavigate();
+  const adminBasePath = useAdminBasePath();
   const [prescription, setPrescription] = useState<PrescriptionDetail | null>(null);
   const [dispense, setDispense] = useState<DispenseSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -110,7 +112,7 @@ export default function DispenseDetail() {
         body: JSON.stringify({ status: nextStatus }),
       });
       window.alert('Dispense saved.');
-      navigate('/pharmacy/queue');
+      navigate(`${adminBasePath}/pharmacy/queue`);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : 'Unable to complete dispense');
     }
