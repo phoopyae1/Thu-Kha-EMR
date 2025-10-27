@@ -9,6 +9,10 @@ export interface InsertOneResponse {
   insertedId?: string;
 }
 
+export interface FindOneResponse {
+  document?: IntegrationEmbedDocument | null;
+}
+
 export class MongoConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -44,7 +48,7 @@ function getBaseRequestInit(): RequestInit {
   } satisfies RequestInit;
 }
 
-function buildPayload(document: IntegrationEmbedDocument) {
+function getCollectionConfig() {
   const dataSource = process.env.MONGODB_DATA_SOURCE;
   const database = process.env.MONGODB_DATA_DATABASE;
   const collection = process.env.MONGODB_DATA_COLLECTION ?? 'integrationEmbeds';
@@ -57,11 +61,17 @@ function buildPayload(document: IntegrationEmbedDocument) {
     throw new MongoConfigurationError('MONGODB_DATA_DATABASE is not configured');
   }
 
+  return { dataSource, database, collection };
+}
+
+function buildInsertPayload(document: IntegrationEmbedDocument) {
+  return { ...getCollectionConfig(), document };
+}
+
+function buildFindOnePayload() {
   return {
-    dataSource,
-    database,
-    collection,
-    document,
+    ...getCollectionConfig(),
+    sort: { createdAt: -1 },
   };
 }
 
@@ -73,7 +83,7 @@ export async function insertIntegrationEmbed(document: IntegrationEmbedDocument)
   }
 
   const baseInit = getBaseRequestInit();
-  const payload = buildPayload(document);
+  const payload = buildInsertPayload(document);
   const response = await fetch(endpoint, {
     ...baseInit,
     body: JSON.stringify(payload),
@@ -95,4 +105,40 @@ export async function insertIntegrationEmbed(document: IntegrationEmbedDocument)
   const result = (await response.json()) as InsertOneResponse;
 
   return result;
+}
+
+export async function fetchLatestIntegrationEmbed() {
+  const findEndpoint =
+    process.env.MONGODB_DATA_API_FIND_URL ??
+    process.env.MONGODB_DATA_API_URL?.replace(/insertOne$/i, 'findOne');
+
+  if (!findEndpoint) {
+    throw new MongoConfigurationError(
+      'MONGODB_DATA_API_FIND_URL is not configured and could not be derived from MONGODB_DATA_API_URL',
+    );
+  }
+
+  const baseInit = getBaseRequestInit();
+  const payload = buildFindOnePayload();
+  const response = await fetch(findEndpoint, {
+    ...baseInit,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let details: unknown;
+
+    try {
+      details = text ? JSON.parse(text) : undefined;
+    } catch (error) {
+      details = text;
+    }
+
+    throw new MongoDataApiError('MongoDB Data API request failed', response.status, details);
+  }
+
+  const result = (await response.json()) as FindOneResponse;
+
+  return result.document ?? null;
 }

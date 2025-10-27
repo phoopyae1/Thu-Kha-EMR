@@ -10,6 +10,7 @@ describe('Patient portal integration embeds', () => {
     'MONGODB_DATA_DATABASE',
     'MONGODB_DATA_COLLECTION',
     'MONGODB_DATA_API_URL',
+    'MONGODB_DATA_API_FIND_URL',
   ] as const;
 
   const originalEnv: Record<(typeof envKeys)[number], string | undefined> = {
@@ -26,6 +27,7 @@ describe('Patient portal integration embeds', () => {
     process.env.MONGODB_DATA_DATABASE = 'thu-kha';
     process.env.MONGODB_DATA_COLLECTION = 'integrationEmbeds';
     process.env.MONGODB_DATA_API_URL = 'https://data.mongodb-api.com/app/data-abc/endpoint/data/v1/action/insertOne';
+    process.env.MONGODB_DATA_API_FIND_URL = 'https://data.mongodb-api.com/app/data-abc/endpoint/data/v1/action/findOne';
   });
 
   afterEach(() => {
@@ -86,5 +88,48 @@ describe('Patient portal integration embeds', () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toContain('MONGODB_DATA_API_KEY');
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('loads the most recent integration embed', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          document: {
+            iframeCode: '<iframe src="https://portal.example.com/embed" data-context-key="{{contextKey}}"></iframe>',
+            contextKey: 'CTX-loaded',
+            createdAt: '2024-01-01T00:00:00.000Z',
+            updatedAt: '2024-01-02T00:00:00.000Z',
+          },
+        }),
+      } as never);
+
+    const res = await request(app).get('/api/patient-portal/integration-embeds/latest');
+
+    expect(res.status).toBe(200);
+    expect(res.body.embed.contextKey).toBe('CTX-loaded');
+    expect(fetchMock).toHaveBeenCalledWith(
+      process.env.MONGODB_DATA_API_FIND_URL,
+      expect.objectContaining({
+        method: 'POST',
+      }),
+    );
+
+    const [, init] = fetchMock.mock.calls[0];
+    const payload = JSON.parse(((init as Record<string, unknown>).body as string) ?? '{}');
+    expect(payload.sort).toEqual({ createdAt: -1 });
+  });
+
+  it('returns 404 when no integration embed is configured', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({}),
+    } as never);
+
+    const res = await request(app).get('/api/patient-portal/integration-embeds/latest');
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('No integration embed configured');
   });
 });

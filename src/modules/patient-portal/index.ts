@@ -9,6 +9,7 @@ import { toDateOnly } from '../../utils/time.js';
 import { medicationOrderSelect } from '../../services/medicationOrderService.js';
 import {
   insertIntegrationEmbed,
+  fetchLatestIntegrationEmbed,
   MongoConfigurationError,
   MongoDataApiError,
 } from '../../services/mongoDataApi.js';
@@ -123,6 +124,29 @@ router.post(
     }
   },
 );
+
+router.get('/integration-embeds/latest', async (_req: Request, res: Response) => {
+  try {
+    const document = await fetchLatestIntegrationEmbed();
+
+    if (!document) {
+      return res.status(404).json({ error: 'No integration embed configured' });
+    }
+
+    return res.json({ embed: document });
+  } catch (error) {
+    if (error instanceof MongoConfigurationError) {
+      return res.status(503).json({ error: error.message });
+    }
+
+    if (error instanceof MongoDataApiError) {
+      return res.status(502).json({ error: error.message, details: error.details });
+    }
+
+    console.error('Failed to load integration embed', error);
+    return res.status(500).json({ error: 'Failed to load integration embed' });
+  }
+});
 
 staffRouter.use(requireAuth);
 staffRouter.use(requireRole('AdminAssistant', 'ITAdmin'));
