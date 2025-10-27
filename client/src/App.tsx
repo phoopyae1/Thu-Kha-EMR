@@ -36,13 +36,18 @@ function App() {
       {/* Patient Portal Routes - Root Level */}
       <Route path="/" element={<PatientPortalLanding />} />
       <Route path="/login" element={<PatientPortal />} />
-      <Route path="/:patientId" element={<PatientRedirect />} />
       
       {/* Redirect route for wrong appointment URL format */}
       <Route path="/appointments/:id" element={<AppointmentRedirect />} />
       
       {/* Admin Login */}
       <Route path="/admin/login" element={<Login />} />
+      
+      {/* Doctor Patient Access - Direct route for doctors */}
+      <Route path="/patients/:patientId" element={<PatientRedirect />} />
+      
+      {/* Patient Portal - After login */}
+      <Route path="/:patientId" element={<PatientPortal />} />
       
       {/* Admin Routes - Protected with /admin/{adminId} format */}
       <Route

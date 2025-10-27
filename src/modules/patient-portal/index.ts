@@ -595,6 +595,90 @@ router.get('/profile/:patientId', async (req: Request, res: Response) => {
     },
   });
 
+  // Get current medications (from visits)
+  const medicines = await prisma.medication.findMany({
+    where: {
+      visit: {
+        patientId: patientId
+      }
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      medId: true,
+      drugName: true,
+      dosage: true,
+      instructions: true,
+      createdAt: true,
+      visit: {
+        select: {
+          visitDate: true,
+          doctor: {
+            select: {
+              name: true,
+              department: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Get prescriptions with items
+  const prescriptions = await prisma.prescription.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      prescriptionId: true,
+      status: true,
+      notes: true,
+      createdAt: true,
+      doctor: {
+        select: {
+          name: true,
+          department: true,
+        },
+      },
+      items: {
+        select: {
+          itemId: true,
+          dose: true,
+          route: true,
+          frequency: true,
+          durationDays: true,
+          quantityPrescribed: true,
+          prn: true,
+          notes: true,
+          drug: {
+            select: {
+              name: true,
+              genericName: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Get medication orders
+  const medicationOrders = await prisma.medicationOrder.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      orderId: true,
+      drugName: true,
+      dosage: true,
+      instructions: true,
+      quantity: true,
+      status: true,
+      notes: true,
+      createdAt: true,
+      approvedAt: true,
+    },
+  });
+
   const { upcoming, past } = splitAppointments(appointments);
   const invoiceSummary = invoices.reduce(
     (acc, invoice) => {
@@ -627,6 +711,51 @@ router.get('/profile/:patientId', async (req: Request, res: Response) => {
     recentVisits: visits,
     invoiceSummary,
     latestImmunization: immunizations[0] ?? null,
+    medicines: medicines.map(med => ({
+      medId: med.medId,
+      drugName: med.drugName,
+      dosage: med.dosage,
+      instructions: med.instructions,
+      visitDate: med.visit.visitDate,
+      doctor: {
+        name: med.visit.doctor.name,
+        department: med.visit.doctor.department,
+      },
+      createdAt: med.createdAt,
+    })),
+    prescriptions: prescriptions.map(pres => ({
+      prescriptionId: pres.prescriptionId,
+      status: pres.status,
+      notes: pres.notes,
+      createdAt: pres.createdAt,
+      doctor: {
+        name: pres.doctor.name,
+        department: pres.doctor.department,
+      },
+      items: pres.items.map(item => ({
+        itemId: item.itemId,
+        drugName: item.drug.name,
+        genericName: item.drug.genericName,
+        dose: item.dose,
+        route: item.route,
+        frequency: item.frequency,
+        durationDays: item.durationDays,
+        quantityPrescribed: item.quantityPrescribed,
+        prn: item.prn,
+        notes: item.notes,
+      })),
+    })),
+    medicationOrders: medicationOrders.map(order => ({
+      orderId: order.orderId,
+      drugName: order.drugName,
+      dosage: order.dosage,
+      instructions: order.instructions,
+      quantity: order.quantity,
+      status: order.status,
+      notes: order.notes,
+      createdAt: order.createdAt,
+      approvedAt: order.approvedAt,
+    })),
   });
 });
 

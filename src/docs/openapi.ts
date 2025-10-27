@@ -357,6 +357,177 @@ const openapi: any = {
           accessToken: { type: 'string' }
         }
       },
+      // Pharmacy Schemas
+      Drug: {
+        type: 'object',
+        properties: {
+          drugId: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          genericName: { type: 'string', nullable: true },
+          form: { type: 'string' },
+          strength: { type: 'string' },
+          routeDefault: { type: 'string', nullable: true },
+          isActive: { type: 'boolean' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      DrugCreate: {
+        type: 'object',
+        required: ['name', 'form', 'strength'],
+        properties: {
+          drugId: { type: 'string', format: 'uuid' },
+          name: { type: 'string' },
+          genericName: { type: 'string' },
+          form: { type: 'string' },
+          strength: { type: 'string' },
+          routeDefault: { type: 'string' },
+          isActive: { type: 'boolean' },
+        },
+      },
+      StockItem: {
+        type: 'object',
+        properties: {
+          stockId: { type: 'string', format: 'uuid' },
+          drugId: { type: 'string', format: 'uuid' },
+          qtyOnHand: { type: 'integer' },
+          qtyReserved: { type: 'integer' },
+          qtyAvailable: { type: 'integer' },
+          unitCost: { type: 'number' },
+          expiryDate: { type: 'string', format: 'date', nullable: true },
+          batchNumber: { type: 'string', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          drug: { $ref: '#/components/schemas/Drug' },
+        },
+      },
+      Prescription: {
+        type: 'object',
+        properties: {
+          prescriptionId: { type: 'string', format: 'uuid' },
+          visitId: { type: 'string', format: 'uuid' },
+          patientId: { type: 'string', format: 'uuid' },
+          doctorId: { type: 'string', format: 'uuid' },
+          drugId: { type: 'string', format: 'uuid' },
+          dosage: { type: 'string' },
+          frequency: { type: 'string' },
+          duration: { type: 'string' },
+          instructions: { type: 'string', nullable: true },
+          status: { type: 'string', enum: ['PENDING', 'PARTIAL', 'DISPENSED', 'CANCELLED'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          patient: { $ref: '#/components/schemas/Patient' },
+          doctor: { $ref: '#/components/schemas/Doctor' },
+          drug: { $ref: '#/components/schemas/Drug' },
+        },
+      },
+      PrescriptionCreate: {
+        type: 'object',
+        required: ['drugId', 'dosage', 'frequency', 'duration'],
+        properties: {
+          patientId: { type: 'string', format: 'uuid' },
+          drugId: { type: 'string', format: 'uuid' },
+          dosage: { type: 'string' },
+          frequency: { type: 'string' },
+          duration: { type: 'string' },
+          instructions: { type: 'string' },
+        },
+      },
+      MedicationOrder: {
+        type: 'object',
+        properties: {
+          orderId: { type: 'string', format: 'uuid' },
+          patientId: { type: 'string', format: 'uuid' },
+          drugId: { type: 'string', format: 'uuid' },
+          dosage: { type: 'string' },
+          frequency: { type: 'string' },
+          duration: { type: 'string' },
+          instructions: { type: 'string', nullable: true },
+          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] },
+          notes: { type: 'string', nullable: true },
+          approvedAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          patient: { $ref: '#/components/schemas/Patient' },
+          drug: { $ref: '#/components/schemas/Drug' },
+          approvedBy: { $ref: '#/components/schemas/User', nullable: true },
+        },
+      },
+      MedicationOrderUpdate: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED'] },
+          notes: { type: 'string' },
+        },
+      },
+      Dispense: {
+        type: 'object',
+        properties: {
+          dispenseId: { type: 'string', format: 'uuid' },
+          prescriptionId: { type: 'string', format: 'uuid' },
+          pharmacistId: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['IN_PROGRESS', 'COMPLETED', 'PARTIAL'] },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          items: { type: 'array', items: { $ref: '#/components/schemas/DispenseItem' } },
+        },
+      },
+      DispenseItem: {
+        type: 'object',
+        properties: {
+          itemId: { type: 'string', format: 'uuid' },
+          dispenseId: { type: 'string', format: 'uuid' },
+          stockId: { type: 'string', format: 'uuid' },
+          quantity: { type: 'integer' },
+          unitPrice: { type: 'number' },
+          totalPrice: { type: 'number' },
+          createdAt: { type: 'string', format: 'date-time' },
+          stock: { $ref: '#/components/schemas/StockItem' },
+        },
+      },
+      DispenseItemCreate: {
+        type: 'object',
+        required: ['stockId', 'quantity'],
+        properties: {
+          stockId: { type: 'string', format: 'uuid' },
+          quantity: { type: 'integer' },
+        },
+      },
+      ReceiveStockItem: {
+        type: 'object',
+        required: ['drugId', 'quantity', 'unitCost'],
+        properties: {
+          drugId: { type: 'string', format: 'uuid' },
+          quantity: { type: 'integer' },
+          unitCost: { type: 'number' },
+          expiryDate: { type: 'string', format: 'date' },
+          batchNumber: { type: 'string' },
+        },
+      },
+      AdjustStockItem: {
+        type: 'object',
+        required: ['stockId', 'adjustment'],
+        properties: {
+          stockId: { type: 'string', format: 'uuid' },
+          adjustment: { type: 'integer' },
+          reason: { type: 'string' },
+        },
+      },
+      PharmacyQueueItem: {
+        type: 'object',
+        properties: {
+          prescriptionId: { type: 'string', format: 'uuid' },
+          patientId: { type: 'string', format: 'uuid' },
+          patientName: { type: 'string' },
+          drugName: { type: 'string' },
+          dosage: { type: 'string' },
+          frequency: { type: 'string' },
+          duration: { type: 'string' },
+          status: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          doctorName: { type: 'string' },
+        },
+      },
       AppointmentStatus: {
         type: 'string',
         description: 'Lifecycle status for an appointment.',
@@ -657,14 +828,148 @@ addPath('/patient-portal/login', 'post', {
 
 addPath('/patient-portal/profile/{patientId}', 'get', {
   summary: '[Patient Portal] Get patient profile',
-  description: 'Get comprehensive patient profile with visits, appointments, and billing summary',
+  description: 'Get comprehensive patient profile with visits, appointments, billing summary, medicines, prescriptions, and medication orders',
   tags: ['Patient Portal'],
   security: [{ bearerAuth: [] }],
   parameters: [
     { name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
   ],
   responses: {
-    '200': { description: 'Patient profile data' },
+    '200': { 
+      description: 'Patient profile with comprehensive medical data including medicines, prescriptions, and medication orders',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              patient: {
+                type: 'object',
+                properties: {
+                  patientId: { type: 'string', format: 'uuid' },
+                  name: { type: 'string' },
+                  dob: { type: 'string', format: 'date' },
+                  gender: { type: 'string' },
+                  contact: { type: 'string', nullable: true },
+                  insurance: { type: 'string', nullable: true },
+                  drugAllergies: { type: 'string', nullable: true }
+                }
+              },
+              appointments: {
+                type: 'object',
+                properties: {
+                  upcoming: { type: 'array', items: { $ref: '#/components/schemas/Appointment' } },
+                  past: { type: 'array', items: { $ref: '#/components/schemas/Appointment' } }
+                }
+              },
+              recentVisits: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    visitId: { type: 'string', format: 'uuid' },
+                    visitDate: { type: 'string', format: 'date' },
+                    department: { type: 'string' },
+                    doctor: { type: 'object', properties: { name: { type: 'string' } } }
+                  }
+                }
+              },
+              invoiceSummary: {
+                type: 'object',
+                properties: {
+                  outstanding: { type: 'number' },
+                  lifetimeValue: { type: 'number' },
+                  paidTotal: { type: 'number' }
+                }
+              },
+              latestImmunization: {
+                type: 'object',
+                nullable: true,
+                properties: {
+                  vaccineName: { type: 'string' },
+                  administeredAt: { type: 'string', format: 'date-time' },
+                  provider: { type: 'string' }
+                }
+              },
+              medicines: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    medId: { type: 'string', format: 'uuid' },
+                    drugName: { type: 'string' },
+                    dosage: { type: 'string', nullable: true },
+                    instructions: { type: 'string', nullable: true },
+                    visitDate: { type: 'string', format: 'date' },
+                    doctor: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        department: { type: 'string' }
+                      }
+                    },
+                    createdAt: { type: 'string', format: 'date-time' }
+                  }
+                }
+              },
+              prescriptions: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    prescriptionId: { type: 'string', format: 'uuid' },
+                    status: { type: 'string' },
+                    notes: { type: 'string', nullable: true },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    doctor: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        department: { type: 'string' }
+                      }
+                    },
+                    items: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          itemId: { type: 'string', format: 'uuid' },
+                          drugName: { type: 'string' },
+                          genericName: { type: 'string', nullable: true },
+                          dose: { type: 'string' },
+                          route: { type: 'string' },
+                          frequency: { type: 'string' },
+                          durationDays: { type: 'integer' },
+                          quantityPrescribed: { type: 'integer' },
+                          prn: { type: 'boolean' },
+                          notes: { type: 'string', nullable: true }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              medicationOrders: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    orderId: { type: 'string', format: 'uuid' },
+                    drugName: { type: 'string', nullable: true },
+                    dosage: { type: 'string', nullable: true },
+                    instructions: { type: 'string', nullable: true },
+                    quantity: { type: 'integer', nullable: true },
+                    status: { type: 'string' },
+                    notes: { type: 'string', nullable: true },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    approvedAt: { type: 'string', format: 'date-time', nullable: true }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     '401': { description: 'Unauthorized' },
     '404': { description: 'Patient not found' },
   },
@@ -790,6 +1095,57 @@ addPath('/patient-portal/facilities', 'get', {
     { name: 'search', in: 'query', schema: { type: 'string' } },
   ],
   responses: { '200': { description: 'List of facilities' } },
+});
+
+addPath('/patient-portal/prescriptions/{patientId}', 'get', {
+  summary: '[Patient Portal] Get prescriptions',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Prescriptions' } }
+});
+
+addPath('/patient-portal/orders', 'post', {
+  summary: '[Patient Portal] Create medication order',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['patientId'],
+          properties: {
+            patientId: { type: 'string', format: 'uuid' },
+            prescriptionId: { type: 'string', format: 'uuid' },
+            drugName: { type: 'string' },
+            dosage: { type: 'string' },
+            instructions: { type: 'string' },
+            quantity: { type: 'integer', minimum: 1, maximum: 10000 }
+          }
+        }
+      }
+    }
+  },
+  responses: { '201': { description: 'Order created' } }
+});
+
+addPath('/patient-portal/orders/{patientId}', 'get', {
+  summary: '[Patient Portal] Get medication orders',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Medication orders' } }
+});
+
+addPath('/patient-portal/complete/{patientId}', 'get', {
+  summary: '[Patient Portal] Get complete patient data',
+  description: 'Comprehensive endpoint that returns ALL patient data in one call for Atenxion agent',
+  tags: ['Patient Portal'],
+  security: [{ bearerAuth: [] }],
+  parameters: [{ name: 'patientId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }],
+  responses: { '200': { description: 'Complete patient data' } }
 });
 
 addPath('/auth/login', 'post', {
@@ -1541,6 +1897,580 @@ addPath('/reports/summary', 'get', {
     },
     '401': { description: 'Unauthorized' },
   },
+});
+
+// Pharmacy API Routes
+addPath('/pharmacy/drugs', 'post', {
+  summary: 'Create new drug',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/DrugCreate' }
+      }
+    }
+  },
+  responses: {
+    '201': {
+      description: 'Drug created',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Drug' } } }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - ITAdmin or InventoryManager role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/receive', 'post', {
+  summary: 'Receive stock items',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['items'],
+          properties: {
+            items: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/ReceiveStockItem' }
+            }
+          }
+        }
+      }
+    }
+  },
+  responses: {
+    '201': {
+      description: 'Stock items received',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              items: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/StockItem' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - ITAdmin, InventoryManager, or Pharmacist role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/invoice/scan', 'post', {
+  summary: 'Scan invoice for stock items',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  requestBody: {
+    required: true,
+    content: {
+      'multipart/form-data': {
+        schema: {
+          type: 'object',
+          properties: {
+            invoice: {
+              type: 'string',
+              format: 'binary',
+              description: 'Invoice file (PDF, image, etc.)'
+            }
+          }
+        }
+      }
+    }
+  },
+  responses: {
+    '200': {
+      description: 'Invoice scanned successfully',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/ReceiveStockItem' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '400': { description: 'Invalid file or scan error' },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - ITAdmin, InventoryManager, Pharmacist, or PharmacyTech role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/stock', 'get', {
+  summary: 'Get stock items for a drug',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'drugId',
+      in: 'query',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Drug ID to get stock for'
+    }
+  ],
+  responses: {
+    '200': {
+      description: 'Stock items',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/StockItem' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '400': { description: 'Invalid drug ID' },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist, PharmacyTech, InventoryManager, or ITAdmin role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/adjust', 'post', {
+  summary: 'Adjust stock quantities',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['adjustments'],
+          properties: {
+            adjustments: {
+              type: 'array',
+              items: { $ref: '#/components/schemas/AdjustStockItem' }
+            }
+          }
+        }
+      }
+    }
+  },
+  responses: {
+    '200': {
+      description: 'Stock adjusted successfully',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              items: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/StockItem' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - ITAdmin or InventoryManager role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/search', 'get', {
+  summary: 'Search inventory items',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'q',
+      in: 'query',
+      required: true,
+      schema: { type: 'string' },
+      description: 'Search query (drug name, generic name, or strength)'
+    },
+    {
+      name: 'limit',
+      in: 'query',
+      schema: { type: 'integer', minimum: 1, maximum: 50, default: 10 },
+      description: 'Maximum number of results'
+    },
+    {
+      name: 'includeAll',
+      in: 'query',
+      schema: { type: 'boolean', default: false },
+      description: 'Include items with zero stock'
+    }
+  ],
+  responses: {
+    '200': {
+      description: 'Search results',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    drugId: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    genericName: { type: 'string', nullable: true },
+                    strength: { type: 'string' },
+                    form: { type: 'string' },
+                    routeDefault: { type: 'string', nullable: true },
+                    qtyOnHand: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '400': { description: 'Invalid search parameters' },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist, PharmacyTech, InventoryManager, ITAdmin, Doctor, or Nurse role required' }
+  }
+});
+
+addPath('/pharmacy/inventory/low-stock', 'get', {
+  summary: 'Get low stock items',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'limit',
+      in: 'query',
+      schema: { type: 'integer', minimum: 1, maximum: 50, default: 5 },
+      description: 'Maximum number of results'
+    },
+    {
+      name: 'threshold',
+      in: 'query',
+      schema: { type: 'integer', minimum: 0, default: 10 },
+      description: 'Low stock threshold'
+    }
+  ],
+  responses: {
+    '200': {
+      description: 'Low stock items',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    drugId: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    qtyOnHand: { type: 'integer' },
+                    threshold: { type: 'integer' }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - InventoryManager, ITAdmin, or Pharmacist role required' }
+  }
+});
+
+addPath('/pharmacy/visits/{visitId}/prescriptions', 'post', {
+  summary: 'Create prescription for a visit',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'visitId',
+      in: 'path',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Visit ID'
+    }
+  ],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/PrescriptionCreate' }
+      }
+    }
+  },
+  responses: {
+    '201': {
+      description: 'Prescription created',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              prescription: { $ref: '#/components/schemas/Prescription' },
+              allergyHits: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Drug allergy warnings'
+              }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Doctor or Pharmacist role required' },
+    '404': { description: 'Visit not found' }
+  }
+});
+
+addPath('/pharmacy/prescriptions', 'get', {
+  summary: 'Get pharmacy queue (prescriptions)',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'status',
+      in: 'query',
+      schema: {
+        type: 'array',
+        items: {
+          type: 'string',
+          enum: ['PENDING', 'PARTIAL', 'DISPENSED', 'CANCELLED']
+        }
+      },
+      description: 'Filter by prescription status (comma-separated)',
+      style: 'form',
+      explode: false
+    }
+  ],
+  responses: {
+    '200': {
+      description: 'Pharmacy queue',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/PharmacyQueueItem' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist, PharmacyTech, InventoryManager, or ITAdmin role required' }
+  }
+});
+
+addPath('/pharmacy/prescriptions/{prescriptionId}/dispenses', 'post', {
+  summary: 'Start dispensing a prescription',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'prescriptionId',
+      in: 'path',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Prescription ID'
+    }
+  ],
+  responses: {
+    '201': {
+      description: 'Dispense started',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/Dispense' } } }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist or PharmacyTech role required' },
+    '404': { description: 'Prescription not found' }
+  }
+});
+
+addPath('/pharmacy/dispenses/{dispenseId}/items', 'post', {
+  summary: 'Add item to dispense',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'dispenseId',
+      in: 'path',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Dispense ID'
+    }
+  ],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/DispenseItemCreate' }
+      }
+    }
+  },
+  responses: {
+    '201': {
+      description: 'Item added to dispense',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/DispenseItem' } } }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist or PharmacyTech role required' },
+    '404': { description: 'Dispense not found' }
+  }
+});
+
+addPath('/pharmacy/dispenses/{dispenseId}/complete', 'patch', {
+  summary: 'Complete dispense',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'dispenseId',
+      in: 'path',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Dispense ID'
+    }
+  ],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['status'],
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['COMPLETED', 'PARTIAL']
+            }
+          }
+        }
+      }
+    }
+  },
+  responses: {
+    '200': {
+      description: 'Dispense completed',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              prescriptionId: { type: 'string', format: 'uuid' },
+              status: { type: 'string' },
+              invoiceId: { type: 'string', format: 'uuid', nullable: true }
+            }
+          }
+        }
+      }
+    },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist role required' },
+    '404': { description: 'Dispense not found' }
+  }
+});
+
+addPath('/pharmacy/medication-orders', 'get', {
+  summary: 'Get medication orders',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'status',
+      in: 'query',
+      schema: {
+        type: 'array',
+        items: {
+          type: 'string',
+          enum: ['PENDING', 'APPROVED', 'REJECTED', 'CANCELLED']
+        }
+      },
+      description: 'Filter by order status (comma-separated)',
+      style: 'form',
+      explode: false
+    },
+    {
+      name: 'patientId',
+      in: 'query',
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Filter by patient ID'
+    }
+  ],
+  responses: {
+    '200': {
+      description: 'Medication orders',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              data: {
+                type: 'array',
+                items: { $ref: '#/components/schemas/MedicationOrder' }
+              }
+            }
+          }
+        }
+      }
+    },
+    '400': { description: 'Invalid query parameters' },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist, PharmacyTech, or ITAdmin role required' }
+  }
+});
+
+addPath('/pharmacy/medication-orders/{orderId}', 'patch', {
+  summary: 'Update medication order',
+  security: [{ bearerAuth: [] }],
+  tags: ['Pharmacy'],
+  parameters: [
+    {
+      name: 'orderId',
+      in: 'path',
+      required: true,
+      schema: { type: 'string', format: 'uuid' },
+      description: 'Order ID'
+    }
+  ],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/MedicationOrderUpdate' }
+      }
+    }
+  },
+  responses: {
+    '200': {
+      description: 'Order updated',
+      content: { 'application/json': { schema: { $ref: '#/components/schemas/MedicationOrder' } } }
+    },
+    '400': { description: 'Invalid update data' },
+    '401': { description: 'Unauthorized' },
+    '403': { description: 'Forbidden - Pharmacist or ITAdmin role required' },
+    '404': { description: 'Order not found' }
+  }
 });
 
 addPath('/audit', 'get', {

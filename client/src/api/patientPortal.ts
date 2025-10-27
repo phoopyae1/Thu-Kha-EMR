@@ -132,8 +132,113 @@ export async function fetchSpecialists(params: {
   return request(path) as Promise<SpecialistResponse[]>;
 }
 
-export async function fetchPatientProfile(token: string, patientId: string) {
-  return authFetch(`/api/patient-portal/profile/${patientId}`, token);
+export interface PatientProfileResponse {
+  patient: {
+    patientId: string;
+    name: string;
+    dob: string;
+    gender: string;
+    contact: string | null;
+    insurance: string | null;
+    drugAllergies: string | null;
+  };
+  appointments: {
+    upcoming: Array<{
+      appointmentId: string;
+      date: string;
+      startTimeMin: number;
+      endTimeMin: number;
+      status: string;
+      department: string;
+      location: string | null;
+      reason: string | null;
+      doctor: {
+        doctorId: string;
+        name: string;
+        department: string;
+      };
+    }>;
+    past: Array<{
+      appointmentId: string;
+      date: string;
+      startTimeMin: number;
+      endTimeMin: number;
+      status: string;
+      department: string;
+      location: string | null;
+      reason: string | null;
+      doctor: {
+        doctorId: string;
+        name: string;
+        department: string;
+      };
+    }>;
+  };
+  recentVisits: Array<{
+    visitId: string;
+    visitDate: string;
+    department: string;
+    doctor: { name: string };
+  }>;
+  invoiceSummary: {
+    outstanding: number;
+    lifetimeValue: number;
+    paidTotal: number;
+  };
+  latestImmunization: {
+    vaccineName: string;
+    administeredAt: string;
+    provider: string;
+  } | null;
+  medicines: Array<{
+    medId: string;
+    drugName: string;
+    dosage: string | null;
+    instructions: string | null;
+    visitDate: string;
+    doctor: {
+      name: string;
+      department: string;
+    };
+    createdAt: string;
+  }>;
+  prescriptions: Array<{
+    prescriptionId: string;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+    doctor: {
+      name: string;
+      department: string;
+    };
+    items: Array<{
+      itemId: string;
+      drugName: string;
+      genericName: string | null;
+      dose: string;
+      route: string;
+      frequency: string;
+      durationDays: number;
+      quantityPrescribed: number;
+      prn: boolean;
+      notes: string | null;
+    }>;
+  }>;
+  medicationOrders: Array<{
+    orderId: string;
+    drugName: string | null;
+    dosage: string | null;
+    instructions: string | null;
+    quantity: number | null;
+    status: string;
+    notes: string | null;
+    createdAt: string;
+    approvedAt: string | null;
+  }>;
+}
+
+export async function fetchPatientProfile(token: string, patientId: string): Promise<PatientProfileResponse> {
+  return authFetch(`/api/patient-portal/profile/${patientId}`, token) as Promise<PatientProfileResponse>;
 }
 
 export async function fetchPatientAppointments(token: string, patientId: string) {

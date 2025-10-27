@@ -1,0 +1,1051 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Thu-Kha EMR - Patient Portal API",
+        "description": "Comprehensive API documentation for the patient portal system in Thu-Kha EMR, including patient profiles, medical records, prescriptions, and medication management",
+        "version": "1.0.0",
+        "contact": {
+            "name": "Thu-Kha EMR API Support",
+            "email": "api-support@thukha-emr.com"
+        }
+    },
+    "servers": [
+        {
+            "url": "http://localhost:8080/",
+            "description": "Development server"
+        }
+    ],
+    "paths": {
+        "/api/patient-portal/profile/{patientId}": {
+            "get": {
+                "summary": "Get Comprehensive Patient Profile",
+                "description": "Retrieves complete patient profile data including personal information, medical history, appointments, prescriptions, medications, and billing summary. This is the main endpoint for patient portal dashboard data.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "patientId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Unique identifier of the patient",
+                        "example": "81562422-6eb0-4382-b632-08ad05171045"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Patient profile retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PatientProfileResponse"
+                                },
+                                "example": {
+                                    "patient": {
+                                        "patientId": "81562422-6eb0-4382-b632-08ad05171045",
+                                        "name": "John Doe",
+                                        "dob": "1985-03-15",
+                                        "gender": "Male",
+                                        "contact": "+1234567890",
+                                        "insurance": "Blue Cross Blue Shield",
+                                        "drugAllergies": "Penicillin, Sulfa drugs"
+                                    },
+                                    "appointments": {
+                                        "upcoming": [
+                                            {
+                                                "appointmentId": "apt-001",
+                                                "date": "2025-01-20",
+                                                "startTimeMin": 540,
+                                                "endTimeMin": 600,
+                                                "status": "Scheduled",
+                                                "department": "Cardiology",
+                                                "location": "Room 201",
+                                                "reason": "Follow-up consultation",
+                                                "doctor": {
+                                                    "doctorId": "doc-001",
+                                                    "name": "Dr. Smith",
+                                                    "department": "Cardiology"
+                                                }
+                                            }
+                                        ],
+                                        "past": [
+                                            {
+                                                "appointmentId": "apt-002",
+                                                "date": "2025-01-10",
+                                                "startTimeMin": 480,
+                                                "endTimeMin": 540,
+                                                "status": "Completed",
+                                                "department": "General Medicine",
+                                                "location": "Room 105",
+                                                "reason": "Annual checkup",
+                                                "doctor": {
+                                                    "doctorId": "doc-002",
+                                                    "name": "Dr. Johnson",
+                                                    "department": "General Medicine"
+                                                }
+                                            }
+                                        ]
+                                    },
+                                    "recentVisits": [
+                                        {
+                                            "visitId": "visit-001",
+                                            "visitDate": "2025-01-10",
+                                            "department": "General Medicine",
+                                            "doctor": {
+                                                "name": "Dr. Johnson"
+                                            }
+                                        }
+                                    ],
+                                    "invoiceSummary": {
+                                        "outstanding": 150.00,
+                                        "lifetimeValue": 2500.00,
+                                        "paidTotal": 2350.00
+                                    },
+                                    "latestImmunization": {
+                                        "vaccineName": "COVID-19 Booster",
+                                        "administeredAt": "2024-12-15T10:30:00.000Z",
+                                        "provider": "Dr. Johnson"
+                                    },
+                                    "medicines": [
+                                        {
+                                            "medId": "med-001",
+                                            "drugName": "Lisinopril",
+                                            "dosage": "10mg",
+                                            "instructions": "Take once daily with food",
+                                            "visitDate": "2025-01-10",
+                                            "doctor": {
+                                                "name": "Dr. Johnson",
+                                                "department": "General Medicine"
+                                            },
+                                            "createdAt": "2025-01-10T10:30:00.000Z"
+                                        }
+                                    ],
+                                    "prescriptions": [
+                                        {
+                                            "prescriptionId": "pres-001",
+                                            "status": "DISPENSED",
+                                            "notes": "Monitor blood pressure",
+                                            "createdAt": "2025-01-10T10:30:00.000Z",
+                                            "doctor": {
+                                                "name": "Dr. Johnson",
+                                                "department": "General Medicine"
+                                            },
+                                            "items": [
+                                                {
+                                                    "itemId": "item-001",
+                                                    "drugName": "Lisinopril",
+                                                    "genericName": "Lisinopril",
+                                                    "dose": "10mg",
+                                                    "route": "Oral",
+                                                    "frequency": "Once daily",
+                                                    "durationDays": 30,
+                                                    "quantityPrescribed": 30,
+                                                    "prn": false,
+                                                    "notes": "Take with food"
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                    "medicationOrders": [
+                                        {
+                                            "orderId": "order-001",
+                                            "drugName": "Lisinopril",
+                                            "dosage": "10mg",
+                                            "instructions": "Take once daily",
+                                            "quantity": 30,
+                                            "status": "APPROVED",
+                                            "notes": "Approved by pharmacist",
+                                            "createdAt": "2025-01-10T11:00:00.000Z",
+                                            "approvedAt": "2025-01-10T11:15:00.000Z"
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - Invalid or missing authentication token",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": "Unauthorized access"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Patient not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": "Patient not found"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                },
+                                "example": {
+                                    "error": "Internal Server Error"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/patient-portal/appointments/{patientId}": {
+            "get": {
+                "summary": "Get Patient Appointments",
+                "description": "Retrieves all appointments for a specific patient, including both upcoming and past appointments with detailed information about doctors, departments, and appointment status.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "patientId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Unique identifier of the patient",
+                        "example": "81562422-6eb0-4382-b632-08ad05171045"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Appointments retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppointmentsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Patient not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/patient-portal/medications/{patientId}": {
+            "get": {
+                "summary": "Get Patient Medications",
+                "description": "Retrieves current and historical medications for a specific patient, including dosage, instructions, and prescribing doctor information.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "patientId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Unique identifier of the patient",
+                        "example": "81562422-6eb0-4382-b632-08ad05171045"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Medications retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MedicationsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Patient not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/patient-portal/prescriptions/{patientId}": {
+            "get": {
+                "summary": "Get Patient Prescriptions",
+                "description": "Retrieves all prescriptions for a specific patient, including prescription items, drug details, and prescribing doctor information.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "patientId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Unique identifier of the patient",
+                        "example": "81562422-6eb0-4382-b632-08ad05171045"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Prescriptions retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PrescriptionsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Patient not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/patient-portal/orders": {
+            "post": {
+                "summary": "Create Medication Order",
+                "description": "Creates a new medication order for a patient, allowing them to request medications through the patient portal.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/MedicationOrderRequest"
+                            },
+                            "example": {
+                                "patientId": "81562422-6eb0-4382-b632-08ad05171045",
+                                "prescriptionId": "pres-001",
+                                "drugName": "Lisinopril",
+                                "dosage": "10mg",
+                                "instructions": "Take once daily with food",
+                                "quantity": 30
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Medication order created successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MedicationOrderResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request - Invalid input data",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/patient-portal/orders/{patientId}": {
+            "get": {
+                "summary": "Get Patient Medication Orders",
+                "description": "Retrieves all medication orders for a specific patient, including order status, approval information, and order history.",
+                "tags": [
+                    "Patient Portal"
+                ],
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "parameters": [
+                    {
+                        "name": "patientId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Unique identifier of the patient",
+                        "example": "81562422-6eb0-4382-b632-08ad05171045"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Medication orders retrieved successfully",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MedicationOrdersResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Patient not found",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": "JWT token for patient portal authentication"
+            }
+        },
+        "schemas": {
+            "PatientProfileResponse": {
+                "type": "object",
+                "properties": {
+                    "patient": {
+                        "$ref": "#/components/schemas/Patient"
+                    },
+                    "appointments": {
+                        "$ref": "#/components/schemas/AppointmentsData"
+                    },
+                    "recentVisits": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Visit"
+                        }
+                    },
+                    "invoiceSummary": {
+                        "$ref": "#/components/schemas/InvoiceSummary"
+                    },
+                    "latestImmunization": {
+                        "$ref": "#/components/schemas/Immunization"
+                    },
+                    "medicines": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Medicine"
+                        }
+                    },
+                    "prescriptions": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Prescription"
+                        }
+                    },
+                    "medicationOrders": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MedicationOrder"
+                        }
+                    }
+                }
+            },
+            "Patient": {
+                "type": "object",
+                "properties": {
+                    "patientId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique patient identifier"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Full name of the patient"
+                    },
+                    "dob": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Date of birth"
+                    },
+                    "gender": {
+                        "type": "string",
+                        "enum": ["Male", "Female", "Other"],
+                        "description": "Gender of the patient"
+                    },
+                    "contact": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Contact information (phone/email)"
+                    },
+                    "insurance": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Insurance provider information"
+                    },
+                    "drugAllergies": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Known drug allergies"
+                    }
+                },
+                "required": ["patientId", "name", "dob", "gender"]
+            },
+            "AppointmentsData": {
+                "type": "object",
+                "properties": {
+                    "upcoming": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Appointment"
+                        }
+                    },
+                    "past": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Appointment"
+                        }
+                    }
+                }
+            },
+            "Appointment": {
+                "type": "object",
+                "properties": {
+                    "appointmentId": {
+                        "type": "string",
+                        "description": "Unique appointment identifier"
+                    },
+                    "date": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Appointment date"
+                    },
+                    "startTimeMin": {
+                        "type": "integer",
+                        "description": "Start time in minutes from midnight"
+                    },
+                    "endTimeMin": {
+                        "type": "integer",
+                        "description": "End time in minutes from midnight"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["Scheduled", "Completed", "Cancelled", "No Show"],
+                        "description": "Appointment status"
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Medical department"
+                    },
+                    "location": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Appointment location/room"
+                    },
+                    "reason": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Appointment reason"
+                    },
+                    "doctor": {
+                        "$ref": "#/components/schemas/Doctor"
+                    }
+                },
+                "required": ["appointmentId", "date", "startTimeMin", "endTimeMin", "status", "department", "doctor"]
+            },
+            "Doctor": {
+                "type": "object",
+                "properties": {
+                    "doctorId": {
+                        "type": "string",
+                        "description": "Unique doctor identifier"
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Doctor's full name"
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Medical department"
+                    }
+                },
+                "required": ["doctorId", "name", "department"]
+            },
+            "Visit": {
+                "type": "object",
+                "properties": {
+                    "visitId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique visit identifier"
+                    },
+                    "visitDate": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Visit date"
+                    },
+                    "department": {
+                        "type": "string",
+                        "description": "Medical department"
+                    },
+                    "doctor": {
+                        "type": "object",
+                        "properties": {
+                            "name": {
+                                "type": "string",
+                                "description": "Doctor's name"
+                            }
+                        },
+                        "required": ["name"]
+                    }
+                },
+                "required": ["visitId", "visitDate", "department", "doctor"]
+            },
+            "InvoiceSummary": {
+                "type": "object",
+                "properties": {
+                    "outstanding": {
+                        "type": "number",
+                        "description": "Total outstanding amount due"
+                    },
+                    "lifetimeValue": {
+                        "type": "number",
+                        "description": "Total lifetime billing amount"
+                    },
+                    "paidTotal": {
+                        "type": "number",
+                        "description": "Total amount paid"
+                    }
+                },
+                "required": ["outstanding", "lifetimeValue", "paidTotal"]
+            },
+            "Immunization": {
+                "type": "object",
+                "nullable": true,
+                "properties": {
+                    "vaccineName": {
+                        "type": "string",
+                        "description": "Name of the vaccine"
+                    },
+                    "administeredAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Date and time of administration"
+                    },
+                    "provider": {
+                        "type": "string",
+                        "description": "Healthcare provider who administered the vaccine"
+                    }
+                },
+                "required": ["vaccineName", "administeredAt", "provider"]
+            },
+            "Medicine": {
+                "type": "object",
+                "properties": {
+                    "medId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique medication identifier"
+                    },
+                    "drugName": {
+                        "type": "string",
+                        "description": "Name of the medication"
+                    },
+                    "dosage": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Medication dosage"
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Medication instructions"
+                    },
+                    "visitDate": {
+                        "type": "string",
+                        "format": "date",
+                        "description": "Date of the visit when medication was prescribed"
+                    },
+                    "doctor": {
+                        "$ref": "#/components/schemas/Doctor"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Date and time when medication was recorded"
+                    }
+                },
+                "required": ["medId", "drugName", "visitDate", "doctor", "createdAt"]
+            },
+            "Prescription": {
+                "type": "object",
+                "properties": {
+                    "prescriptionId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique prescription identifier"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["PENDING", "PARTIAL", "DISPENSED", "CANCELLED"],
+                        "description": "Prescription status"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Prescription notes"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Date and time when prescription was created"
+                    },
+                    "doctor": {
+                        "$ref": "#/components/schemas/Doctor"
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/PrescriptionItem"
+                        },
+                        "description": "Prescription items/drugs"
+                    }
+                },
+                "required": ["prescriptionId", "status", "createdAt", "doctor", "items"]
+            },
+            "PrescriptionItem": {
+                "type": "object",
+                "properties": {
+                    "itemId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique prescription item identifier"
+                    },
+                    "drugName": {
+                        "type": "string",
+                        "description": "Name of the drug"
+                    },
+                    "genericName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Generic name of the drug"
+                    },
+                    "dose": {
+                        "type": "string",
+                        "description": "Drug dosage"
+                    },
+                    "route": {
+                        "type": "string",
+                        "description": "Administration route (e.g., Oral, IV, Topical)"
+                    },
+                    "frequency": {
+                        "type": "string",
+                        "description": "How often to take the medication"
+                    },
+                    "durationDays": {
+                        "type": "integer",
+                        "description": "Duration in days"
+                    },
+                    "quantityPrescribed": {
+                        "type": "integer",
+                        "description": "Quantity prescribed"
+                    },
+                    "prn": {
+                        "type": "boolean",
+                        "description": "Whether medication is as needed (PRN)"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Additional notes for this item"
+                    }
+                },
+                "required": ["itemId", "drugName", "dose", "route", "frequency", "durationDays", "quantityPrescribed", "prn"]
+            },
+            "MedicationOrder": {
+                "type": "object",
+                "properties": {
+                    "orderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique medication order identifier"
+                    },
+                    "drugName": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Name of the drug"
+                    },
+                    "dosage": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Drug dosage"
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Order instructions"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "nullable": true,
+                        "description": "Quantity requested"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["PENDING", "APPROVED", "REJECTED", "CANCELLED"],
+                        "description": "Order status"
+                    },
+                    "notes": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "Order notes"
+                    },
+                    "createdAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "description": "Date and time when order was created"
+                    },
+                    "approvedAt": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": true,
+                        "description": "Date and time when order was approved"
+                    }
+                },
+                "required": ["orderId", "status", "createdAt"]
+            },
+            "MedicationOrderRequest": {
+                "type": "object",
+                "required": ["patientId"],
+                "properties": {
+                    "patientId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Unique identifier of the patient"
+                    },
+                    "prescriptionId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Prescription ID (optional)"
+                    },
+                    "drugName": {
+                        "type": "string",
+                        "description": "Name of the drug"
+                    },
+                    "dosage": {
+                        "type": "string",
+                        "description": "Drug dosage"
+                    },
+                    "instructions": {
+                        "type": "string",
+                        "description": "Order instructions"
+                    },
+                    "quantity": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 10000,
+                        "description": "Quantity requested"
+                    }
+                }
+            },
+            "MedicationOrderResponse": {
+                "type": "object",
+                "properties": {
+                    "orderId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Created order ID"
+                    },
+                    "status": {
+                        "type": "string",
+                        "description": "Order status"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "Response message"
+                    }
+                },
+                "required": ["orderId", "status", "message"]
+            },
+            "AppointmentsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Appointment"
+                        }
+                    }
+                },
+                "required": ["data"]
+            },
+            "MedicationsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Medicine"
+                        }
+                    }
+                },
+                "required": ["data"]
+            },
+            "PrescriptionsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Prescription"
+                        }
+                    }
+                },
+                "required": ["data"]
+            },
+            "MedicationOrdersResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/MedicationOrder"
+                        }
+                    }
+                },
+                "required": ["data"]
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message describing what went wrong"
+                    }
+                },
+                "required": ["error"]
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Patient Portal",
+            "description": "Patient portal endpoints for accessing medical records, appointments, and medication management"
+        }
+    ]
+}
