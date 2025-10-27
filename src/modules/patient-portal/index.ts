@@ -7,6 +7,11 @@ import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole, type AuthRequest } from '../auth/index.js';
 import { toDateOnly } from '../../utils/time.js';
 import { medicationOrderSelect } from '../../services/medicationOrderService.js';
+import {
+  insertIntegrationEmbed,
+  MongoConfigurationError,
+  MongoDataApiError,
+} from '../../services/mongoDataApi.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -53,6 +58,11 @@ const portalAccountRegisterSchema = z.object({
   drugAllergies: z.string().trim().min(1).optional(),
 });
 
+const integrationEmbedSchema = z.object({
+  iframeCode: z.string().trim().min(1),
+  contextKey: z.string().trim().min(1),
+});
+
 const medicationOrderCreateSchema = z
   .object({
     patientId: z.string().uuid(),
@@ -79,6 +89,40 @@ const medicationOrderCreateSchema = z
 const medicationOrderPatientParams = z.object({
   patientId: z.string().uuid(),
 });
+
+router.post(
+  '/integration-embeds',
+  validate({ body: integrationEmbedSchema }),
+  async (req: Request, res: Response) => {
+    const { iframeCode, contextKey } = req.body as z.infer<typeof integrationEmbedSchema>;
+    const timestamp = new Date().toISOString();
+
+    try {
+      const result = await insertIntegrationEmbed({
+        iframeCode,
+        contextKey,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+      return res.status(201).json({ id: result.insertedId ?? null });
+    } catch (error) {
+      if (error instanceof MongoConfigurationError) {
+        return res.status(503).json({ error: error.message });
+      }
+
+      if (error instanceof MongoDataApiError) {
+        return res.status(502).json({
+          error: error.message,
+          details: error.details,
+        });
+      }
+
+      console.error('Failed to save integration embed', error);
+      return res.status(500).json({ error: 'Failed to save integration embed' });
+    }
+  },
+);
 
 staffRouter.use(requireAuth);
 staffRouter.use(requireRole('AdminAssistant', 'ITAdmin'));
