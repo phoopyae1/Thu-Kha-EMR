@@ -29,6 +29,7 @@ import {
   registerPatientPortalAccount,
   type SpecialistResponse,
   type MedicationOrderResponse,
+  type MedicationOrderStatus,
 } from '../api/patientPortal';
 import brillarLogo from '../public/brillar.avif';
 
@@ -1806,12 +1807,22 @@ function AppointmentsSection({
   );
 }
 
+const MEDICATION_ORDER_PROGRESS_MAP: Record<MedicationOrderStatus, number | null> = {
+  PENDING: 0,
+  APPROVED: 0,
+  SHIPPING: 0,
+  SHIPPED: 1,
+  ON_THE_WAY: 2,
+  DELIVERED: 3,
+  CANCELLED: null,
+};
+
 function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, orders, onOrderMedication }: any) {
   const medicationOrdersList = Array.isArray(orders) ? orders : [];
   const orderStatusLabels: Record<string, string> = {
     PENDING: t('Pending approval'),
     APPROVED: t('Approved'),
-    SHIPPING: t('Shipping'),
+    SHIPPING: t('In progress'),
     ON_THE_WAY: t('On the way'),
     SHIPPED: t('Shipped'),
     DELIVERED: t('Delivered'),
@@ -2219,6 +2230,7 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                       ) : null}
                     </div>
                   ) : null}
+                  <MedicationOrderProgress status={order.status as MedicationOrderStatus} t={t} />
                 </li>
               );
             })}
@@ -2302,6 +2314,66 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+function MedicationOrderProgress({
+  status,
+  t,
+}: {
+  status: MedicationOrderStatus;
+  t: (key: string, variables?: Record<string, string | number>) => string;
+}) {
+  const currentStage = MEDICATION_ORDER_PROGRESS_MAP[status];
+  const steps = useMemo(
+    () => [
+      { key: 'IN_PROGRESS', label: t('In progress') },
+      { key: 'SHIPPED', label: t('Shipped') },
+      { key: 'ON_THE_WAY', label: t('On the way') },
+      { key: 'DELIVERED', label: t('Delivered') },
+    ],
+    [t],
+  );
+
+  if (currentStage === null || currentStage === undefined) {
+    return null;
+  }
+
+  return (
+    <div className="mt-4">
+      <div className="flex items-center">
+        {steps.map((step, index) => {
+          const isLast = index === steps.length - 1;
+          const isCompleted = currentStage > index;
+          const isActive = currentStage === index;
+          const circleBase =
+            'flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold';
+          let circleClass = `${circleBase} border-slate-300 bg-white text-slate-400`;
+
+          if (isCompleted) {
+            circleClass = `${circleBase} border-emerald-500 bg-emerald-500 text-white`;
+          } else if (isActive) {
+            circleClass = `${circleBase} border-emerald-500 bg-emerald-50 text-emerald-700`;
+          }
+
+          return (
+            <div key={step.key} className={`flex items-center ${isLast ? '' : 'flex-1'}`}>
+              <div className={circleClass}>{isCompleted ? <CheckIcon className="h-3 w-3" /> : index + 1}</div>
+              {!isLast ? (
+                <div className={`mx-2 h-0.5 flex-1 ${currentStage > index ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 flex justify-between text-[11px] font-semibold uppercase tracking-wide">
+        {steps.map((step, index) => (
+          <span key={step.key} className={currentStage >= index ? 'text-emerald-600' : 'text-slate-400'}>
+            {step.label}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
