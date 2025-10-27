@@ -17,6 +17,7 @@ import {
   fetchImmunizations,
   fetchLabResults,
   fetchPatientAppointments,
+  fetchIntegrationEmbed,
   fetchPatientProfile,
   fetchPayments,
   fetchRadiologyReports,
@@ -27,6 +28,7 @@ import {
   createMedicationOrder,
   loginPatient,
   registerPatientPortalAccount,
+  type IntegrationEmbed,
   type SpecialistResponse,
   type MedicationOrderResponse,
   type MedicationOrderStatus,
@@ -311,7 +313,11 @@ export default function PatientPortal() {
     }
     return null;
   });
-  
+
+  const [integrationEmbed, setIntegrationEmbed] = useState<IntegrationEmbed | null>(null);
+  const [isIntegrationLoading, setIsIntegrationLoading] = useState(true);
+  const [integrationLoadFailed, setIntegrationLoadFailed] = useState(false);
+
   const [showRegister, setShowRegister] = useState(false);
   const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -336,6 +342,39 @@ export default function PatientPortal() {
   const [receiptInvoice, setReceiptInvoice] = useState<any | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [activeTab, setActiveTab] = useState<PortalSectionId>('overview');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadIntegrationEmbed = async () => {
+      try {
+        const embed = await fetchIntegrationEmbed();
+        if (!isMounted) {
+          return;
+        }
+
+        setIntegrationEmbed(embed);
+        setIntegrationLoadFailed(false);
+      } catch (error) {
+        if (!isMounted) {
+          return;
+        }
+
+        console.error('Failed to load integration widget', error);
+        setIntegrationLoadFailed(true);
+      } finally {
+        if (isMounted) {
+          setIsIntegrationLoading(false);
+        }
+      }
+    };
+
+    void loadIntegrationEmbed();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const tabs = useMemo(
     () => [
@@ -378,6 +417,14 @@ export default function PatientPortal() {
     ],
     [t],
   );
+
+  const integrationIframeHtml = useMemo(() => {
+    if (!integrationEmbed) {
+      return null;
+    }
+
+    return integrationEmbed.iframeCode.replace(/\{\{\s*contextKey\s*\}\}/gi, integrationEmbed.contextKey);
+  }, [integrationEmbed]);
 
 
 
@@ -1106,6 +1153,28 @@ export default function PatientPortal() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
+        {(isIntegrationLoading || integrationIframeHtml || integrationLoadFailed) && (
+          <section className="mb-10">
+            {isIntegrationLoading ? (
+              <div className="relative" role="status" aria-live="polite">
+                <div
+                  className="h-48 w-full animate-pulse rounded-3xl border border-slate-200 bg-white/60"
+                  aria-hidden="true"
+                />
+                <span className="sr-only">{t('Loading integration widget...')}</span>
+              </div>
+            ) : integrationIframeHtml ? (
+              <div
+                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
+                dangerouslySetInnerHTML={{ __html: integrationIframeHtml }}
+              />
+            ) : integrationLoadFailed ? (
+              <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                {t('Unable to load integration widget.')}
+              </div>
+            ) : null}
+          </section>
+        )}
 
         {session ? (
           <>
