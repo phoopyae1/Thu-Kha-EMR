@@ -39,6 +39,13 @@ export interface PatientPortalRegisterResponse {
   };
 }
 
+export interface IntegrationEmbed {
+  iframeCode: string;
+  contextKey: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 async function request(path: string, options: RequestInit = {}) {
   const response = await fetch(path, options);
   if (!response.ok) {
@@ -46,6 +53,22 @@ async function request(path: string, options: RequestInit = {}) {
     throw new Error(text || response.statusText);
   }
   return response.json();
+}
+
+export async function fetchIntegrationEmbed(): Promise<IntegrationEmbed | null> {
+  const response = await fetch('/api/patient-portal/integration-embeds/latest');
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+
+  const body = (await response.json()) as { embed?: IntegrationEmbed | null };
+  return body.embed ?? null;
 }
 
 export async function loginPatient(email: string, password: string): Promise<PatientLoginResponse> {
