@@ -920,9 +920,8 @@ export default function Settings() {
                       };
                       const doctorOptions = doctors.filter((doctor) => {
                         if (draft.role !== 'Doctor') return false;
-                        if (doctor.doctorId === draft.doctorId) return true;
-                        if (user.doctorId && doctor.doctorId === user.doctorId) return true;
-                        return !assignedDoctorIds.has(doctor.doctorId);
+                        // For IT admin, show all doctors to allow reassignment
+                        return true;
                       });
                       const isDirty =
                         draft.role !== user.role ||

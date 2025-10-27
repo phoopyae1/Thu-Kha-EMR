@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { searchPatients, type Patient } from '../api/client';
 import DashboardLayout from './DashboardLayout';
 import { PatientsIcon, SearchIcon } from './icons';
@@ -14,6 +14,7 @@ const quickFilters = [
 
 export default function PatientSearch() {
   const { t } = useTranslation();
+  const { adminId } = useParams<{ adminId: string }>();
   const [query, setQuery] = useState('');
   const [debounced, setDebounced] = useState('');
   const [results, setResults] = useState<Patient[]>([]);
@@ -151,7 +152,7 @@ export default function PatientSearch() {
                           </td>
                           <td className="px-6 py-4 text-right">
                             <Link
-                              to={`/patients/${patient.patientId}`}
+                              to={`/admin/${adminId}/patients/${patient.patientId}`}
                               className="inline-flex items-center rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-blue-700"
                             >
                               {t('View Profile')}

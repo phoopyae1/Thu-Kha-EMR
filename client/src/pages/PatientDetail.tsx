@@ -34,7 +34,7 @@ function normalizePortalStatus(status?: string | null): 'active' | 'inactive' {
 }
 
 export default function PatientDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, adminId } = useParams<{ id: string; adminId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -340,14 +340,14 @@ export default function PatientDetail() {
   const headerActions = (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
       <Link
-        to="/patients"
+        to={`/admin/${adminId}/patients`}
         className="inline-flex items-center justify-center rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
       >
         {t('Patient Directory')}
       </Link>
       {id && canViewProblems && (
         <Link
-          to={`/patients/${id}/problems`}
+          to={`/admin/${adminId}/patients/${id}/problems`}
           className="inline-flex items-center justify-center rounded-full border border-blue-200 px-4 py-2 text-sm font-semibold text-blue-600 hover:bg-blue-50"
         >
           {t('Problem list')}
@@ -355,7 +355,7 @@ export default function PatientDetail() {
       )}
       {id && (
         <Link
-          to={`/patients/${id}/visits/new`}
+          to={`/admin/${adminId}/patients/${id}/visits/new`}
           className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
         >
           {t('Add visit')}
@@ -536,7 +536,7 @@ export default function PatientDetail() {
             <p className="text-sm font-medium text-gray-600">{t('No visits recorded yet.')}</p>
             {id && (
               <Link
-                to={`/patients/${id}/visits/new`}
+                to={`/admin/${adminId}/patients/${id}/visits/new`}
                 className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
               >
                 {t('Add the first visit')}
@@ -699,7 +699,7 @@ export default function PatientDetail() {
           <p className="text-sm font-medium text-gray-600">{t('No visits recorded in the system.')}</p>
           {id && (
             <Link
-              to={`/patients/${id}/visits/new`}
+              to={`/admin/${adminId}/patients/${id}/visits/new`}
               className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
             >
               {t('Add visit')}
@@ -771,7 +771,7 @@ export default function PatientDetail() {
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
           <p className="text-sm font-semibold">{t(error)}</p>
           <Link
-            to="/patients"
+            to={`/admin/${adminId}/patients`}
             className="mt-4 inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-100"
           >
             {t('Back to patient directory')}

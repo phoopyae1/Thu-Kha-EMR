@@ -19,7 +19,7 @@ import {
 } from '../utils/visitForm';
 
 export default function AddVisit() {
-  const { id } = useParams<{ id: string }>();
+  const { id, adminId } = useParams<{ id: string; adminId: string }>();
   const navigate = useNavigate();
   const { user, accessToken } = useAuth();
   const { t } = useTranslation();
@@ -94,7 +94,7 @@ export default function AddVisit() {
         reason: values.reason,
       });
       await persistVisitFormValues(visit.visitId, values);
-      navigate(`/patients/${id}?tab=visits`);
+      navigate(`/admin/${adminId}/patients/${id}?tab=visits`);
     } catch (err) {
       console.error(err);
       window.alert(t('Failed to save visit'));
@@ -127,7 +127,7 @@ export default function AddVisit() {
   const headerActions = id ? (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
       <Link
-        to={`/patients/${id}?tab=visits`}
+        to={`/admin/${adminId}/patients/${id}?tab=visits`}
         className="inline-flex items-center justify-center rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-100"
       >
         {t('Back to patient record')}

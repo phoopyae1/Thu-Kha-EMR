@@ -20,7 +20,7 @@ type ProblemFormState = {
 
 export default function ProblemList() {
   const { t } = useTranslation();
-  const { patientId } = useParams<'patientId'>();
+  const { patientId, adminId } = useParams<{ patientId: string; adminId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
   const canEdit = useMemo(() => user && ['Doctor', 'ITAdmin'].includes(user.role), [user]);
@@ -39,7 +39,7 @@ export default function ProblemList() {
 
   useEffect(() => {
     if (!patientId) {
-      navigate('/patients');
+      navigate(`/admin/${adminId}/patients`);
       return;
     }
   }, [patientId, navigate]);

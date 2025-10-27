@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { createPatient } from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { PatientsIcon, RegisterIcon } from '../components/icons';
@@ -12,6 +12,7 @@ export default function RegisterPatient() {
   const [drugAllergies, setDrugAllergies] = useState('');
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
+  const { adminId } = useParams<{ adminId: string }>();
   const { t } = useTranslation();
 
   const age = useMemo(() => {
@@ -34,7 +35,7 @@ export default function RegisterPatient() {
     setSaving(true);
     try {
       const patient = await createPatient({ name, dob, insurance, drugAllergies: drugAllergies.trim() || undefined });
-      navigate(`/patients/${patient.patientId}`);
+      navigate(`/admin/${adminId}/patients/${patient.patientId}`);
     } catch (err) {
       console.error(err);
       window.alert(t('Failed to register patient'));
@@ -46,7 +47,7 @@ export default function RegisterPatient() {
   const headerActions = (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
       <Link
-        to="/patients"
+        to={`/admin/${adminId}/patients`}
         className="inline-flex items-center justify-center rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-100"
       >
         {t('View Patient Directory')}

@@ -26,6 +26,8 @@ import LabOrdersPage from './pages/LabOrders';
 import LabOrderDetailPage from './pages/LabOrderDetail';
 import PatientPortal from './pages/PatientPortal';
 import PatientPortalLanding from './pages/PatientPortalLanding';
+import AppointmentRedirect from './components/AppointmentRedirect';
+import PatientRedirect from './components/PatientRedirect';
 import './styles/App.css';
 
 function App() {
@@ -34,7 +36,10 @@ function App() {
       {/* Patient Portal Routes - Root Level */}
       <Route path="/" element={<PatientPortalLanding />} />
       <Route path="/login" element={<PatientPortal />} />
-      <Route path="/:patientId" element={<PatientPortal />} />
+      <Route path="/:patientId" element={<PatientRedirect />} />
+      
+      {/* Redirect route for wrong appointment URL format */}
+      <Route path="/appointments/:id" element={<AppointmentRedirect />} />
       
       {/* Admin Login */}
       <Route path="/admin/login" element={<Login />} />
@@ -75,7 +80,7 @@ function App() {
       <Route
         path="/admin/:adminId/appointments"
         element={
-          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
+          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant', 'ITAdmin']}>
             <AppointmentsPage />
           </RouteGuard>
         }
@@ -91,7 +96,7 @@ function App() {
       <Route
         path="/admin/:adminId/appointments/:id"
         element={
-          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant']}>
+          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant', 'ITAdmin']}>
             <AppointmentDetail />
           </RouteGuard>
         }
