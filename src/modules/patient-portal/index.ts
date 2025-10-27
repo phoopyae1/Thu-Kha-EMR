@@ -12,6 +12,7 @@ import {
   fetchLatestIntegrationEmbed,
   MongoConfigurationError,
   MongoDataApiError,
+  type IntegrationEmbedDocument,
 } from '../../services/mongoDataApi.js';
 
 const prisma = new PrismaClient();
@@ -63,6 +64,46 @@ const integrationEmbedSchema = z.object({
   iframeCode: z.string().trim().min(1),
   contextKey: z.string().trim().min(1),
 });
+
+function getEnvIntegrationEmbed(): IntegrationEmbedDocument | null {
+  const inlineSnippet = process.env.PATIENT_PORTAL_WIDGET_IFRAME?.trim();
+  const envContextKey = process.env.PATIENT_PORTAL_WIDGET_CONTEXT_KEY?.trim();
+  const contextKey = envContextKey && envContextKey.length > 0 ? envContextKey : 'env-configured';
+
+  if (inlineSnippet && inlineSnippet.length > 0) {
+    const timestamp = new Date().toISOString();
+    return {
+      iframeCode: inlineSnippet,
+      contextKey,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    } satisfies IntegrationEmbedDocument;
+  }
+
+  const widgetUrl = process.env.PATIENT_PORTAL_WIDGET_URL?.trim();
+  if (!widgetUrl || widgetUrl.length === 0) {
+    return null;
+  }
+
+  const title = process.env.PATIENT_PORTAL_WIDGET_TITLE?.trim() ?? 'Patient portal widget';
+  const allow =
+    process.env.PATIENT_PORTAL_WIDGET_ALLOW?.trim() ??
+    "clipboard-write; camera; microphone; display-capture; encrypted-media";
+  const style =
+    process.env.PATIENT_PORTAL_WIDGET_STYLE?.trim() ??
+    'border:0;width:100%;min-height:720px;border-radius:16px;';
+  const loading = process.env.PATIENT_PORTAL_WIDGET_LOADING?.trim() ?? 'lazy';
+
+  const iframeCode = `<iframe src="${widgetUrl}" title="${title}" allow="${allow}" style="${style}" loading="${loading}"></iframe>`;
+  const timestamp = new Date().toISOString();
+
+  return {
+    iframeCode,
+    contextKey,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  } satisfies IntegrationEmbedDocument;
+}
 
 const medicationOrderCreateSchema = z
   .object({
@@ -126,6 +167,11 @@ router.post(
 );
 
 router.get('/integration-embeds/latest', async (_req: Request, res: Response) => {
+  const envEmbed = getEnvIntegrationEmbed();
+  if (envEmbed) {
+    return res.json({ embed: envEmbed });
+  }
+
   try {
     const document = await fetchLatestIntegrationEmbed();
 
