@@ -122,7 +122,7 @@ export default function ProblemList() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex items-center justify-between">
           <Link
-            to={patientId ? `/patients/${patientId}` : '/patients'}
+            to={patientId ? `/admin/${adminId}/patients/${patientId}` : `/admin/${adminId}/patients`}
             className="rounded-full border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-100"
           >
             {t('Back to patient')}

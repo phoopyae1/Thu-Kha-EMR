@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react';
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { cohort, type CohortResult } from '../api/client';
 import DashboardLayout from '../components/DashboardLayout';
 import { useTranslation } from '../hooks/useTranslation';
@@ -17,6 +17,7 @@ const suggestionListId = 'cohort-test-suggestions';
 
 export default function Cohort() {
   const { t } = useTranslation();
+  const { adminId } = useParams<{ adminId: string }>();
   const [testName, setTestName] = useState('');
   const [op, setOp] = useState('gt');
   const [value, setValue] = useState('');
@@ -215,7 +216,7 @@ export default function Cohort() {
                   <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-gray-500">
                     <span>{t('Visit ID: {id}', { id: result.lastMatchingLab.visitId })}</span>
                     <Link
-                      to={`/visits/${result.lastMatchingLab.visitId}`}
+                      to={`/admin/${adminId}/visits/${result.lastMatchingLab.visitId}`}
                       className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 font-semibold text-blue-600 transition hover:bg-blue-100"
                     >
                       {t('View visit')}

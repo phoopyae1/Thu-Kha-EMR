@@ -199,7 +199,7 @@ function findMatchingVisit(appointment: Appointment, visits: Visit[]): string | 
 }
 
 export default function AppointmentDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, adminId } = useParams<{ id: string; adminId: string }>();
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -652,7 +652,7 @@ export default function AppointmentDetail() {
   const headerActions = (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
       <Link
-        to="/appointments"
+        to={`/admin/${adminId}/appointments`}
         className="inline-flex items-center justify-center rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-100"
       >
         Back to schedule
@@ -719,7 +719,10 @@ export default function AppointmentDetail() {
                       {visitId ? (
                         <span>
                           Visit record linked:{' '}
-                          <Link className="font-semibold underline" to={`/visits/${visitId}`}>
+                          <Link
+                            className="font-semibold underline"
+                            to={`/admin/${adminId}/visits/${visitId}`}
+                          >
                             Visit {visitId}
                           </Link>
                         </span>
@@ -1124,7 +1127,7 @@ export default function AppointmentDetail() {
                     <dt className="text-gray-500">Profile</dt>
                     <dd>
                       <Link
-                        to={`/patients/${patient.patientId}`}
+                        to={`/admin/${adminId}/patients/${patient.patientId}`}
                         className="text-sm font-semibold text-blue-600 hover:text-blue-700"
                       >
                         View full record
