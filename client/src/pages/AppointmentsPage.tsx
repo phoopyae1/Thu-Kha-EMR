@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type MouseEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { CalendarIcon } from '../components/icons';
 import {
@@ -202,6 +202,7 @@ export default function AppointmentsPage() {
   const isDoctorUser = userRole === 'Doctor';
   const canCreateAppointment = userRole === 'AdminAssistant' || userRole === 'ITAdmin';
   const { t } = useTranslation();
+  const { adminId } = useParams<{ adminId: string }>();
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,7 +392,7 @@ export default function AppointmentsPage() {
   const headerActions = canCreateAppointment ? (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
       <Link
-        to="/appointments/new"
+        to={`/admin/${adminId}/appointments/new`}
         className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
       >
         {t('New Appointment')}
@@ -446,7 +447,7 @@ export default function AppointmentsPage() {
           title: 'Visit created',
           message: 'A visit was created for {name}.',
           messageParams: { name: appointment.patient.name },
-          link: { to: `/visits/${result.visitId}`, label: 'Open visit details' },
+          link: { to: `/admin/${adminId}/visits/${result.visitId}`, label: 'Open visit details' },
         });
       } else {
         setAppointments((current) =>
@@ -469,7 +470,7 @@ export default function AppointmentsPage() {
   }
 
   function openAppointmentDetail(id: string) {
-    navigate(`/appointments/${id}`);
+    navigate(`/admin/${adminId}/appointments/${id}`);
   }
 
   function openCreateSlot(dateKey: string, startMinute: number, endMinute: number) {
@@ -478,7 +479,7 @@ export default function AppointmentsPage() {
     params.set('date', dateKey);
     params.set('start', String(startMinute));
     params.set('end', String(endMinute));
-    navigate(`/appointments/new?${params.toString()}`);
+    navigate(`/admin/${adminId}/appointments/new?${params.toString()}`);
   }
 
   function handleDayGridClick(event: MouseEvent<HTMLDivElement>) {

@@ -73,7 +73,7 @@ function buildObservationVitals(observation: Observation) {
 }
 
 export default function VisitDetail() {
-  const { id } = useParams<{ id: string }>();
+  const { id, adminId } = useParams<{ id: string; adminId: string }>();
   const [visit, setVisit] = useState<VisitDetailType | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,7 +139,7 @@ export default function VisitDetail() {
   const headerActions = visit ? (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
       <Link
-        to={`/patients/${visit.patientId}`}
+        to={`/admin/${adminId}/patients/${visit.patientId}`}
         className="inline-flex items-center justify-center rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
       >
         Patient Profile
@@ -215,7 +215,7 @@ export default function VisitDetail() {
         <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-red-700 shadow-sm">
           <p className="text-sm font-semibold">{error}</p>
           <Link
-            to="/patients"
+            to={`/admin/${adminId}/patients`}
             className="mt-4 inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-100"
           >
             Back to patient directory

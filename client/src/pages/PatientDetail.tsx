@@ -562,7 +562,7 @@ export default function PatientDetail() {
                         <p className="mt-1 text-sm text-gray-500">{visit.doctor.department}</p>
                       </div>
                       <Link
-                        to={`/visits/${visit.visitId}`}
+                        to={`/admin/${adminId}/visits/${visit.visitId}`}
                         className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
                       >
                         {t('Open visit')}
@@ -734,7 +734,7 @@ export default function PatientDetail() {
                 </div>
               </div>
               <Link
-                to={`/visits/${visit.visitId}`}
+                to={`/admin/${adminId}/visits/${visit.visitId}`}
                 className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
               >
                 {t('View visit')}

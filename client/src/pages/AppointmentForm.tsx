@@ -21,6 +21,7 @@ type PatientOption = {
 };
 
 type AppointmentFormParams = {
+  adminId: string;
   id?: string;
 };
 
@@ -113,7 +114,7 @@ function expandAvailabilityToSlots(slots: AvailabilitySlot[]): AvailabilitySlot[
 
 export default function AppointmentForm() {
   const navigate = useNavigate();
-  const { id: appointmentId } = useParams<AppointmentFormParams>();
+  const { adminId, id: appointmentId } = useParams<AppointmentFormParams>();
   const [searchParams] = useSearchParams();
   const isEditing = Boolean(appointmentId);
 
@@ -472,7 +473,7 @@ export default function AppointmentForm() {
         ? await updateAppointment(appointmentId!, payload)
         : await createAppointment(payload);
 
-      navigate(`/appointments/${appointment.appointmentId}`);
+      navigate(`/admin/${adminId}/appointments/${appointment.appointmentId}`);
     } catch (error) {
       setSubmitError(parseErrorMessage(error));
     } finally {
@@ -483,7 +484,7 @@ export default function AppointmentForm() {
   const headerActions = (
     <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
       <Link
-        to="/appointments"
+        to={`/admin/${adminId}/appointments`}
         className="inline-flex items-center justify-center rounded-full bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 transition hover:bg-blue-100"
       >
         Back to schedule
@@ -805,7 +806,7 @@ export default function AppointmentForm() {
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Link
-                  to="/appointments"
+                  to={`/admin/${adminId}/appointments`}
                   className="inline-flex items-center justify-center rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50"
                 >
                   Cancel

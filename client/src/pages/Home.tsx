@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent, MouseEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import {
   AISummaryIcon,
@@ -62,6 +62,11 @@ type QuickActionConfig = {
   infoChips?: Array<{ label: string; value: string }>;
   footnote?: string;
 };
+
+function useAdminBasePath() {
+  const { adminId } = useParams<{ adminId: string }>();
+  return adminId ? `/admin/${adminId}` : '/admin';
+}
 
 export default function Home() {
   const { user } = useAuth();
@@ -438,6 +443,7 @@ function PharmacistDashboard() {
   const [queue, setQueue] = useState<PharmacyQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adminBasePath = useAdminBasePath();
 
   const loadQueue = useCallback(async () => {
     setLoading(true);
@@ -592,7 +598,10 @@ function PharmacistDashboard() {
             >
               {t('Refresh queue')}
             </button>
-            <Link to="/pharmacy/queue" className="text-xs font-semibold text-blue-600 hover:underline">
+            <Link
+              to={`${adminBasePath}/pharmacy/queue`}
+              className="text-xs font-semibold text-blue-600 hover:underline"
+            >
               {t('Open queue')}
             </Link>
           </div>
@@ -660,6 +669,7 @@ function InventoryDashboard() {
   const [items, setItems] = useState<LowStockInventoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const adminBasePath = useAdminBasePath();
 
   const loadInventory = useCallback(async () => {
     setLoading(true);
@@ -767,7 +777,7 @@ function InventoryDashboard() {
           </div>
           <div className="mt-6">
             <Link
-              to="/pharmacy/inventory"
+              to={`${adminBasePath}/pharmacy/inventory`}
               className="inline-flex items-center justify-center rounded-full bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
             >
               {t('Open inventory tools')}
@@ -792,7 +802,10 @@ function InventoryDashboard() {
             >
               {t('Refresh list')}
             </button>
-            <Link to="/pharmacy/inventory" className="text-xs font-semibold text-blue-600 hover:underline">
+            <Link
+              to={`${adminBasePath}/pharmacy/inventory`}
+              className="text-xs font-semibold text-blue-600 hover:underline"
+            >
               {t('Manage inventory')}
             </Link>
           </div>
@@ -867,6 +880,7 @@ function TeamDashboard({ role }: { role?: string }) {
   const [activeQuickAction, setActiveQuickAction] = useState<QuickActionId>('appointments');
   const todayKey = useMemo(() => createDateKey(new Date()), []);
   const statusVisuals = getStatusVisuals(t);
+  const adminBasePath = useAdminBasePath();
 
   useEffect(() => {
     let active = true;
@@ -1039,8 +1053,8 @@ function TeamDashboard({ role }: { role?: string }) {
       heading: t('Coordinate today\'s schedule'),
       description: t('Review the visit queue, update appointment statuses, and keep the day on track.'),
       icon: CalendarIcon,
-      primaryAction: { to: '/appointments', label: t('Open appointments') },
-      secondaryAction: { to: '/appointments/new', label: t('Book new appointment') },
+      primaryAction: { to: `${adminBasePath}/appointments`, label: t('Open appointments') },
+      secondaryAction: { to: `${adminBasePath}/appointments/new`, label: t('Book new appointment') },
       stat: { label: t('Appointments today'), value: renderCount(statusTotals.total) },
       infoChips: [
         { label: t('Upcoming'), value: renderCount(upcomingCount) },
@@ -1054,8 +1068,8 @@ function TeamDashboard({ role }: { role?: string }) {
       heading: t('Coordinate prescription fulfillment'),
       description: t('Review prescription orders waiting in the queue and confirm stock for hospital or client delivery.'),
       icon: PharmacyIcon,
-      primaryAction: { to: '/pharmacy/queue', label: t('Go to pharmacy queue') },
-      secondaryAction: { to: '/pharmacy/inventory', label: t('Check inventory') },
+      primaryAction: { to: `${adminBasePath}/pharmacy/queue`, label: t('Go to pharmacy queue') },
+      secondaryAction: { to: `${adminBasePath}/pharmacy/inventory`, label: t('Check inventory') },
       footnote: t('Keep pharmacy teams informed of outstanding medication orders and inventory gaps.'),
     },
     'lab-profile': {
@@ -1063,7 +1077,7 @@ function TeamDashboard({ role }: { role?: string }) {
       heading: t('Follow up on lab work'),
       description: t('Track order statuses, review requisitions, and share results with the care team.'),
       icon: LabIcon,
-      primaryAction: { to: '/lab-orders', label: t('View lab orders') },
+      primaryAction: { to: `${adminBasePath}/lab-orders`, label: t('View lab orders') },
       footnote: t('Ensure specimens are collected on time and results are routed to clinicians.'),
     },
     'search-clinic': {
@@ -1071,8 +1085,8 @@ function TeamDashboard({ role }: { role?: string }) {
       heading: t('Find clinic resources fast'),
       description: t('Look up contact information, panels, and patient groups associated with each clinic.'),
       icon: SearchIcon,
-      primaryAction: { to: '/patients', label: t('Search clinic records') },
-      secondaryAction: { to: '/reports', label: t('Open reports') },
+      primaryAction: { to: `${adminBasePath}/patients`, label: t('Search clinic records') },
+      secondaryAction: { to: `${adminBasePath}/reports`, label: t('Open reports') },
       footnote: t('Use filters to locate clinics, confirm coverage, and share updates with the team.'),
     },
   };
@@ -1207,13 +1221,13 @@ function TeamDashboard({ role }: { role?: string }) {
             <p className="mt-3 text-sm text-white/80">{checkedInSummary}</p>
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
               <Link
-                to="/appointments/new"
+                to={`${adminBasePath}/appointments/new`}
                 className="inline-flex items-center justify-center rounded-2xl bg-white px-4 py-2 text-sm font-semibold text-blue-700 shadow transition hover:bg-blue-50"
               >
                 {t('Book appointment')}
               </Link>
               <Link
-                to="/patients"
+                to={`${adminBasePath}/patients`}
                 className="inline-flex items-center justify-center rounded-2xl bg-white/20 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-white/30"
               >
                 {t('Find patient')}
@@ -1247,6 +1261,7 @@ function DoctorQueueDashboard() {
   const [summaryState, setSummaryState] = useState<Record<string, SummaryEntry>>({});
   const { t } = useTranslation();
   const statusVisuals = getStatusVisuals(t);
+  const adminBasePath = useAdminBasePath();
 
   const fetchSummary = useCallback(
     (patientId: string) => {
@@ -1649,7 +1664,7 @@ function DoctorQueueDashboard() {
                           className="flex flex-1 cursor-pointer flex-col text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50"
                         >
                           <Link
-                            to={`/patients/${appointment.patientId}`}
+                            to={`${adminBasePath}/patients/${appointment.patientId}`}
                             onClick={(event) => event.stopPropagation()}
                             className="text-sm font-semibold text-blue-600 hover:underline focus:outline-none focus-visible:underline focus-visible:text-blue-700"
                           >
