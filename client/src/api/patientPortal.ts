@@ -181,3 +181,56 @@ export async function fetchMedications(token: string, patientId: string) {
 export async function fetchPrescriptions(token: string, patientId: string) {
   return authFetch(`/api/patient-portal/prescriptions/${patientId}`, token);
 }
+
+export type MedicationOrderStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'SHIPPING'
+  | 'ON_THE_WAY'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELLED';
+
+export interface MedicationOrderResponse {
+  orderId: string;
+  patientId: string;
+  prescriptionId?: string | null;
+  drugName?: string | null;
+  dosage?: string | null;
+  instructions?: string | null;
+  quantity?: number | null;
+  status: MedicationOrderStatus;
+  notes?: string | null;
+  approvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  prescription?: any;
+  approvedBy?: { userId: string; email: string; role: string } | null;
+  updatedBy?: { userId: string; email: string; role: string } | null;
+}
+
+export interface CreateMedicationOrderInput {
+  patientId: string;
+  prescriptionId?: string;
+  drugName?: string;
+  dosage?: string;
+  instructions?: string;
+  quantity?: number;
+  notes?: string;
+}
+
+export async function fetchMedicationOrders(token: string, patientId: string) {
+  return authFetch(`/api/patient-portal/orders/${patientId}`, token) as Promise<
+    MedicationOrderResponse[]
+  >;
+}
+
+export async function createMedicationOrder(
+  token: string,
+  body: CreateMedicationOrderInput,
+) {
+  return authFetch('/api/patient-portal/orders', token, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }) as Promise<MedicationOrderResponse>;
+}

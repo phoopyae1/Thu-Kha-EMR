@@ -15,6 +15,7 @@ const config: Config = {
   },
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^swagger-ui-express$': '<rootDir>/tests/mocks/swagger-ui-express.ts',
   },
 };
 

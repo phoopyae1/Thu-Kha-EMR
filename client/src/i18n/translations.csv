@@ -263,3 +263,30 @@ No past medications recorded.,No past medications recorded.,အတိတ်က �
 Visit date: {date},Visit date: {date},Visit date: {date}
 Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.,Review prescriptions, immunisations, and pharmacy orders.
 No active prescriptions recorded.,No active prescriptions recorded.,No active prescriptions recorded.
+Track pharmacy approvals, shipping updates, and delivery milestones.,Track pharmacy approvals, shipping updates, and delivery milestones.,ဆေးဆိုင် အတည်ပြုချက်များ၊ ပို့ဆောင်ရေး အခြေအနေများနှင့် ပို့ပေးပြီးမြောက်မှုများကို ချိန်ညှိစောင့်ကြည့်ပါ။
+Pending approval,Pending approval,အတည်ပြုချက်စောင့်နေသည်
+Approved,Approved,အတည်ပြုခဲ့သည်
+Shipping,Shipping,ပို့ဆောင်နေသည်
+On the way,On the way,လမ်းတွင်ရှိသည်
+Shipped,Shipped,ပို့ဆောင်ပြီးပြီ
+Delivered,Delivered,ပို့ပေးပြီးပါပြီ
+No medication orders submitted yet.,No medication orders submitted yet.,ဆေးဝါးမှာကြားချက်များကို မတင်သေးပါ။
+Status: {status},Status: {status},အခြေအနေ- {status}
+Requested {date},Requested {date},တင်သွင်းထားသည် {date}
+Approved {date},Approved {date},အတည်ပြုခဲ့သည် {date}
+Notes: {notes},Notes: {notes},မှတ်ချက်များ- {notes}
+Updated {date},Updated {date},အသစ်ပြင်ဆင်ခဲ့သည် {date}
+Quantity: {quantity},Quantity: {quantity},ပမာဏ- {quantity}
+Doctor: {name},Doctor: {name},ဆရာဝန်- {name}
+Handled by {email},Handled by {email},ဆောင်ရွက်သူ- {email}
+Dosage: {dosage},Dosage: {dosage},ဆေးသောက်အတိုင်းအတာ- {dosage}
+Instructions: {instructions},Instructions: {instructions},ညွှန်ကြားချက်များ- {instructions}
+Medication order submitted,Medication order submitted,ဆေးဝါးမှာကြားချက်ကို တင်ထားပြီးပါပြီ
+Medication order failed,Medication order failed,ဆေးဝါးမှာကြားချက် မအောင်မြင်ပါ
+Unable to place medication order.,Unable to place medication order.,ဆေးဝါးမှာကြားချက်ကို တင်မရပါ။
+Medication order unavailable,Medication order unavailable,ဆေးမှာကြားချက် မရနိုင်ပါ
+Medication name is required to submit an order.,Medication name is required to submit an order.,မှာကြားချက်တင်ရန် ဆေးအမည်လိုအပ်သည်။
+Order details copied. Share with the hospital or client to arrange medication.,Order details copied. Share with the hospital or client to arrange medication.,မှာကြားချက်အသေးစိတ်ကို ကူးယူထားသည်။ ဆေးဝါးစီစဉ်ရန် ဆေးရုံ သို့မဟုတ် ငှားရမ်းသူနှင့် မျှဝေပါ။
+Please sign in to submit a medication order.,Please sign in to submit a medication order.,ဆေးမှာကြားချက်တင်ရန် စာရင်းဝင်ပါ။
+Our pharmacy team will review your prescription shortly.,Our pharmacy team will review your prescription shortly.,ဆေးဆိုင်အသင်းမှ သင့် ရေး prescription ကို မကြာမှီ ပြန်လည်စစ်ဆေးပေးမည်။
+Your medication request has been sent to the pharmacy.,Your medication request has been sent to the pharmacy.,သင့်ဆေးမှာကြားချက်ကို ဆေးဆိုင်သို့ ပို့ပေးထားပါပြီ။
