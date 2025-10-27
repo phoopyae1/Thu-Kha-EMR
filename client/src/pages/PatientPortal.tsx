@@ -25,13 +25,11 @@ import {
   fetchPrescriptions,
   fetchMedicationOrders,
   createMedicationOrder,
-  fetchIntegrationEmbed,
   loginPatient,
   registerPatientPortalAccount,
   type SpecialistResponse,
   type MedicationOrderResponse,
   type MedicationOrderStatus,
-  type IntegrationEmbed,
 } from '../api/patientPortal';
 import brillarLogo from '../public/brillar.avif';
 
@@ -295,8 +293,6 @@ export default function PatientPortal() {
   const { t } = useTranslation();
   const logo = brillarLogo;
 
-  const [integrationEmbed, setIntegrationEmbed] = useState<IntegrationEmbed | null>(null);
-  const [integrationError, setIntegrationError] = useState<string | null>(null);
   const [specialists, setSpecialists] = useState<SpecialistResponse[]>([]);
   const [specialistsError, setSpecialistsError] = useState<string | null>(null);
 
@@ -383,58 +379,7 @@ export default function PatientPortal() {
     [t],
   );
 
-  useEffect(() => {
-    let isMounted = true;
 
-    (async () => {
-      try {
-        const embed = await fetchIntegrationEmbed();
-        if (!isMounted) {
-          return;
-        }
-        setIntegrationEmbed(embed);
-        setIntegrationError(null);
-      } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-        console.error('Failed to load integration embed', error);
-        setIntegrationError(t('Unable to load integration widget.'));
-      }
-    })();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [t]);
-
-  const portalEmbedHtml = useMemo(() => {
-    if (!integrationEmbed) {
-      return null;
-    }
-
-    const sanitizedKey = integrationEmbed.contextKey.trim();
-    const withoutScripts = integrationEmbed.iframeCode.replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, '').trim();
-    const withKey = withoutScripts.replace(/{{\s*contextKey\s*}}/gi, sanitizedKey);
-
-    if (typeof window === 'undefined') {
-      return withKey;
-    }
-
-    try {
-      const template = document.createElement('template');
-      template.innerHTML = withKey;
-      const iframe = template.content.querySelector('iframe');
-
-      if (iframe && sanitizedKey) {
-        iframe.setAttribute('data-context-key', sanitizedKey);
-      }
-
-      return template.innerHTML || withKey;
-    } catch {
-      return withKey;
-    }
-  }, [integrationEmbed]);
 
   const showToast = useCallback((nextToast: ToastState) => {
     setToast(nextToast);
@@ -1158,24 +1103,6 @@ export default function PatientPortal() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
-        {portalEmbedHtml ? (
-          <section className="mb-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="border-b border-slate-200 bg-slate-50 px-6 py-4">
-              <h2 className="text-xs font-semibold uppercase tracking-wide text-blue-500">
-                {t('Embedded portal widget')}
-              </h2>
-            </div>
-            <div className="p-4">
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                <div className="integration-embed" dangerouslySetInnerHTML={{ __html: portalEmbedHtml }} />
-              </div>
-            </div>
-          </section>
-        ) : integrationError ? (
-          <div className="mb-8 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700 shadow-sm">
-            {integrationError}
-          </div>
-        ) : null}
 
         {session ? (
           <>
