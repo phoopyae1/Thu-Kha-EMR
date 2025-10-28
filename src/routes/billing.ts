@@ -144,7 +144,7 @@ router.get(
 
 router.patch(
   '/billing/invoices/:invoiceId/items',
-  requireRole('Cashier', 'ITAdmin'),
+  requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: ModifyInvoiceItemsSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -178,7 +178,7 @@ router.patch(
 
 router.delete(
   '/billing/items/:itemId',
-  requireRole('Cashier', 'ITAdmin'),
+  requireRole('Cashier', 'ITAdmin', 'Doctor'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       await removeInvoiceItem(req.params.itemId);
@@ -191,7 +191,7 @@ router.delete(
 
 router.post(
   '/billing/invoices/:invoiceId/payments',
-  requireRole('Cashier', 'ITAdmin'),
+  requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: PostPaymentSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -206,7 +206,7 @@ router.post(
 
 router.post(
   '/billing/invoices/:invoiceId/void',
-  requireRole('Cashier', 'ITAdmin'),
+  requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: VoidInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

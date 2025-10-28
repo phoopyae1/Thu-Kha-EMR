@@ -10,10 +10,9 @@ import { medicationOrderSelect } from '../../services/medicationOrderService.js'
 import {
   insertIntegrationEmbed,
   fetchLatestIntegrationEmbed,
-  MongoConfigurationError,
-  MongoDataApiError,
+  LocalMongoError,
   type IntegrationEmbedDocument,
-} from '../../services/mongoDataApi.js';
+} from '../../services/localMongoService.js';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -149,15 +148,8 @@ router.post(
 
       return res.status(201).json({ id: result.insertedId ?? null });
     } catch (error) {
-      if (error instanceof MongoConfigurationError) {
+      if (error instanceof LocalMongoError) {
         return res.status(503).json({ error: error.message });
-      }
-
-      if (error instanceof MongoDataApiError) {
-        return res.status(502).json({
-          error: error.message,
-          details: error.details,
-        });
       }
 
       console.error('Failed to save integration embed', error);
@@ -181,12 +173,8 @@ router.get('/integration-embeds/latest', async (_req: Request, res: Response) =>
 
     return res.json({ embed: document });
   } catch (error) {
-    if (error instanceof MongoConfigurationError) {
+    if (error instanceof LocalMongoError) {
       return res.status(503).json({ error: error.message });
-    }
-
-    if (error instanceof MongoDataApiError) {
-      return res.status(502).json({ error: error.message, details: error.details });
     }
 
     console.error('Failed to load integration embed', error);

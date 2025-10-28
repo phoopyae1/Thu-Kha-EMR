@@ -314,9 +314,7 @@ export default function PatientPortal() {
     return null;
   });
 
-  const [integrationEmbed, setIntegrationEmbed] = useState<IntegrationEmbed | null>(null);
-  const [isIntegrationLoading, setIsIntegrationLoading] = useState(true);
-  const [integrationLoadFailed, setIntegrationLoadFailed] = useState(false);
+  const [integrationIframe, setIntegrationIframe] = useState<string>('');
 
   const [showRegister, setShowRegister] = useState(false);
   const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
@@ -344,37 +342,45 @@ export default function PatientPortal() {
   const [activeTab, setActiveTab] = useState<PortalSectionId>('overview');
 
   useEffect(() => {
-    let isMounted = true;
-
-    const loadIntegrationEmbed = async () => {
+    const loadIntegrationIframe = async () => {
       try {
         const embed = await fetchIntegrationEmbed();
-        if (!isMounted) {
-          return;
+        if (embed?.iframeCode) {
+          let iframeHtml = embed.iframeCode;
+          
+          // Clean up the iframe HTML (remove line breaks and extra spaces)
+          iframeHtml = iframeHtml.replace(/\s+/g, ' ').trim();
+          
+          // Extract URL to add patient context
+          const urlMatch = iframeHtml.match(/src=["']([^"']+)["']/);
+          if (urlMatch) {
+            let iframeUrl = urlMatch[1];
+            
+            // Add patient context if user is logged in
+            if (session?.patientId) {
+              const separator = iframeUrl.includes('?') ? '&' : '?';
+              iframeUrl = `${iframeUrl}${separator}patientId=${session.patientId}`;
+              
+              // Update the iframe HTML with the new URL
+              iframeHtml = iframeHtml.replace(/src=["'][^"']*["']/, `src="${iframeUrl}"`);
+            }
+          }
+          
+          // Override positioning styles to work within our container
+          iframeHtml = iframeHtml.replace(/style="[^"]*"/, 'style="width:100%;height:100%;border:none;border-radius:12px;"');
+          
+          console.log('Setting integration iframe:', iframeHtml);
+          setIntegrationIframe(iframeHtml);
+        } else {
+          console.log('No iframe code found in embed:', embed);
         }
-
-        setIntegrationEmbed(embed);
-        setIntegrationLoadFailed(false);
       } catch (error) {
-        if (!isMounted) {
-          return;
-        }
-
         console.error('Failed to load integration widget', error);
-        setIntegrationLoadFailed(true);
-      } finally {
-        if (isMounted) {
-          setIsIntegrationLoading(false);
-        }
       }
     };
 
-    void loadIntegrationEmbed();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    loadIntegrationIframe();
+  }, [session?.patientId]);
 
   const tabs = useMemo(
     () => [
@@ -418,13 +424,6 @@ export default function PatientPortal() {
     [t],
   );
 
-  const integrationIframeHtml = useMemo(() => {
-    if (!integrationEmbed) {
-      return null;
-    }
-
-    return integrationEmbed.iframeCode.replace(/\{\{\s*contextKey\s*\}\}/gi, integrationEmbed.contextKey);
-  }, [integrationEmbed]);
 
 
 
@@ -1153,28 +1152,6 @@ export default function PatientPortal() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-6 pb-16 pt-10">
-        {(isIntegrationLoading || integrationIframeHtml || integrationLoadFailed) && (
-          <section className="mb-10">
-            {isIntegrationLoading ? (
-              <div className="relative" role="status" aria-live="polite">
-                <div
-                  className="h-48 w-full animate-pulse rounded-3xl border border-slate-200 bg-white/60"
-                  aria-hidden="true"
-                />
-                <span className="sr-only">{t('Loading integration widget...')}</span>
-              </div>
-            ) : integrationIframeHtml ? (
-              <div
-                className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm"
-                dangerouslySetInnerHTML={{ __html: integrationIframeHtml }}
-              />
-            ) : integrationLoadFailed ? (
-              <div className="rounded-3xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-                {t('Unable to load integration widget.')}
-              </div>
-            ) : null}
-          </section>
-        )}
 
         {session ? (
           <>
@@ -1503,6 +1480,14 @@ export default function PatientPortal() {
           </section>
         )}
       </main>
+      
+      {/* Fixed positioned widget in bottom-right corner */}
+      {integrationIframe && (
+        <div 
+          className="fixed bottom-4 right-4 z-50"
+          dangerouslySetInnerHTML={{ __html: integrationIframe }}
+        />
+      )}
     </div>
   );
 }
