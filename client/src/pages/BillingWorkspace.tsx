@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { fetchJSON } from '../api/http';
 import {
@@ -80,6 +80,8 @@ function InvoiceStatusBadge({ status }: { status: string }) {
 
 export default function BillingWorkspace() {
   const { user } = useAuth();
+  const { adminId } = useParams<{ adminId: string }>();
+  const withAdminPath = (path: string) => (adminId ? `/admin/${adminId}${path}` : path);
   const [visitIdInput, setVisitIdInput] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
@@ -424,14 +426,14 @@ export default function BillingWorkspace() {
       headerChildren={
         <div className="hidden gap-3 md:flex">
           <Link
-            to="/billing/pos"
+            to={withAdminPath('/billing/pos')}
             className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
           >
             POS queue
           </Link>
           {visitInvoice && (
             <Link
-              to={`/billing/visit/${visitInvoice.visitId}`}
+              to={withAdminPath(`/billing/visit/${visitInvoice.visitId}`)}
               className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
             >
               Open visit invoice
@@ -572,14 +574,14 @@ export default function BillingWorkspace() {
             </div>
             <div className="flex flex-wrap gap-2 md:hidden">
               <Link
-                to="/billing/pos"
+                to={withAdminPath('/billing/pos')}
                 className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
               >
                 POS queue
               </Link>
               {visitInvoice && (
                 <Link
-                  to={`/billing/visit/${visitInvoice.visitId}`}
+                  to={withAdminPath(`/billing/visit/${visitInvoice.visitId}`)}
                   className="rounded-full bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
                 >
                   Open visit invoice
@@ -635,7 +637,7 @@ export default function BillingWorkspace() {
                       </div>
                       <div className="flex flex-wrap gap-2">
                         <Link
-                          to={`/billing/visit/${visitInvoice.visitId}`}
+                          to={withAdminPath(`/billing/visit/${visitInvoice.visitId}`)}
                           className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
                         >
                           View invoice detail
@@ -797,7 +799,7 @@ export default function BillingWorkspace() {
                     <td className="px-4 py-2">
                       <div className="flex justify-end gap-2">
                         <Link
-                          to={`/billing/visit/${invoice.visitId}`}
+                          to={withAdminPath(`/billing/visit/${invoice.visitId}`)}
                           className="rounded-full border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-100"
                         >
                           Review
