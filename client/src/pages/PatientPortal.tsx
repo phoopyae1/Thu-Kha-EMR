@@ -317,7 +317,13 @@ export default function PatientPortal() {
   });
   const lastAtenxionLoginPatientId = useRef<string | null>(null);
 
-  const [integrationIframe, setIntegrationIframe] = useState<string>('');
+  const [integrationWidget, setIntegrationWidget] = useState<{
+    src: string;
+    title?: string | null;
+    allow?: string | null;
+    loading?: string | null;
+    height?: number;
+  } | null>(null);
 
   const [showRegister, setShowRegister] = useState(false);
   const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
@@ -348,37 +354,63 @@ export default function PatientPortal() {
     const loadIntegrationIframe = async () => {
       try {
         const embed = await fetchIntegrationEmbed();
-        if (embed?.iframeCode) {
-          let iframeHtml = embed.iframeCode;
-          
-          // Clean up the iframe HTML (remove line breaks and extra spaces)
-          iframeHtml = iframeHtml.replace(/\s+/g, ' ').trim();
-          
-          // Extract URL to add patient context
-          const urlMatch = iframeHtml.match(/src=["']([^"']+)["']/);
-          if (urlMatch) {
-            let iframeUrl = urlMatch[1];
-            
-            // Add patient context if user is logged in
-            if (session?.patientId) {
-              const separator = iframeUrl.includes('?') ? '&' : '?';
-              iframeUrl = `${iframeUrl}${separator}userId=${session.patientId}`;
-              
-              // Update the iframe HTML with the new URL
-              iframeHtml = iframeHtml.replace(/src=["'][^"']*["']/, `src="${iframeUrl}"`);
-            }
-          }
-          
-          // Override positioning styles to work within our container
-          iframeHtml = iframeHtml.replace(/style="[^"]*"/, 'style="width:100%;height:100%;border:none;border-radius:12px;"');
-          
-          console.log('Setting integration iframe:', iframeHtml);
-          setIntegrationIframe(iframeHtml);
-        } else {
-          console.log('No iframe code found in embed:', embed);
+        if (!embed?.iframeCode) {
+          setIntegrationWidget(null);
+          return;
         }
+
+        if (typeof document === 'undefined') {
+          setIntegrationWidget(null);
+          return;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = embed.iframeCode;
+        const iframe = wrapper.querySelector('iframe');
+
+        if (!iframe) {
+          setIntegrationWidget(null);
+          return;
+        }
+
+        const srcAttr = iframe.getAttribute('src');
+        if (!srcAttr) {
+          setIntegrationWidget(null);
+          return;
+        }
+
+        let sanitizedSrc = srcAttr.trim();
+        try {
+          const url = new URL(sanitizedSrc, window.location.origin);
+          if (session?.patientId) {
+            url.searchParams.set('userId', session.patientId);
+          } else {
+            url.searchParams.delete('userId');
+          }
+          sanitizedSrc = url.toString();
+        } catch {
+          if (session?.patientId && !sanitizedSrc.includes('userId=')) {
+            const separator = sanitizedSrc.includes('?') ? '&' : '?';
+            sanitizedSrc = `${sanitizedSrc}${separator}userId=${session.patientId}`;
+          }
+        }
+
+        const heightAttr = iframe.getAttribute('height');
+        const parsedHeight = heightAttr ? Number.parseInt(heightAttr, 10) : undefined;
+
+        setIntegrationWidget({
+          src: sanitizedSrc,
+          title: iframe.getAttribute('title'),
+          allow: iframe.getAttribute('allow'),
+          loading: iframe.getAttribute('loading'),
+          height:
+            typeof parsedHeight === 'number' && Number.isFinite(parsedHeight) && parsedHeight > 0
+              ? parsedHeight
+              : undefined,
+        });
       } catch (error) {
         console.error('Failed to load integration widget', error);
+        setIntegrationWidget(null);
       }
     };
 
@@ -1650,11 +1682,20 @@ export default function PatientPortal() {
       </main>
       
       {/* Fixed positioned widget in bottom-right corner */}
-      {session && integrationIframe ? (
+      {session && integrationWidget ? (
         <div
-          className="fixed bottom-4 right-4 z-50 w-80 max-w-[90vw]"
-          dangerouslySetInnerHTML={{ __html: integrationIframe }}
-        />
+          className="fixed bottom-4 right-4 z-40 w-80 max-w-[90vw]"
+          style={{ minHeight: `${integrationWidget.height ?? 320}px` }}
+        >
+          <iframe
+            src={integrationWidget.src}
+            title={integrationWidget.title ?? t('Patient portal assistant widget')}
+            allow={integrationWidget.allow ?? undefined}
+            loading={integrationWidget.loading ?? 'lazy'}
+            height={integrationWidget.height ?? 320}
+            className="h-full w-full rounded-3xl border-0 shadow-xl"
+          />
+        </div>
       ) : null}
     </div>
   );
