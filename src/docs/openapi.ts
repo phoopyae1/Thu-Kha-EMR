@@ -1530,6 +1530,201 @@ addPath('/appointments/availability', 'get', {
   },
 });
 
+// Atenxion appointment booking endpoint
+addPath('/appointments/book', 'post', {
+  summary: 'Book appointment ',
+  description: 'Public endpoint for booking appointments through the Atenxion chat widget. Requires valid Atenxion context key.',
+  tags: ['Appointments', 'Atenxion'],
+  requestBody: {
+    required: true,
+    content: {
+      'application/json': {
+        schema: {
+          type: 'object',
+          required: ['contextKey', 'patientId', 'doctorId', 'department', 'date', 'startTimeMin', 'endTimeMin'],
+          properties: {
+            contextKey: {
+              type: 'string',
+              description: 'Atenxion context key for authentication',
+              example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+            },
+            patientId: {
+              type: 'string',
+              format: 'uuid',
+              description: 'Patient ID',
+              example: '11111111-2222-3333-4444-555555555555'
+            },
+            doctorId: {
+              type: 'string',
+              format: 'uuid',
+              description: 'Doctor ID',
+              example: '99999999-8888-7777-6666-555555555555'
+            },
+            department: {
+              type: 'string',
+              description: 'Medical department',
+              example: 'Cardiology'
+            },
+            date: {
+              type: 'string',
+              format: 'date',
+              description: 'Appointment date in YYYY-MM-DD format',
+              example: '2024-06-15'
+            },
+            startTimeMin: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 1439,
+              description: 'Start time in minutes from midnight (0-1439)',
+              example: 540
+            },
+            endTimeMin: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 1440,
+              description: 'End time in minutes from midnight (0-1440)',
+              example: 600
+            },
+            reason: {
+              type: 'string',
+              description: 'Appointment reason (optional)',
+              example: 'Routine follow-up'
+            },
+            location: {
+              type: 'string',
+              description: 'Appointment location (optional)',
+              example: 'Room 12B'
+            }
+          }
+        },
+        example: {
+          contextKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZ2VudElkIjoiNjkwMDU0ODEzN2MwZWQwMzY4MjFhYjI5IiwidHlwZSI6Im11bHRpYWdlbnQiLCJpYXQiOjE3NjE2MjkzMTN9.RAGNnXYrMtBGnFX0R_P3mUSbrjBFTCcBjf9LHc8VU',
+          patientId: '11111111-2222-3333-4444-555555555555',
+          doctorId: '99999999-8888-7777-6666-555555555555',
+          department: 'Cardiology',
+          date: '2024-06-15',
+          startTimeMin: 540,
+          endTimeMin: 600,
+          reason: 'Routine follow-up',
+          location: 'Room 12B'
+        }
+      }
+    }
+  },
+  responses: {
+    '201': {
+      description: 'Appointment booked successfully',
+      content: {
+        'application/json': {
+          schema: {
+            type: 'object',
+            properties: {
+              success: { type: 'boolean', example: true },
+              message: { type: 'string', example: 'Appointment booked successfully' },
+              appointment: {
+                type: 'object',
+                properties: {
+                  appointmentId: { type: 'string', format: 'uuid' },
+                  patient: {
+                    type: 'object',
+                    properties: {
+                      patientId: { type: 'string', format: 'uuid' },
+                      name: { type: 'string' }
+                    }
+                  },
+                  doctor: {
+                    type: 'object',
+                    properties: {
+                      doctorId: { type: 'string', format: 'uuid' },
+                      name: { type: 'string' },
+                      department: { type: 'string' }
+                    }
+                  },
+                  department: { type: 'string' },
+                  date: { type: 'string', format: 'date' },
+                  startTimeMin: { type: 'integer' },
+                  endTimeMin: { type: 'integer' },
+                  reason: { type: 'string', nullable: true },
+                  location: { type: 'string', nullable: true },
+                  status: { type: 'string', enum: ['Scheduled', 'CheckedIn', 'InProgress', 'Completed', 'Cancelled'] }
+                }
+              }
+            }
+          },
+          example: {
+            success: true,
+            message: 'Appointment booked successfully',
+            appointment: {
+              appointmentId: 'a3f2bfae-1234-4e5f-9f4e-9d1d0c6bb001',
+              patient: {
+                patientId: '11111111-2222-3333-4444-555555555555',
+                name: 'Jane Doe'
+              },
+              doctor: {
+                doctorId: '99999999-8888-7777-6666-555555555555',
+                name: 'Dr. Smith',
+                department: 'Cardiology'
+              },
+              department: 'Cardiology',
+              date: '2024-06-15',
+              startTimeMin: 540,
+              endTimeMin: 600,
+              reason: 'Routine follow-up',
+              location: 'Room 12B',
+              status: 'Scheduled'
+            }
+          }
+        }
+      }
+    },
+    '400': {
+      description: 'Invalid request data or time slot unavailable',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/Error' },
+          example: { error: 'Appointment time slot is already booked' }
+        }
+      }
+    },
+    '401': {
+      description: 'Invalid or expired context key',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/Error' },
+          example: { error: 'Invalid or expired context key' }
+        }
+      }
+    },
+    '404': {
+      description: 'Patient or doctor not found',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/Error' },
+          example: { error: 'Patient not found' }
+        }
+      }
+    },
+    '409': {
+      description: 'Appointment time slot is already booked',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/Error' },
+          example: { error: 'Appointment time slot is already booked' }
+        }
+      }
+    },
+    '500': {
+      description: 'Internal server error',
+      content: {
+        'application/json': {
+          schema: { $ref: '#/components/schemas/Error' },
+          example: { error: 'Failed to book appointment' }
+        }
+      }
+    }
+  }
+});
+
 addPath('/appointments', 'post', {
   summary: 'Create appointment',
   description: 'Creates a new appointment after validating doctor availability and conflicts.',

@@ -1,12 +1,14 @@
 import axios, { type AxiosError } from 'axios';
+import { fetchIntegrationEmbed } from './patientPortal';
 
-const DEFAULT_SERVER_URL = 'https://api-qa.brillar.ai';
+const DEFAULT_SERVER_URL = 'https://api-qa.atenxion.ai';
 
 type JsonRecord = Record<string, unknown>;
 
 export interface AtenxionCredentials {
   userId: string;
   agentId?: string;
+  agentchainId?: string;
   patientName?: string;
 }
 
@@ -14,6 +16,7 @@ interface AtenxionRequestBody {
   userId: string;
   patientName: string;
   agentId?: string;
+  agentchainId?: string;
 }
 
 export type AtenxionTransactionPayload = JsonRecord;
@@ -39,6 +42,7 @@ function normalizeCredentials(credentials: AtenxionCredentials): AtenxionRequest
   const userId = credentials.userId.trim();
   const patientName = credentials.patientName?.trim() || userId;
   const agentId = credentials.agentId?.trim();
+  const agentchainId = credentials.agentchainId?.trim();
 
   const body: AtenxionRequestBody = {
     userId,
@@ -48,6 +52,10 @@ function normalizeCredentials(credentials: AtenxionCredentials): AtenxionRequest
   if (agentId) {
     body.agentId = agentId;
   }
+  
+  if (agentchainId) {
+    body.agentchainId = agentchainId;
+  }
 
   return body;
 }
@@ -56,11 +64,11 @@ function handleAxiosError(error: unknown, context: string): never {
   if (axios.isAxiosError(error)) {
     const axiosError = error as AxiosError<JsonRecord>;
     const responseData = axiosError.response?.data;
-    const message =
-      (typeof responseData === 'string' && responseData) ||
-      (responseData && typeof responseData.error === 'string' && responseData.error) ||
-      axiosError.message ||
-      context;
+    const status = axiosError.response?.status;
+    const dataText =
+      typeof responseData === 'string' ? responseData : JSON.stringify(responseData ?? {}, null, 2);
+    const dataSnippet = dataText.slice(0, 500);
+    const message = `${context} (status=${status ?? 'n/a'}) ${dataSnippet}`;
     throw new Error(message);
   }
   if (error instanceof Error) {
@@ -71,10 +79,19 @@ function handleAxiosError(error: unknown, context: string): never {
 
 export async function loginAtenxionUser(credentials: AtenxionCredentials, token?: string | null) {
   const url = `${resolveServerUrl()}/api/post-login/user-login`;
+  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
+  const requestBody = normalizeCredentials(credentials);
+  const headers = { Authorization: `${resolvedToken}` };
+  
+  console.log('Atenxion API call:', {
+    url,
+    body: requestBody,
+    headers,
+    token: resolvedToken ? resolvedToken.substring(0, 20) + '...' : 'none'
+  });
+  
   try {
-    await axios.post(url, normalizeCredentials(credentials), {
-      headers: getHeaders(token),
-    });
+    await axios.post(url, requestBody, { headers });
     return true;
   } catch (error) {
     console.error('Atenxion login failed:', error);
@@ -88,17 +105,17 @@ export async function recordAtenxionTransaction(
   token?: string | null,
 ) {
   const url = `${resolveServerUrl()}/api/post-login/new-transaction`;
+  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
+  const body = { ...normalizeCredentials(credentials), transaction };
+  const headers = getHeaders(resolvedToken);
   try {
-    await axios.post(
+    console.log('Atenxion transaction API call:', {
       url,
-      {
-        ...normalizeCredentials(credentials),
-        transaction,
-      },
-      {
-        headers: getHeaders(token),
-      },
-    );
+      body,
+      headers,
+      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : 'none',
+    });
+    await axios.post(url, body, { headers });
     return true;
   } catch (error) {
     console.error('Atenxion transaction failed:', error);
@@ -108,14 +125,17 @@ export async function recordAtenxionTransaction(
 
 export async function logoutAtenxionUser(credentials: AtenxionCredentials, token?: string | null) {
   const url = `${resolveServerUrl()}/api/post-login/user-logout`;
+  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
+  const body = normalizeCredentials(credentials);
+  const headers = getHeaders(resolvedToken);
   try {
-    await axios.post(
+    console.log('Atenxion logout API call:', {
       url,
-      normalizeCredentials(credentials),
-      {
-        headers: getHeaders(token),
-      },
-    );
+      body,
+      headers,
+      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : 'none',
+    });
+    await axios.post(url, body, { headers });
     return true;
   } catch (error) {
     console.error('Atenxion logout failed:', error);

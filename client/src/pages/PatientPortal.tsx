@@ -362,7 +362,7 @@ export default function PatientPortal() {
             // Add patient context if user is logged in
             if (session?.patientId) {
               const separator = iframeUrl.includes('?') ? '&' : '?';
-              iframeUrl = `${iframeUrl}${separator}patientId=${session.patientId}`;
+              iframeUrl = `${iframeUrl}${separator}userId=${session.patientId}`;
               
               // Update the iframe HTML with the new URL
               iframeHtml = iframeHtml.replace(/src=["'][^"']*["']/, `src="${iframeUrl}"`);
@@ -544,26 +544,40 @@ export default function PatientPortal() {
         });
 
         const atenxionSummary = summary || undefined;
-        void recordAtenxionTransaction(
-          {
-            userId: session.patientId,
-            patientName: session.patientName || profile?.patient?.name || session.email,
-          },
-          {
-            type: isPrescription ? 'prescription-order' : 'medication-order',
-            orderId: order.orderId,
-            patientId: order.patientId,
-            createdAt: order.createdAt,
-            updatedAt: order.updatedAt,
-            drugName: order.drugName,
-            dosage: order.dosage,
-            quantity: order.quantity,
-            summary: atenxionSummary,
-          },
-          session.token,
-        ).catch((atenxionError) => {
-          console.warn('Atenxion transaction logging failed', atenxionError);
-        });
+        
+        // Get integration embed and use contextKey (and agentId) for Atenxion transaction
+        fetchIntegrationEmbed()
+          .then((integration) => {
+            const contextKey = integration?.contextKey;
+            const agentIdMatch = integration?.iframeCode?.match(/agentchainId=([^&"']+)/);
+            const agentId = agentIdMatch ? agentIdMatch[1] : undefined;
+            if (!contextKey) {
+              console.warn('No contextKey found for Atenxion transaction');
+              return;
+            }
+            return recordAtenxionTransaction(
+              {
+                userId: session.patientId,
+                patientName: session.patientName || profile?.patient?.name || session.email,
+                agentId,
+              },
+              {
+                type: isPrescription ? 'prescription-order' : 'medication-order',
+                orderId: order.orderId,
+                patientId: order.patientId,
+                createdAt: order.createdAt,
+                updatedAt: order.updatedAt,
+                drugName: order.drugName,
+                dosage: order.dosage,
+                quantity: order.quantity,
+                summary: atenxionSummary,
+              },
+              contextKey,
+            );
+          })
+          .catch((atenxionError) => {
+            console.warn('Atenxion transaction logging failed', atenxionError);
+          });
 
         let successMessage = isPrescription
           ? t('Our pharmacy team will review your prescription shortly.')
@@ -649,13 +663,34 @@ export default function PatientPortal() {
     }
 
     const fallbackName = session.patientName || profile?.patient?.name || session.email;
-    void loginAtenxionUser(
-      {
-        userId: session.patientId,
-        patientName: fallbackName,
-      },
-      session.token,
-    )
+    
+    // Get integration embed and use contextKey for Atenxion login
+    fetchIntegrationEmbed()
+      .then((integration) => {
+        const contextKey = integration?.contextKey;
+        const agentIdMatch = integration?.iframeCode?.match(/agentchainId=([^&"']+)/);
+        const agentId = agentIdMatch ? agentIdMatch[1] : undefined;
+        if (!contextKey) {
+          console.warn('No contextKey found in integration embed');
+          return;
+        }
+        
+        console.log('Atenxion login attempt:', {
+          userId: session.patientId,
+          patientName: fallbackName,
+          agentId,
+          contextKey: contextKey.substring(0, 20) + '...'
+        });
+        
+        return loginAtenxionUser(
+          {
+            userId: session.patientId,
+            patientName: fallbackName,
+            agentId,
+          },
+          contextKey, // Use contextKey instead of session.token
+        );
+      })
       .then(() => {
         lastAtenxionLoginPatientId.current = session.patientId;
       })
@@ -735,14 +770,25 @@ export default function PatientPortal() {
       setLoginStatus('success');
 
       try {
-        await loginAtenxionUser(
-          {
-            userId: patientId,
-            patientName,
-          },
-          response.accessToken,
-        );
-        lastAtenxionLoginPatientId.current = patientId;
+        // Get integration embed and use contextKey for Atenxion login
+        const integration = await fetchIntegrationEmbed();
+        const contextKey = integration?.contextKey;
+        const agentIdMatch = integration?.iframeCode?.match(/agentchainId=([^&"']+)/);
+        const agentId = agentIdMatch ? agentIdMatch[1] : undefined;
+        
+        if (contextKey) {
+          await loginAtenxionUser(
+            {
+              userId: '6a1928ef-a4b2-51c2-9746-0ac0b2594f55',
+              patientName,
+              agentId,
+            },
+            contextKey, // Use contextKey instead of response.accessToken
+          );
+          lastAtenxionLoginPatientId.current = patientId;
+        } else {
+          console.warn('No contextKey found in integration embed');
+        }
       } catch (atenxionError) {
         console.warn('Atenxion login notification failed', atenxionError);
       }
@@ -974,15 +1020,30 @@ export default function PatientPortal() {
   const handleLogout = () => {
     if (session) {
       const atenxionName = session.patientName || profile?.patient?.name || session.email;
-      void logoutAtenxionUser(
-        {
-          userId: session.patientId,
-          patientName: atenxionName,
-        },
-        session.token,
-      ).catch((atenxionError) => {
-        console.warn('Atenxion logout notification failed', atenxionError);
-      });
+      
+      // Get integration embed and use contextKey (and agentId) for Atenxion logout
+      fetchIntegrationEmbed()
+        .then((integration) => {
+          const contextKey = integration?.contextKey;
+          const agentIdMatch = integration?.iframeCode?.match(/agentchainId=([^&"']+)/);
+          const agentId = agentIdMatch ? agentIdMatch[1] : undefined;
+          if (!contextKey) {
+            console.warn('No contextKey found for Atenxion logout');
+            return;
+          }
+          
+          return logoutAtenxionUser(
+            {
+              userId: session.patientId,
+              patientName: atenxionName,
+              agentId,
+            },
+            contextKey, // Use contextKey instead of session.token
+          );
+        })
+        .catch((atenxionError) => {
+          console.warn('Atenxion logout notification failed', atenxionError);
+        });
       lastAtenxionLoginPatientId.current = null;
     }
     // Clear localStorage

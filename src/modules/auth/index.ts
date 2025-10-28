@@ -13,13 +13,15 @@ type RoleName =
   | 'PharmacyTech'
   | 'InventoryManager'
   | 'Nurse'
-  | 'LabTech';
+  | 'LabTech'
+  | 'Patient';
 
 export interface AuthUser {
   userId: string;
   role: RoleName;
   email: string;
   doctorId?: string;
+  patientId?: string;
 }
 
 export interface AuthRequest extends Request {
