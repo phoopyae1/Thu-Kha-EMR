@@ -1,7 +1,6 @@
 import axios, { type AxiosError } from 'axios';
 
 const DEFAULT_SERVER_URL = 'https://api-qa.brillar.ai';
-const DEFAULT_AGENT_ID = 'thu-kha-emr-patient-portal';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -11,14 +10,16 @@ export interface AtenxionCredentials {
   patientName?: string;
 }
 
+interface AtenxionRequestBody {
+  userId: string;
+  patientName: string;
+  agentId?: string;
+}
+
 export type AtenxionTransactionPayload = JsonRecord;
 
 function resolveServerUrl() {
   return import.meta.env.VITE_ATENXION_API_URL?.trim() || DEFAULT_SERVER_URL;
-}
-
-export function getAtenxionAgentId() {
-  return import.meta.env.VITE_ATENXION_AGENT_ID?.trim() || DEFAULT_AGENT_ID;
 }
 
 function resolveAuthorizationHeader(token?: string | null) {
@@ -34,12 +35,21 @@ function getHeaders(token?: string | null) {
   return authHeader ? { Authorization: authHeader } : undefined;
 }
 
-function normalizeCredentials(credentials: AtenxionCredentials) {
-  return {
-    userId: credentials.userId,
-    agentId: credentials.agentId?.trim() || getAtenxionAgentId(),
-    patientName: credentials.patientName?.trim() || credentials.userId,
-  } satisfies AtenxionCredentials;
+function normalizeCredentials(credentials: AtenxionCredentials): AtenxionRequestBody {
+  const userId = credentials.userId.trim();
+  const patientName = credentials.patientName?.trim() || userId;
+  const agentId = credentials.agentId?.trim();
+
+  const body: AtenxionRequestBody = {
+    userId,
+    patientName,
+  };
+
+  if (agentId) {
+    body.agentId = agentId;
+  }
+
+  return body;
 }
 
 function handleAxiosError(error: unknown, context: string): never {

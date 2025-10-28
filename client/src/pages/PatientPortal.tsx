@@ -33,12 +33,7 @@ import {
   type MedicationOrderResponse,
   type MedicationOrderStatus,
 } from '../api/patientPortal';
-import {
-  getAtenxionAgentId,
-  loginAtenxionUser,
-  logoutAtenxionUser,
-  recordAtenxionTransaction,
-} from '../api/atenxion';
+import { loginAtenxionUser, logoutAtenxionUser, recordAtenxionTransaction } from '../api/atenxion';
 import brillarLogo from '../public/brillar.avif';
 
 interface LoginForm {
@@ -658,7 +653,6 @@ export default function PatientPortal() {
       {
         userId: session.patientId,
         patientName: fallbackName,
-        agentId: getAtenxionAgentId(),
       },
       session.token,
     )
