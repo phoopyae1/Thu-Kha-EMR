@@ -58,16 +58,53 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     }
 
     const payload = decodeToken(rawToken);
-    if (typeof payload.sub !== 'string' || typeof payload.role !== 'string' || typeof payload.email !== 'string') {
-      return res.status(401).json({ error: 'Unauthorized' });
+    console.log(payload);
+    let user:
+      | {
+          userId: string;
+          email: string;
+          role: string;
+          status: string;
+          doctorId: string | null;
+        }
+      | null = null;
+
+    // Normal tokens include sub/role/email → lookup by userId
+    if (
+      typeof payload.sub === 'string' &&
+      typeof payload.role === 'string' &&
+      typeof payload.email === 'string'
+    ) {
+      user = await prisma.user.findUnique({
+        where: { userId: payload.sub },
+        select: { userId: true, email: true, role: true, status: true, doctorId: true },
+      });
+    } else if (typeof payload.email === 'string') {
+      // Fallback: accept system tokens that only carry email
+      user = await prisma.user.findFirst({
+        where: { email: { equals: String(payload.email), mode: 'insensitive' }, status: 'active' },
+        select: { userId: true, email: true, role: true, status: true, doctorId: true },
+      });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { userId: payload.sub },
-      select: { userId: true, email: true, role: true, status: true, doctorId: true },
-    });
-
     if (!user || user.status !== 'active') {
+      // Allowlisted system accounts (email-only tokens)
+      if (typeof payload.email === 'string') {
+        const systemEmails = (process.env.SYSTEM_EMAILS || 'system@atenxion.ai')
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean);
+        const emailLower = payload.email.toLowerCase();
+        if (systemEmails.includes(emailLower)) {
+          req.user = {
+            userId: 'system',
+            role: 'ITAdmin',
+            email: emailLower,
+            doctorId: undefined,
+          };
+          return next();
+        }
+      }
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -84,7 +121,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
   }
 }
 
-export function requireRole(...roles: RoleName[]) {
+export function   requireRole(...roles: RoleName[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     const user = req.user;
     if (!user) {
