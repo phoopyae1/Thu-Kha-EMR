@@ -1359,6 +1359,7 @@ export default function PatientPortal() {
   })();
 
   return (
+    <>
     <div className="min-h-screen bg-slate-100">
       {toast && (
         <div className="pointer-events-none fixed bottom-6 right-6 z-50">
@@ -1786,29 +1787,31 @@ export default function PatientPortal() {
           className="fixed bottom-4 right-4 z-40"
           style={{
             width: integrationWidget.width ?? DEFAULT_WIDGET_WIDTH,
-            maxWidth: '90vw',
-            minHeight:
-              integrationWidget.minHeight ??
-              integrationWidget.height ??
-              DEFAULT_WIDGET_MIN_HEIGHT,
-            ...(integrationWidget.height && !integrationWidget.minHeight
-              ? { height: integrationWidget.height }
-              : {}),
+            height: integrationWidget.height ?? DEFAULT_WIDGET_MIN_HEIGHT,
+            maxWidth: '400px',
+            maxHeight: '800px',
+            overflow: 'hidden',
           }}
         >
           <iframe
             src={integrationWidget.src}
             title={integrationWidget.title ?? t('Patient portal assistant widget')}
             allow={integrationWidget.allow ?? undefined}
-            loading={integrationWidget.loading ?? 'lazy'}
-            height={typeof integrationWidget.height === 'number' ? integrationWidget.height : undefined}
-            width={typeof integrationWidget.width === 'number' ? integrationWidget.width : undefined}
-            style={integrationWidget.style}
+            width="100%"
+            height="100%"
+            style={{
+              width: '100%',
+              height: '100%',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              border: 'none',
+            }}
             className="rounded-3xl border-0 shadow-xl"
           />
         </div>
       ) : null}
     </div>
+    </>
   );
 }
 

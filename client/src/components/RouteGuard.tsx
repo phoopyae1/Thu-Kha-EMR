@@ -99,7 +99,7 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
           style={{
             bottom: 0,
             right: 0,
-            width: 'min(420px, 90vw)',
+            // width: 'min(420px, 90vw)',
             height: 'min(620px, 90vh)',
             position: 'fixed',
           }}
@@ -108,7 +108,7 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
             widgetFrame.allow ??
             "midi 'src'; geolocation 'src'; microphone 'src'; camera 'src'; display-capture 'src'; encrypted-media 'src';"
           }
-          loading={widgetFrame.loading ?? 'lazy'}
+          // loading={widgetFrame.loading ?? 'lazy'}
         ></iframe>
       )}
     </>
