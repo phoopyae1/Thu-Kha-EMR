@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type CSSProperties,
+  type FormEvent,
+} from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   CalendarIcon,
@@ -83,6 +92,73 @@ type ToastState = {
 };
 
 type PortalSectionId = 'overview' | 'timeline' | 'appointments' | 'medications' | 'labs' | 'billing';
+
+const DEFAULT_WIDGET_WIDTH = '20rem';
+const DEFAULT_WIDGET_MIN_HEIGHT = 320;
+
+function parseDimensionValue(value?: string | null): string | number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return /^[0-9]+$/.test(trimmed) ? Number.parseInt(trimmed, 10) : trimmed;
+}
+
+function parseStyleAttribute(styleAttr: string): {
+  style: CSSProperties;
+  width?: string | number;
+  height?: string | number;
+  minHeight?: string | number;
+} {
+  const style: CSSProperties = {};
+  let width: string | number | undefined;
+  let height: string | number | undefined;
+  let minHeight: string | number | undefined;
+
+  styleAttr
+    .split(';')
+    .map((declaration) => declaration.trim())
+    .filter(Boolean)
+    .forEach((declaration) => {
+      const [property, rawValue] = declaration.split(':');
+      if (!property || !rawValue) {
+        return;
+      }
+
+      const trimmedProperty = property.trim();
+      const trimmedValue = rawValue.trim();
+      if (!trimmedProperty || !trimmedValue) {
+        return;
+      }
+
+      const camelCaseProperty = trimmedProperty
+        .toLowerCase()
+        .replace(/-([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
+
+      style[camelCaseProperty as keyof CSSProperties] = trimmedValue as never;
+
+      switch (trimmedProperty.toLowerCase()) {
+        case 'width':
+          width = parseDimensionValue(trimmedValue);
+          break;
+        case 'height':
+          height = parseDimensionValue(trimmedValue);
+          break;
+        case 'min-height':
+          minHeight = parseDimensionValue(trimmedValue);
+          break;
+        default:
+          break;
+      }
+    });
+
+  return { style, width, height, minHeight };
+}
 
 function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, formatCurrency }: PaymentReceiptModalProps) {
   useEffect(() => {
@@ -322,7 +398,10 @@ export default function PatientPortal() {
     title?: string | null;
     allow?: string | null;
     loading?: string | null;
-    height?: number;
+    width?: string | number;
+    height?: string | number;
+    minHeight?: string | number;
+    style?: CSSProperties;
   } | null>(null);
 
   const [showRegister, setShowRegister] = useState(false);
@@ -395,18 +474,38 @@ export default function PatientPortal() {
           }
         }
 
+        const widthAttr = iframe.getAttribute('width');
         const heightAttr = iframe.getAttribute('height');
-        const parsedHeight = heightAttr ? Number.parseInt(heightAttr, 10) : undefined;
+        const styleAttr = iframe.getAttribute('style');
+
+        let width = parseDimensionValue(widthAttr);
+        let height = parseDimensionValue(heightAttr);
+        let minHeight: string | number | undefined;
+        let style: CSSProperties | undefined;
+
+        if (styleAttr && styleAttr.trim().length > 0) {
+          const parsedStyle = parseStyleAttribute(styleAttr);
+          style = parsedStyle.style;
+          if (parsedStyle.width !== undefined) {
+            width = width ?? parsedStyle.width;
+          }
+          if (parsedStyle.height !== undefined) {
+            height = height ?? parsedStyle.height;
+          }
+          if (parsedStyle.minHeight !== undefined) {
+            minHeight = parsedStyle.minHeight;
+          }
+        }
 
         setIntegrationWidget({
           src: sanitizedSrc,
           title: iframe.getAttribute('title'),
           allow: iframe.getAttribute('allow'),
           loading: iframe.getAttribute('loading'),
-          height:
-            typeof parsedHeight === 'number' && Number.isFinite(parsedHeight) && parsedHeight > 0
-              ? parsedHeight
-              : undefined,
+          width,
+          height,
+          minHeight,
+          style,
         });
       } catch (error) {
         console.error('Failed to load integration widget', error);
@@ -1684,16 +1783,28 @@ export default function PatientPortal() {
       {/* Fixed positioned widget in bottom-right corner */}
       {session && integrationWidget ? (
         <div
-          className="fixed bottom-4 right-4 z-40 w-80 max-w-[90vw]"
-          style={{ minHeight: `${integrationWidget.height ?? 320}px` }}
+          className="fixed bottom-4 right-4 z-40"
+          style={{
+            width: integrationWidget.width ?? DEFAULT_WIDGET_WIDTH,
+            maxWidth: '90vw',
+            minHeight:
+              integrationWidget.minHeight ??
+              integrationWidget.height ??
+              DEFAULT_WIDGET_MIN_HEIGHT,
+            ...(integrationWidget.height && !integrationWidget.minHeight
+              ? { height: integrationWidget.height }
+              : {}),
+          }}
         >
           <iframe
             src={integrationWidget.src}
             title={integrationWidget.title ?? t('Patient portal assistant widget')}
             allow={integrationWidget.allow ?? undefined}
             loading={integrationWidget.loading ?? 'lazy'}
-            height={integrationWidget.height ?? 320}
-            className="h-full w-full rounded-3xl border-0 shadow-xl"
+            height={typeof integrationWidget.height === 'number' ? integrationWidget.height : undefined}
+            width={typeof integrationWidget.width === 'number' ? integrationWidget.width : undefined}
+            style={integrationWidget.style}
+            className="rounded-3xl border-0 shadow-xl"
           />
         </div>
       ) : null}
