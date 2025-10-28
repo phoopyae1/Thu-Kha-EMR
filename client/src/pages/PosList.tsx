@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { fetchJSON } from '../api/http';
 
@@ -29,6 +29,7 @@ export default function PosList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { adminId } = useParams<{ adminId: string }>();
 
   useEffect(() => {
     let active = true;
@@ -95,7 +96,13 @@ export default function PosList() {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        onClick={() => navigate(`/billing/visit/${invoice.visitId}`)}
+                        onClick={() =>
+                          navigate(
+                            adminId
+                              ? `/admin/${adminId}/billing/visit/${invoice.visitId}`
+                              : `/billing/visit/${invoice.visitId}`,
+                          )
+                        }
                         className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
                       >
                         Take Payment
