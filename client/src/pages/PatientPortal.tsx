@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   CalendarIcon,
@@ -33,6 +33,7 @@ import {
   type MedicationOrderResponse,
   type MedicationOrderStatus,
 } from '../api/patientPortal';
+import { loginAtenxionUser, logoutAtenxionUser, recordAtenxionTransaction } from '../api/atenxion';
 import brillarLogo from '../public/brillar.avif';
 
 interface LoginForm {
@@ -62,6 +63,7 @@ interface PortalSession {
   token: string;
   patientId: string;
   email: string;
+  patientName?: string;
 }
 
 interface PaymentReceiptModalProps {
@@ -313,6 +315,7 @@ export default function PatientPortal() {
     }
     return null;
   });
+  const lastAtenxionLoginPatientId = useRef<string | null>(null);
 
   const [integrationIframe, setIntegrationIframe] = useState<string>('');
 
@@ -540,6 +543,28 @@ export default function PatientPortal() {
           );
         });
 
+        const atenxionSummary = summary || undefined;
+        void recordAtenxionTransaction(
+          {
+            userId: session.patientId,
+            patientName: session.patientName || profile?.patient?.name || session.email,
+          },
+          {
+            type: isPrescription ? 'prescription-order' : 'medication-order',
+            orderId: order.orderId,
+            patientId: order.patientId,
+            createdAt: order.createdAt,
+            updatedAt: order.updatedAt,
+            drugName: order.drugName,
+            dosage: order.dosage,
+            quantity: order.quantity,
+            summary: atenxionSummary,
+          },
+          session.token,
+        ).catch((atenxionError) => {
+          console.warn('Atenxion transaction logging failed', atenxionError);
+        });
+
         let successMessage = isPrescription
           ? t('Our pharmacy team will review your prescription shortly.')
           : t('Your medication request has been sent to the pharmacy.');
@@ -613,6 +638,32 @@ export default function PatientPortal() {
     }
   }, [navigate, session, urlPatientId]);
 
+  useEffect(() => {
+    if (!session) {
+      lastAtenxionLoginPatientId.current = null;
+      return;
+    }
+
+    if (lastAtenxionLoginPatientId.current === session.patientId) {
+      return;
+    }
+
+    const fallbackName = session.patientName || profile?.patient?.name || session.email;
+    void loginAtenxionUser(
+      {
+        userId: session.patientId,
+        patientName: fallbackName,
+      },
+      session.token,
+    )
+      .then(() => {
+        lastAtenxionLoginPatientId.current = session.patientId;
+      })
+      .catch((atenxionError) => {
+        console.warn('Atenxion login sync failed', atenxionError);
+      });
+  }, [profile?.patient?.name, session]);
+
   // Clear any stale session data when on login page
   useEffect(() => {
     if (!urlPatientId && !session) {
@@ -667,8 +718,34 @@ export default function PatientPortal() {
 
     try {
       const response = await loginPatient(loginForm.email.trim(), loginForm.password.trim());
-      setSession({ token: response.accessToken, patientId: response.patient?.patientId!, email: loginForm.email.trim() });
+      const patientId = response.patient?.patientId;
+      if (!patientId) {
+        throw new Error(t('Unable to determine patient ID for the session.'));
+      }
+
+      const patientName = response.patient?.name?.trim() || loginForm.email.trim();
+      const nextSession: PortalSession = {
+        token: response.accessToken,
+        patientId,
+        email: loginForm.email.trim(),
+        patientName,
+      };
+
+      setSession(nextSession);
       setLoginStatus('success');
+
+      try {
+        await loginAtenxionUser(
+          {
+            userId: patientId,
+            patientName,
+          },
+          response.accessToken,
+        );
+        lastAtenxionLoginPatientId.current = patientId;
+      } catch (atenxionError) {
+        console.warn('Atenxion login notification failed', atenxionError);
+      }
     } catch (error) {
       setLoginStatus('idle');
       const message = error instanceof Error ? error.message : t('Unable to sign in. Please try again.');
@@ -777,6 +854,23 @@ export default function PatientPortal() {
       setPrescriptions(prescriptionData);
       setMedicationOrders(medicationOrderData);
 
+      if (!activeSession.patientName && profileData?.patient?.name) {
+        setSession((previous) => {
+          if (!previous || previous.patientId !== activeSession.patientId) {
+            return previous;
+          }
+
+          if (previous.patientName && previous.patientName === profileData.patient?.name) {
+            return previous;
+          }
+
+          return {
+            ...previous,
+            patientName: profileData.patient?.name ?? previous.patientName,
+          };
+        });
+      }
+
       const appointmentToday = (appointmentData?.upcoming ?? []).find((appointment: any) => {
         const appointmentDate = new Date(appointment.date);
         if (Number.isNaN(appointmentDate.getTime())) {
@@ -878,6 +972,19 @@ export default function PatientPortal() {
   };
 
   const handleLogout = () => {
+    if (session) {
+      const atenxionName = session.patientName || profile?.patient?.name || session.email;
+      void logoutAtenxionUser(
+        {
+          userId: session.patientId,
+          patientName: atenxionName,
+        },
+        session.token,
+      ).catch((atenxionError) => {
+        console.warn('Atenxion logout notification failed', atenxionError);
+      });
+      lastAtenxionLoginPatientId.current = null;
+    }
     // Clear localStorage
     try {
       localStorage.removeItem('patient_portal_session');
@@ -1482,12 +1589,12 @@ export default function PatientPortal() {
       </main>
       
       {/* Fixed positioned widget in bottom-right corner */}
-      {integrationIframe && (
-        <div 
-          className="fixed bottom-4 right-4 z-50"
+      {session && integrationIframe ? (
+        <div
+          className="fixed bottom-4 right-4 z-50 w-80 max-w-[90vw]"
           dangerouslySetInnerHTML={{ __html: integrationIframe }}
         />
-      )}
+      ) : null}
     </div>
   );
 }
