@@ -101,6 +101,7 @@ const createPatientSchema = z.object({
   name: z.string().min(1),
   dob: z.coerce.date(),
   insurance: z.string().min(1),
+  gender: z.enum(['M', 'F']),
   drugAllergies: z.string().min(1).optional(),
 });
 
@@ -111,8 +112,8 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
   }
   const { drugAllergies, ...patientData } = parsed.data;
   const patient = await prisma.patient.create({
-    data: { ...patientData, gender: 'M', drugAllergies: drugAllergies ?? null },
-    select: { patientId: true, name: true, dob: true, insurance: true, drugAllergies: true },
+    data: { ...patientData, drugAllergies: drugAllergies ?? null },
+    select: { patientId: true, name: true, dob: true, insurance: true, gender: true, drugAllergies: true },
   });
   await logDataChange(req.user!.userId, 'patient', patient.patientId, undefined, patient);
   res.status(201).json(patient);

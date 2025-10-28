@@ -248,6 +248,7 @@ export interface CreatePatientPayload {
   name: string;
   dob: string;
   insurance: string;
+  gender: 'M' | 'F';
   drugAllergies?: string;
 }
 

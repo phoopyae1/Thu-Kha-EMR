@@ -9,6 +9,7 @@ export default function RegisterPatient() {
   const [name, setName] = useState('');
   const [dob, setDob] = useState('');
   const [insurance, setInsurance] = useState('');
+  const [gender, setGender] = useState<'M' | 'F' | ''>('');
   const [drugAllergies, setDrugAllergies] = useState('');
   const [saving, setSaving] = useState(false);
   const navigate = useNavigate();
@@ -32,9 +33,19 @@ export default function RegisterPatient() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!gender) {
+      window.alert(t('Please select a gender for the patient.'));
+      return;
+    }
     setSaving(true);
     try {
-      const patient = await createPatient({ name, dob, insurance, drugAllergies: drugAllergies.trim() || undefined });
+      const patient = await createPatient({
+        name,
+        dob,
+        insurance,
+        gender,
+        drugAllergies: drugAllergies.trim() || undefined,
+      });
       navigate(`/admin/${adminId}/patients/${patient.patientId}`);
     } catch (err) {
       console.error(err);
@@ -125,6 +136,39 @@ export default function RegisterPatient() {
                 <p className="mt-1 text-xs text-gray-500">{t('Include private or public coverage information.')}</p>
               </div>
 
+              <div>
+                <fieldset className="space-y-2">
+                  <legend className="block text-sm font-medium text-gray-700">{t('Gender')}</legend>
+                  <div className="flex items-center gap-4">
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="radio"
+                        name="patient-gender"
+                        value="M"
+                        checked={gender === 'M'}
+                        onChange={(e) => setGender(e.target.value as 'M' | 'F')}
+                        required
+                        className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {t('Male')}
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                      <input
+                        type="radio"
+                        name="patient-gender"
+                        value="F"
+                        checked={gender === 'F'}
+                        onChange={(e) => setGender(e.target.value as 'M' | 'F')}
+                        required
+                        className="h-4 w-4 border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {t('Female')}
+                    </label>
+                  </div>
+                  <p className="text-xs text-gray-500">{t('Select the option that aligns with the patient record.')}</p>
+                </fieldset>
+              </div>
+
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700" htmlFor="patient-allergies">
                   {t('Drug allergies')}
@@ -156,7 +200,7 @@ export default function RegisterPatient() {
               </Link>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || !gender}
                 className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {saving ? t('Saving...') : t('Save Patient')}
@@ -189,6 +233,12 @@ export default function RegisterPatient() {
               <div className="flex items-start justify-between gap-3">
                 <dt className="font-medium text-gray-600">{t('Insurance')}</dt>
                 <dd className="text-right text-gray-900">{insurance || t('Not captured yet')}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-3">
+                <dt className="font-medium text-gray-600">{t('Gender')}</dt>
+                <dd className="text-right text-gray-900">
+                  {gender === 'M' ? t('Male') : gender === 'F' ? t('Female') : t('Not captured yet')}
+                </dd>
               </div>
               <div className="flex items-start justify-between gap-3">
                 <dt className="font-medium text-gray-600">{t('Drug allergies')}</dt>
