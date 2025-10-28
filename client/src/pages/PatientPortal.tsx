@@ -1589,12 +1589,12 @@ export default function PatientPortal() {
       </main>
       
       {/* Fixed positioned widget in bottom-right corner */}
-      {integrationIframe && (
-        <div 
-          className="fixed bottom-4 right-4 z-50"
+      {session && integrationIframe ? (
+        <div
+          className="fixed bottom-4 right-4 z-50 w-80 max-w-[90vw]"
           dangerouslySetInnerHTML={{ __html: integrationIframe }}
         />
-      )}
+      ) : null}
     </div>
   );
 }
