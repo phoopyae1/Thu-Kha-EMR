@@ -1,12 +1,11 @@
 import { Router, type Response, type NextFunction } from 'express';
-import { requireAuth, requireRole, type AuthRequest } from '../modules/auth/index.js';
 import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const router = Router();
 
-// Helper function to extract token from Authorization header
-function getTokenFromRequest(req: AuthRequest): string {
+// Helper function to extract token from Authorization header (deprecated - no longer needed)
+function getTokenFromRequest(req: any): string {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
     throw new Error('Authorization header is required');
@@ -23,11 +22,9 @@ function getTokenFromRequest(req: AuthRequest): string {
 // 1. Medical History Agent API
 router.post(
   '/medical-history',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
@@ -35,24 +32,6 @@ router.post(
           msg: 'Failed'
         });
       }
-
-      // If user is a patient, they can only view their own medical history
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only view their own medical history',
-            msg: 'Failed'
-          });
-        }
-      }
-
-      const token = getTokenFromRequest(req);
       
       // Get patient data with comprehensive information
       const patient = await prisma.patient.findUnique({
@@ -103,7 +82,7 @@ router.post(
         }),
         prisma.labResult.findMany({
           where: { patientId },
-          orderBy: { labResultId: 'desc' },
+          orderBy: { resultedAt: 'desc' },
           take: 15
         }),
         prisma.immunizationRecord.findMany({
@@ -116,9 +95,8 @@ router.post(
           orderBy: { recordedAt: 'desc' },
           take: 10
         }),
-        prisma.drug.findMany({
-          take: 10
-        }),
+        // Get patient's drug allergies from their profile
+        Promise.resolve([]), // We'll use patient.drugAllergies instead
         prisma.diagnosis.findMany({
           where: { 
             visit: {
@@ -174,11 +152,9 @@ router.post(
         pastMedications: medications.filter((m: any) => m.status !== 'ACTIVE').length,
 
         // 💉 4. Allergies & Adverse Reactions
-        drugAllergies: allergies.map((allergy: any) => 
-          `${allergy.name || 'Unknown drug'} - Allergic reaction`
-        ),
-        totalAllergies: allergies.length,
-        hasAllergies: allergies.length > 0,
+        drugAllergies: patient.drugAllergies ? [patient.drugAllergies] : [],
+        totalAllergies: patient.drugAllergies ? 1 : 0,
+        hasAllergies: !!patient.drugAllergies,
         patientAllergies: patient.drugAllergies || 'No known allergies',
 
         // 🧬 5. Past Medical History (PMH)
@@ -193,7 +169,7 @@ router.post(
         // 🧪 6. Lab Results & Diagnostics
         totalLabResults: labResults.length,
         recentLabResults: labResults.slice(0, 5).map((lab: any) => 
-          `Lab test - ${lab.resultValue || 'No result'} (${lab.createdAt.toISOString().split('T')[0]})`
+          `Lab test - ${lab.resultValue || 'No result'} (${lab.resultedAt.toISOString().split('T')[0]})`
         ),
         abnormalResults: labResults.filter((lab: any) => lab.resultValue?.toLowerCase().includes('high') || 
           lab.resultValue?.toLowerCase().includes('low') || 
@@ -233,11 +209,9 @@ router.post(
 // 2. Appointment Agent API - Get appointments
 router.post(
   '/appointments',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
@@ -245,24 +219,6 @@ router.post(
           msg: 'Failed'
         });
       }
-
-      // If user is a patient, they can only view their own appointments
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only view their own appointments',
-            msg: 'Failed'
-          });
-        }
-      }
-
-      const token = getTokenFromRequest(req);
       
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -375,11 +331,9 @@ function parseTimeToMinutes(timeStr: string): number {
 // 2.1. Appointment Agent API - Create appointment
 router.post(
   '/appointments/create',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const body = req.body;
-      const user = req.user!;
       
       const { patientId, doctorName, department, date, startTime, reason } = body;
       
@@ -388,22 +342,6 @@ router.post(
           error: 'Missing required fields: patientId, doctorName, department, date, startTime',
           msg: 'Failed'
         });
-      }
-
-      // If user is a patient, they can only create appointments for themselves
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only create appointments for themselves',
-            msg: 'Failed'
-          });
-        }
       }
 
       // Validate patient exists
@@ -511,11 +449,9 @@ router.post(
 // 3. Medication Order Agent API
 router.post(
   '/medication-orders',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
@@ -523,24 +459,6 @@ router.post(
           msg: 'Failed'
         });
       }
-
-      // If user is a patient, they can only view their own medication orders
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only view their own medication orders',
-            msg: 'Failed'
-          });
-        }
-      }
-
-      const token = getTokenFromRequest(req);
       
       const orders = await prisma.medicationOrder.findMany({
         where: { patientId },
@@ -639,11 +557,9 @@ router.post(
 // 4. Billing Agent API - Optimized for Widgets
 router.post(
   '/billing',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId, startDate, endDate, doctorId } = req.body;
-      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
@@ -651,24 +567,6 @@ router.post(
           msg: 'Failed'
         });
       }
-
-      // If user is a patient, they can only view their own billing
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only view their own billing information',
-            msg: 'Failed'
-          });
-        }
-      }
-
-      const token = getTokenFromRequest(req);
       
       // Build where clause for date filtering
       const whereClause: any = { patientId };
@@ -824,9 +722,7 @@ router.post(
 // 5. Appointment Letter Agent API
 router.post(
   '/appointment-letters',
-  requireAuth,
-  requireRole('Doctor', 'Nurse', 'ITAdmin'),
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
       
@@ -836,8 +732,6 @@ router.post(
           msg: 'Failed'
         });
       }
-
-      const token = getTokenFromRequest(req);
       
       const patient = await prisma.patient.findUnique({
         where: { patientId },
@@ -1275,36 +1169,15 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 // 9. Patient Profile Agent API - Simple Version
 router.post(
   '/patient-profile',
-  requireAuth,
-  async (req: AuthRequest, res: Response, next: NextFunction) => {
+  async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-      const user = req.user!;
-      
       if (!patientId) {
         return res.status(400).json({
           error: 'Patient ID is required',
           msg: 'Failed'
         });
       }
-
-      // If user is a patient, they can only view their own profile
-      if (user.role === 'Patient') {
-        if (!user.patientId) {
-          return res.status(403).json({
-            error: 'Patient ID not found in session',
-            msg: 'Failed'
-          });
-        }
-        if (patientId !== user.patientId) {
-          return res.status(403).json({
-            error: 'Patients can only view their own profile',
-            msg: 'Failed'
-          });
-        }
-      }
-
-      const token = getTokenFromRequest(req);
       
       // Get basic patient data only
       const patient = await prisma.patient.findUnique({

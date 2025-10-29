@@ -55,6 +55,7 @@ function decodeToken(token: string): {
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   try {
     const rawToken = parseBearerToken(req.get('authorization'));
+    console.log('rawToken', rawToken);
     if (!rawToken) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -72,15 +73,19 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       | null = null;
 
     // Normal tokens include sub/role/email → lookup by userId
+    console.log(typeof payload.sub );
+    console.log(typeof payload.email);
     if (
       typeof payload.sub === 'string' &&
-      typeof payload.role === 'string' &&
       typeof payload.email === 'string'
     ) {
+      console.log('user found');
       user = await prisma.user.findUnique({
         where: { userId: payload.sub },
         select: { userId: true, email: true, role: true, status: true, doctorId: true },
+
       });
+      console.log('user', user);
     } else if (typeof payload.email === 'string') {
       // Fallback: accept system tokens that only carry email
       user = await prisma.user.findFirst({
@@ -88,7 +93,6 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         select: { userId: true, email: true, role: true, status: true, doctorId: true },
       });
     }
-
     if (!user || user.status !== 'active') {
       // Allowlisted system accounts (email-only tokens)
       if (typeof payload.email === 'string') {
