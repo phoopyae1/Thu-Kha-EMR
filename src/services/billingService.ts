@@ -204,7 +204,18 @@ export async function createInvoice(payload: CreateInvoiceInput) {
       }
     }
 
-    return computeTotals(invoice.invoiceId, tx);
+    const result = await computeTotals(invoice.invoiceId, tx);
+    
+    // Notify Atenxion agent about invoice creation
+    try {
+      const { recordAtenxionTransaction } = await import('./atenxion.js');
+      await recordAtenxionTransaction(payload.patientId);
+      console.log('Atenxion transaction recorded for invoice creation:', invoice.invoiceId);
+    } catch (error) {
+      console.warn('Failed to record Atenxion transaction for invoice creation:', error);
+    }
+    
+    return result;
   });
 }
 

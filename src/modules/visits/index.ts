@@ -98,6 +98,16 @@ router.post('/visits', requireAuth, requireRole('Doctor'), async (req: AuthReque
   for (const o of visit.observations) {
     await logDataChange(req.user!.userId, 'observation', o.obsId, undefined, o);
   }
+
+  // Notify Atenxion agent about visit creation
+  try {
+    const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+    await recordAtenxionTransaction(visitData.patientId);
+    console.log('Atenxion transaction recorded for visit creation:', visit.visitId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for visit creation:', error);
+  }
+
   res.status(201).json(visit);
 });
 

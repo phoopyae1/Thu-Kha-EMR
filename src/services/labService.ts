@@ -204,6 +204,15 @@ export async function enterLabResult(
     return created;
   });
 
+  // Notify Atenxion agent about lab result creation
+  try {
+    const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+    await recordAtenxionTransaction(patientId);
+    console.log('Atenxion transaction recorded for lab result creation:', result.labResultId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for lab result creation:', error);
+  }
+
   return result;
 }
 

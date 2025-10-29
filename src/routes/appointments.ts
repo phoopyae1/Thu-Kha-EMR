@@ -254,6 +254,16 @@ router.post(
           doctor: { select: { doctorId: true, name: true, department: true } },
         },
       });
+
+      // Notify Atenxion agent about appointment creation
+      try {
+        const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+        await recordAtenxionTransaction(body.patientId);
+        console.log('Atenxion transaction recorded for appointment creation:', appointment.appointmentId);
+      } catch (error) {
+        console.warn('Failed to record Atenxion transaction for appointment creation:', error);
+      }
+
       res.status(201).json(appointment);
     } catch (error) {
       handleError(error, next);
@@ -290,6 +300,15 @@ router.put(
           doctor: { select: { doctorId: true, name: true, department: true } },
         },
       });
+
+      // Notify Atenxion agent about appointment update
+      try {
+        const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+        await recordAtenxionTransaction(appointment.patient.patientId);
+        console.log('Atenxion transaction recorded for appointment update:', appointmentId);
+      } catch (error) {
+        console.warn('Failed to record Atenxion transaction for appointment update:', error);
+      }
 
       res.json(appointment);
     } catch (error) {
@@ -400,6 +419,15 @@ router.patch(
           return visit.visitId;
         });
 
+        // Notify Atenxion agent about appointment completion
+        try {
+          const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+          await recordAtenxionTransaction(appointment.patientId);
+          console.log('Atenxion transaction recorded for appointment completion:', appointmentId);
+        } catch (error) {
+          console.warn('Failed to record Atenxion transaction for appointment completion:', error);
+        }
+
         res.json({ visitId: result });
         return;
       }
@@ -415,6 +443,15 @@ router.patch(
           doctor: { select: { doctorId: true, name: true, department: true } },
         },
       });
+
+      // Notify Atenxion agent about appointment status change
+      try {
+        const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+        await recordAtenxionTransaction(updated.patient.patientId);
+        console.log('Atenxion transaction recorded for appointment status change:', appointmentId);
+      } catch (error) {
+        console.warn('Failed to record Atenxion transaction for appointment status change:', error);
+      }
 
       res.json(updated);
     } catch (error) {

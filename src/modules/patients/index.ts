@@ -116,6 +116,16 @@ router.post('/', requireAuth, async (req: AuthRequest, res: Response) => {
     select: { patientId: true, name: true, dob: true, insurance: true, gender: true, drugAllergies: true },
   });
   await logDataChange(req.user!.userId, 'patient', patient.patientId, undefined, patient);
+  
+  // Notify Atenxion agent about patient creation
+  try {
+    const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+    await recordAtenxionTransaction(patient.patientId);
+    console.log('Atenxion transaction recorded for patient creation:', patient.patientId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for patient creation:', error);
+  }
+  
   res.status(201).json(patient);
 });
 

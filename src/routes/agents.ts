@@ -1,6 +1,6 @@
 import { Router, type Response, type NextFunction } from 'express';
 import { requireAuth, requireRole, type AuthRequest } from '../modules/auth/index.js';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -21,12 +21,12 @@ function getTokenFromRequest(req: AuthRequest): string {
 // Agent service functions will be defined inline
 
 // 1. Medical History Agent API
-router.get(
+router.post(
   '/medical-history',
   requireAuth,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.query;
+      const { patientId } = req.body;
       const user = req.user!;
       
       if (!patientId) {
@@ -231,12 +231,12 @@ router.get(
 );
 
 // 2. Appointment Agent API - Get appointments
-router.get(
+router.post(
   '/appointments',
   requireAuth,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.query;
+      const { patientId } = req.body;
       const user = req.user!;
       
       if (!patientId) {
@@ -286,61 +286,43 @@ router.get(
           include: {
             doctor: true
           },
-          orderBy: { date: 'desc' },
-          take: 10
+          orderBy: { date: 'desc' }
         })
       ]);
 
-      const result = {
-        // Upcoming Appointments
+      // Flatten all appointments to top level
+      const result: any = {
+        // Summary Counts
         upcomingAppointmentCount: upcoming.length,
-        nextAppointmentDate: upcoming.length > 0 ? upcoming[0].date.toISOString().split('T')[0] : null,
-        nextAppointmentTime: upcoming.length > 0 ? formatTime(upcoming[0].startTimeMin) : null,
-        nextAppointmentDoctor: upcoming.length > 0 ? upcoming[0].doctor.name : null,
-        nextAppointmentDepartment: upcoming.length > 0 ? upcoming[0].department : null,
-        nextAppointmentReason: upcoming.length > 0 ? upcoming[0].reason : null,
-        
-        // Upcoming Appointments List
-        upcomingAppointment1Date: upcoming.length > 0 ? upcoming[0].date.toISOString().split('T')[0] : null,
-        upcomingAppointment1Time: upcoming.length > 0 ? formatTime(upcoming[0].startTimeMin) : null,
-        upcomingAppointment1Doctor: upcoming.length > 0 ? upcoming[0].doctor.name : null,
-        upcomingAppointment1Department: upcoming.length > 0 ? upcoming[0].department : null,
-        
-        upcomingAppointment2Date: upcoming.length > 1 ? upcoming[1].date.toISOString().split('T')[0] : null,
-        upcomingAppointment2Time: upcoming.length > 1 ? formatTime(upcoming[1].startTimeMin) : null,
-        upcomingAppointment2Doctor: upcoming.length > 1 ? upcoming[1].doctor.name : null,
-        upcomingAppointment2Department: upcoming.length > 1 ? upcoming[1].department : null,
-        
-        upcomingAppointment3Date: upcoming.length > 2 ? upcoming[2].date.toISOString().split('T')[0] : null,
-        upcomingAppointment3Time: upcoming.length > 2 ? formatTime(upcoming[2].startTimeMin) : null,
-        upcomingAppointment3Doctor: upcoming.length > 2 ? upcoming[2].doctor.name : null,
-        upcomingAppointment3Department: upcoming.length > 2 ? upcoming[2].department : null,
-        
-        // Past Appointments
         pastAppointmentCount: past.length,
-        lastAppointmentDate: past.length > 0 ? past[0].date.toISOString().split('T')[0] : null,
-        lastAppointmentTime: past.length > 0 ? formatTime(past[0].startTimeMin) : null,
-        lastAppointmentDoctor: past.length > 0 ? past[0].doctor.name : null,
-        lastAppointmentStatus: past.length > 0 ? past[0].status : null,
-        
-        // Past Appointments List
-        pastAppointment1Date: past.length > 0 ? past[0].date.toISOString().split('T')[0] : null,
-        pastAppointment1Time: past.length > 0 ? formatTime(past[0].startTimeMin) : null,
-        pastAppointment1Doctor: past.length > 0 ? past[0].doctor.name : null,
-        pastAppointment1Status: past.length > 0 ? past[0].status : null,
-        
-        pastAppointment2Date: past.length > 1 ? past[1].date.toISOString().split('T')[0] : null,
-        pastAppointment2Time: past.length > 1 ? formatTime(past[1].startTimeMin) : null,
-        pastAppointment2Doctor: past.length > 1 ? past[1].doctor.name : null,
-        pastAppointment2Status: past.length > 1 ? past[1].status : null,
-        
-        pastAppointment3Date: past.length > 2 ? past[2].date.toISOString().split('T')[0] : null,
-        pastAppointment3Time: past.length > 2 ? formatTime(past[2].startTimeMin) : null,
-        pastAppointment3Doctor: past.length > 2 ? past[2].doctor.name : null,
-        pastAppointment3Status: past.length > 2 ? past[2].status : null,
-        
         status: "Success"
       };
+
+      // Add upcoming appointments as flat fields
+      upcoming.forEach((apt, index) => {
+        const prefix = `upcomingAppointment${index + 1}`;
+        result[`${prefix}Id`] = apt.appointmentId;
+        result[`${prefix}Date`] = apt.date.toISOString().split('T')[0];
+        result[`${prefix}Time`] = formatTime(apt.startTimeMin);
+        result[`${prefix}Doctor`] = apt.doctor.name;
+        result[`${prefix}Department`] = apt.department;
+        result[`${prefix}Reason`] = apt.reason;
+        result[`${prefix}Location`] = apt.location;
+        result[`${prefix}Status`] = apt.status;
+      });
+
+      // Add past appointments as flat fields
+      past.forEach((apt, index) => {
+        const prefix = `pastAppointment${index + 1}`;
+        result[`${prefix}Id`] = apt.appointmentId;
+        result[`${prefix}Date`] = apt.date.toISOString().split('T')[0];
+        result[`${prefix}Time`] = formatTime(apt.startTimeMin);
+        result[`${prefix}Doctor`] = apt.doctor.name;
+        result[`${prefix}Department`] = apt.department;
+        result[`${prefix}Reason`] = apt.reason;
+        result[`${prefix}Location`] = apt.location;
+        result[`${prefix}Status`] = apt.status;
+      });
       
       res.json(result);
     } catch (error) {
@@ -392,7 +374,7 @@ function parseTimeToMinutes(timeStr: string): number {
 
 // 2.1. Appointment Agent API - Create appointment
 router.post(
-  '/appointments',
+  '/appointments/create',
   requireAuth,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -488,9 +470,33 @@ router.post(
         },
       });
 
+      // Notify Atenxion agent about appointment creation
+      try {
+        const { recordAtenxionTransaction } = await import('../services/atenxion.js');
+        await recordAtenxionTransaction(patientId);
+        console.log('Atenxion transaction recorded for appointment creation:', appointment.appointmentId);
+      } catch (error) {
+        console.warn('Failed to record Atenxion transaction for appointment creation:', error);
+      }
+
+      // Return flat response for agents
       res.status(201).json({
-        data: appointment,
-        msg: "Appointment created successfully"
+        appointmentId: appointment.appointmentId,
+        patientId: appointment.patientId,
+        patientName: appointment.patient.name,
+        doctorId: appointment.doctorId,
+        doctorName: appointment.doctor.name,
+        department: appointment.department,
+        appointmentDate: appointment.date.toISOString().split('T')[0],
+        startTime: formatTime(appointment.startTimeMin),
+        endTime: formatTime(appointment.endTimeMin),
+        duration: "30 minutes",
+        reason: appointment.reason,
+        location: appointment.location,
+        appointmentStatus: "Scheduled",
+        createdAt: appointment.createdAt.toISOString(),
+        message: "Appointment created successfully",
+        status: "Success"
       });
     } catch (error) {
       console.error('Create Appointment Agent Error:', error);
@@ -503,19 +509,35 @@ router.post(
 );
 
 // 3. Medication Order Agent API
-router.get(
+router.post(
   '/medication-orders',
   requireAuth,
-  requireRole('Doctor', 'Nurse', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.query;
+      const { patientId } = req.body;
+      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
           error: 'Patient ID is required',
           msg: 'Failed'
         });
+      }
+
+      // If user is a patient, they can only view their own medication orders
+      if (user.role === 'Patient') {
+        if (!user.patientId) {
+          return res.status(403).json({
+            error: 'Patient ID not found in session',
+            msg: 'Failed'
+          });
+        }
+        if (patientId !== user.patientId) {
+          return res.status(403).json({
+            error: 'Patients can only view their own medication orders',
+            msg: 'Failed'
+          });
+        }
       }
 
       const token = getTokenFromRequest(req);
@@ -538,19 +560,70 @@ router.get(
         orderBy: { createdAt: 'desc' }
       });
 
-      const result = {
+      // Get all ordered medicines summary
+      const orderedMedicines = orders
+        .filter((o: any) => o.prescription?.medication)
+        .map((o: any) => ({
+          name: o.prescription.medication.name,
+          dosage: o.prescription.dosage,
+          frequency: o.prescription.frequency,
+          status: o.status
+        }));
+
+      // Flatten all medication orders to top level
+      const result: any = {
+        // Summary Counts
         totalOrders: orders.length,
-        activeOrders: orders.filter(o => o.status === 'PENDING').length,
-        pendingOrders: orders.filter(o => o.status === 'PENDING').length,
-        approvedOrders: orders.filter(o => o.status === 'APPROVED').length,
-        medications: orders.slice(0, 5).map(order => {
-          return `Medication order - ${order.status}`;
-        }),
-        recentOrders: orders.slice(0, 3).map(order => 
-          `${order.status} - ${order.createdAt.toISOString().split('T')[0]}`
+        pendingOrders: orders.filter((o: any) => o.status === 'PENDING').length,
+        approvedOrders: orders.filter((o: any) => o.status === 'APPROVED').length,
+        rejectedOrders: orders.filter((o: any) => o.status === 'REJECTED').length,
+        
+        // Ordered Medicines Summary
+        totalOrderedMedicines: orderedMedicines.length,
+        orderedMedicinesList: orderedMedicines.map(med => 
+          `${med.name} ${med.dosage} - ${med.frequency} (${med.status})`
         ),
+        uniqueMedicines: [...new Set(orderedMedicines.map(med => med.name))],
+        
         status: "Success"
       };
+
+      // Add medication orders as flat fields
+      orders.forEach((order: any, index) => {
+        const prefix = `medicationOrder${index + 1}`;
+        result[`${prefix}Id`] = order.orderId;
+        result[`${prefix}Status`] = order.status;
+        result[`${prefix}CreatedDate`] = order.createdAt.toISOString().split('T')[0];
+        result[`${prefix}CreatedTime`] = order.createdAt.toISOString().split('T')[1].split('.')[0];
+        result[`${prefix}Notes`] = order.notes || 'No notes';
+        result[`${prefix}ApprovedBy`] = order.approvedBy?.name || 'Not approved';
+        result[`${prefix}ApprovedDate`] = order.approvedAt ? order.approvedAt.toISOString().split('T')[0] : 'Not approved';
+        result[`${prefix}UpdatedBy`] = order.updatedBy?.name || 'Not updated';
+        result[`${prefix}UpdatedDate`] = order.updatedAt ? order.updatedAt.toISOString().split('T')[0] : 'Not updated';
+        
+        // Prescription details
+        if (order.prescription) {
+          result[`${prefix}PrescriptionId`] = order.prescription.prescriptionId;
+          result[`${prefix}MedicationName`] = order.prescription.medication?.name || 'Unknown medication';
+          result[`${prefix}MedicationGenericName`] = order.prescription.medication?.genericName || 'Not specified';
+          result[`${prefix}MedicationForm`] = order.prescription.medication?.form || 'Not specified';
+          result[`${prefix}MedicationStrength`] = order.prescription.medication?.strength || 'Not specified';
+          result[`${prefix}Dosage`] = order.prescription.dosage || 'Not specified';
+          result[`${prefix}Instructions`] = order.prescription.instructions || 'No instructions';
+          result[`${prefix}Frequency`] = order.prescription.frequency || 'Not specified';
+          result[`${prefix}Duration`] = order.prescription.duration || 'Not specified';
+          result[`${prefix}Quantity`] = order.prescription.quantity || 'Not specified';
+          result[`${prefix}Refills`] = order.prescription.refills || '0';
+        }
+        
+        // Visit details
+        if (order.prescription?.visit) {
+          result[`${prefix}VisitId`] = order.prescription.visit.visitId;
+          result[`${prefix}VisitDate`] = order.prescription.visit.visitDate.toISOString().split('T')[0];
+          result[`${prefix}DoctorName`] = order.prescription.visit.doctor?.name || 'Unknown doctor';
+          result[`${prefix}Department`] = order.prescription.visit.department || 'Not specified';
+        }
+      });
       
       res.json(result);
     } catch (error) {
@@ -563,14 +636,14 @@ router.get(
   }
 );
 
-// 4. Billing Agent API
-router.get(
+// 4. Billing Agent API - Optimized for Widgets
+router.post(
   '/billing',
   requireAuth,
-  requireRole('Doctor', 'Nurse', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.query;
+      const { patientId, startDate, endDate, doctorId } = req.body;
+      const user = req.user!;
       
       if (!patientId) {
         return res.status(400).json({
@@ -579,46 +652,163 @@ router.get(
         });
       }
 
+      // If user is a patient, they can only view their own billing
+      if (user.role === 'Patient') {
+        if (!user.patientId) {
+          return res.status(403).json({
+            error: 'Patient ID not found in session',
+            msg: 'Failed'
+          });
+        }
+        if (patientId !== user.patientId) {
+          return res.status(403).json({
+            error: 'Patients can only view their own billing information',
+            msg: 'Failed'
+          });
+        }
+      }
+
       const token = getTokenFromRequest(req);
       
-      const [invoices, payments] = await Promise.all([
-        prisma.invoice.findMany({
-          where: { patientId },
-          include: {
-            items: true,
-            payments: true
-          },
-          orderBy: { createdAt: 'desc' }
-        }),
-        prisma.payment.findMany({
-          where: { 
-            Invoice: {
-              patientId: patientId
+      // Build where clause for date filtering
+      const whereClause: any = { patientId };
+      if (startDate || endDate) {
+        whereClause.createdAt = {};
+        if (startDate) whereClause.createdAt.gte = new Date(startDate as string);
+        if (endDate) whereClause.createdAt.lte = new Date(endDate as string);
+      }
+
+      // Get spending analytics by doctor using raw SQL for better performance
+      const spendingByDoctor = await prisma.$queryRaw<Array<{
+        doctorId: string;
+        doctorName: string;
+        totalSpent: number;
+        totalPaid: number;
+        visitCount: number;
+        lastVisit: Date;
+      }>>`
+        SELECT 
+          v."doctorId",
+          d.name as "doctorName",
+          COALESCE(SUM(i."grandTotal"), 0) as "totalSpent",
+          COALESCE(SUM(i."amountPaid"), 0) as "totalPaid",
+          COUNT(DISTINCT v."visitId") as "visitCount",
+          MAX(v."visitDate") as "lastVisit"
+        FROM "Invoice" i
+        JOIN "Visit" v ON i."visitId" = v."visitId"
+        JOIN "Doctor" d ON v."doctorId" = d."doctorId"
+        WHERE i."patientId" = ${patientId}::uuid
+          AND i.status != 'VOID'
+          ${doctorId ? Prisma.sql`AND v."doctorId" = ${doctorId}::uuid` : Prisma.empty}
+          ${startDate ? Prisma.sql`AND i."createdAt" >= ${new Date(startDate as string)}` : Prisma.empty}
+          ${endDate ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}` : Prisma.empty}
+        GROUP BY v."doctorId", d.name
+        ORDER BY "totalSpent" DESC
+      `;
+
+      // Get overall spending summary
+      const overallSummary = await prisma.invoice.aggregate({
+        where: whereClause,
+        _sum: {
+          grandTotal: true,
+          amountPaid: true,
+          amountDue: true
+        },
+        _count: {
+          invoiceId: true
+        }
+      });
+
+      // Get recent invoices with minimal data
+      const recentInvoices = await prisma.invoice.findMany({
+        where: whereClause,
+        select: {
+          invoiceId: true,
+          invoiceNo: true,
+          status: true,
+          grandTotal: true,
+          amountPaid: true,
+          amountDue: true,
+          createdAt: true,
+          Visit: {
+            select: {
+              visitDate: true,
+              department: true,
+              doctor: {
+                select: {
+                  doctorId: true,
+                  name: true
+                }
+              }
             }
-          },
-          orderBy: { paidAt: 'desc' }
-        })
-      ]);
+          }
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
 
-      const totalOutstanding = invoices.reduce((sum, invoice) => sum + (Number(invoice.grandTotal) - Number(invoice.amountPaid)), 0);
-      const totalPaid = invoices.reduce((sum, invoice) => sum + Number(invoice.amountPaid), 0);
+      // Get recent payments
+      const recentPayments = await prisma.payment.findMany({
+        where: { 
+          Invoice: {
+            patientId: patientId
+          }
+        },
+        select: {
+          amount: true,
+          paidAt: true,
+          method: true
+        },
+        orderBy: { paidAt: 'desc' },
+        take: 5
+      });
 
-      const result = {
-        totalInvoices: invoices.length,
-        outstandingAmount: totalOutstanding,
-        paidAmount: totalPaid,
-        lastPayment: payments.length > 0 ? 
-          `${payments[0].paidAt.toISOString().split('T')[0]} - $${payments[0].amount}` : 
-          "No payments found",
-        nextDueDate: invoices.find(inv => Number(inv.amountDue) > 0)?.createdAt?.toISOString().split('T')[0] || "No pending dues",
-        recentInvoices: invoices.slice(0, 3).map(inv => 
-          `${inv.invoiceNo} - $${inv.grandTotal} - ${inv.status}`
-        ),
-        recentPayments: payments.slice(0, 3).map(payment => 
-          `${payment.paidAt.toISOString().split('T')[0]} - $${payment.amount} - ${payment.method}`
-        ),
-        status: "Success"
+      // Calculate totals
+      const totalSpent = Number(overallSummary._sum.grandTotal || 0);
+      const totalPaid = Number(overallSummary._sum.amountPaid || 0);
+      const totalDue = Number(overallSummary._sum.amountDue || 0);
+      const totalInvoices = overallSummary._count.invoiceId;
+
+      // FLAT RESPONSE - Numbered flat keys (no arrays, no nested objects)
+      const result: any = {
+        // Core Summary
+        totalSpent: totalSpent.toFixed(2),
+        totalPaid: totalPaid.toFixed(2),
+        totalDue: totalDue.toFixed(2),
+        
+        // Top Doctor (flat fields for quick answers)
+        topDoctorName: spendingByDoctor.length > 0 ? spendingByDoctor[0].doctorName : null,
+        topDoctorSpent: spendingByDoctor.length > 0 ? spendingByDoctor[0].totalSpent.toFixed(2) : "0.00",
+        topDoctorPaid: spendingByDoctor.length > 0 ? spendingByDoctor[0].totalPaid.toFixed(2) : "0.00",
+        topDoctorVisits: spendingByDoctor.length > 0 ? Number(spendingByDoctor[0].visitCount) : 0,
+        
+        // Recent Payment (flat fields)
+        lastPaymentAmount: recentPayments.length > 0 ? Number(recentPayments[0].amount).toFixed(2) : "0.00",
+        lastPaymentDate: recentPayments.length > 0 ? recentPayments[0].paidAt.toISOString().split('T')[0] : null,
+        lastPaymentMethod: recentPayments.length > 0 ? recentPayments[0].method : null,
+        
+        // Doctor Count
+        doctorCount: spendingByDoctor.length
       };
+
+      // Add numbered doctor fields (doctor1, doctor2, etc.)
+      spendingByDoctor.forEach((doctor, index) => {
+        const prefix = `doctor${index + 1}`;
+        result[`${prefix}Name`] = doctor.doctorName;
+        result[`${prefix}Spent`] = doctor.totalSpent.toFixed(2);
+        result[`${prefix}Paid`] = doctor.totalPaid.toFixed(2);
+        result[`${prefix}Visits`] = Number(doctor.visitCount);
+      });
+
+      // Add numbered recent invoice fields (recentInvoice1, recentInvoice2, etc.)
+      recentInvoices.slice(0, 3).forEach((invoice, index) => {
+        const prefix = `recentInvoice${index + 1}`;
+        result[`${prefix}Number`] = invoice.invoiceNo;
+        result[`${prefix}Amount`] = Number(invoice.grandTotal).toFixed(2);
+        result[`${prefix}Status`] = invoice.status;
+        result[`${prefix}Doctor`] = invoice.Visit.doctor.name;
+        result[`${prefix}Date`] = invoice.createdAt.toISOString().split('T')[0];
+      });
       
       res.json(result);
     } catch (error) {
@@ -632,13 +822,13 @@ router.get(
 );
 
 // 5. Appointment Letter Agent API
-router.get(
+router.post(
   '/appointment-letters',
   requireAuth,
   requireRole('Doctor', 'Nurse', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.query;
+      const { patientId } = req.body;
       
       if (!patientId) {
         return res.status(400).json({
@@ -829,6 +1019,345 @@ function generateAppointmentLetters(appointment: any, patient: any) {
   
   return letters;
 }
+
+// 6. Widget-Optimized Quick Queries
+// router.post(
+//   '/widget/patient-spending-summary',
+//   requireAuth,
+//   async (req: AuthRequest, res: Response, next: NextFunction) => {
+//     try {
+//       const { patientId, doctorId, startDate, endDate } = req.body;
+//       const user = req.user!;
+      
+//       if (!patientId) {
+//         return res.status(400).json({
+//           error: 'Patient ID is required',
+//           msg: 'Failed'
+//         });
+//       }
+
+//       // If user is a patient, they can only view their own data
+//       if (user.role === 'Patient') {
+//         if (!user.patientId || patientId !== user.patientId) {
+//           return res.status(403).json({
+//             error: 'Access denied',
+//             msg: 'Failed'
+//           });
+//         }
+//       }
+
+//       // Get spending summary by doctor using optimized query
+//       const spendingByDoctor = await prisma.$queryRaw<Array<{
+//         doctorId: string;
+//         doctorName: string;
+//         totalSpent: number;
+//         totalPaid: number;
+//         visitCount: number;
+//         lastVisit: Date;
+//       }>>`
+//         SELECT 
+//           v."doctorId",
+//           d.name as "doctorName",
+//           COALESCE(SUM(i."grandTotal"), 0) as "totalSpent",
+//           COALESCE(SUM(i."amountPaid"), 0) as "totalPaid",
+//           COUNT(DISTINCT v."visitId") as "visitCount",
+//           MAX(v."visitDate") as "lastVisit"
+//         FROM "Invoice" i
+//         JOIN "Visit" v ON i."visitId" = v."visitId"
+//         JOIN "Doctor" d ON v."doctorId" = d."doctorId"
+//         WHERE i."patientId" = ${patientId}::uuid
+//           AND i.status != 'VOID'
+//           ${doctorId ? Prisma.sql`AND v."doctorId" = ${doctorId}::uuid` : Prisma.empty}
+//           ${startDate ? Prisma.sql`AND i."createdAt" >= ${new Date(startDate as string)}` : Prisma.empty}
+//           ${endDate ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}` : Prisma.empty}
+//         GROUP BY v."doctorId", d.name
+//         ORDER BY "totalSpent" DESC
+//         LIMIT 10
+//       `;
+
+//       // Get overall totals
+//       const whereClause: any = { patientId };
+//       if (startDate || endDate) {
+//         whereClause.createdAt = {};
+//         if (startDate) whereClause.createdAt.gte = new Date(startDate as string);
+//         if (endDate) whereClause.createdAt.lte = new Date(endDate as string);
+//       }
+
+//       const totals = await prisma.invoice.aggregate({
+//         where: whereClause,
+//         _sum: {
+//           grandTotal: true,
+//           amountPaid: true,
+//           amountDue: true
+//         },
+//         _count: {
+//           invoiceId: true
+//         }
+//       });
+
+//       res.json({
+//         patientId,
+//         period: { startDate, endDate, doctorId },
+//         totalSpent: Number(totals._sum.grandTotal || 0).toFixed(2),
+//         totalPaid: Number(totals._sum.amountPaid || 0).toFixed(2),
+//         totalDue: Number(totals._sum.amountDue || 0).toFixed(2),
+//         invoiceCount: totals._count.invoiceId,
+//         topDoctor: spendingByDoctor.length > 0 ? {
+//           name: spendingByDoctor[0].doctorName,
+//           amount: spendingByDoctor[0].totalSpent.toFixed(2),
+//           visits: Number(spendingByDoctor[0].visitCount)
+//         } : null,
+//         doctorSpending: spendingByDoctor.map(d => ({
+//           doctorId: d.doctorId,
+//           doctorName: d.doctorName,
+//           totalSpent: d.totalSpent.toFixed(2),
+//           totalPaid: d.totalPaid.toFixed(2),
+//           visitCount: Number(d.visitCount),
+//           lastVisit: d.lastVisit.toISOString().split('T')[0]
+//         })),
+//         status: "Success"
+//       });
+//     } catch (error) {
+//       console.error('Widget Spending Summary Error:', error);
+//       res.status(500).json({
+//         error: error instanceof Error ? error.message : 'Failed to fetch spending summary',
+//         msg: 'Failed'
+//       });
+//     }
+//   }
+// );
+
+// // 7. Widget-Optimized Doctor Revenue Summary
+// router.post(
+//   '/widget/doctor-revenue-summary',
+//   requireAuth,
+//   requireRole('Doctor', 'ITAdmin', 'Cashier'),
+//   async (req: AuthRequest, res: Response, next: NextFunction) => {
+//     try {
+//       const { doctorId, startDate, endDate, groupBy = 'month' } = req.body;
+      
+//       if (!doctorId) {
+//         return res.status(400).json({
+//           error: 'Doctor ID is required',
+//           msg: 'Failed'
+//         });
+//       }
+
+//       let groupByClause: Prisma.Sql;
+//       if (groupBy === 'month') {
+//         groupByClause = Prisma.sql`date_trunc('month', i."createdAt")`;
+//       } else if (groupBy === 'week') {
+//         groupByClause = Prisma.sql`date_trunc('week', i."createdAt")`;
+//       } else {
+//         groupByClause = Prisma.sql`date_trunc('day', i."createdAt")`;
+//       }
+
+//       const revenueData = await prisma.$queryRaw<Array<{
+//         period: Date;
+//         totalRevenue: number;
+//         totalPaid: number;
+//         invoiceCount: number;
+//         patientCount: number;
+//       }>>`
+//         SELECT 
+//           ${groupByClause} as period,
+//           COALESCE(SUM(i."grandTotal"), 0) as "totalRevenue",
+//           COALESCE(SUM(i."amountPaid"), 0) as "totalPaid",
+//           COUNT(i."invoiceId") as "invoiceCount",
+//           COUNT(DISTINCT i."patientId") as "patientCount"
+//         FROM "Invoice" i
+//         JOIN "Visit" v ON i."visitId" = v."visitId"
+//         WHERE v."doctorId" = ${doctorId}::uuid
+//           AND i.status != 'VOID'
+//           ${startDate ? Prisma.sql`AND i."createdAt" >= ${new Date(startDate as string)}` : Prisma.empty}
+//           ${endDate ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}` : Prisma.empty}
+//         GROUP BY ${groupByClause}
+//         ORDER BY period ASC
+//       `;
+
+//       const doctor = await prisma.doctor.findUnique({
+//         where: { doctorId },
+//         select: { name: true, department: true }
+//       });
+
+//       const totalRevenue = revenueData.reduce((sum, item) => sum + item.totalRevenue, 0);
+//       const totalPaid = revenueData.reduce((sum, item) => sum + item.totalPaid, 0);
+//       const totalInvoices = revenueData.reduce((sum, item) => sum + Number(item.invoiceCount), 0);
+//       const totalPatients = revenueData.reduce((sum, item) => sum + Number(item.patientCount), 0);
+
+//       res.json({
+//         doctorId,
+//         doctorName: doctor?.name,
+//         department: doctor?.department,
+//         period: { startDate, endDate, groupBy },
+//         totals: {
+//           totalRevenue: totalRevenue.toFixed(2),
+//           totalPaid: totalPaid.toFixed(2),
+//           totalInvoices,
+//           totalPatients
+//         },
+//         revenueByPeriod: revenueData.map(item => ({
+//           period: item.period.toISOString().split('T')[0],
+//           revenue: item.totalRevenue.toFixed(2),
+//           paid: item.totalPaid.toFixed(2),
+//           invoices: Number(item.invoiceCount),
+//           patients: Number(item.patientCount)
+//         })),
+//         status: "Success"
+//       });
+//     } catch (error) {
+//       console.error('Widget Doctor Revenue Error:', error);
+//       res.status(500).json({
+//         error: error instanceof Error ? error.message : 'Failed to fetch doctor revenue',
+//         msg: 'Failed'
+//       });
+//     }
+//   }
+// );
+
+// 8. Widget-Optimized Quick Patient Stats
+// router.post(
+//   '/widget/patient-stats',
+//   requireAuth,
+//   async (req: AuthRequest, res: Response, next: NextFunction) => {
+//     try {
+//       const { patientId } = req.body;
+//       const user = req.user!;
+      
+//       if (!patientId) {
+//         return res.status(400).json({
+//           error: 'Patient ID is required',
+//           msg: 'Failed'
+//         });
+//       }
+
+//       // If user is a patient, they can only view their own data
+//       if (user.role === 'Patient') {
+//         if (!user.patientId || patientId !== user.patientId) {
+//           return res.status(403).json({
+//             error: 'Access denied',
+//             msg: 'Failed'
+//           });
+//         }
+//       }
+
+//       const [appointments, invoices, medications, visits] = await Promise.all([
+//         prisma.appointment.count({ where: { patientId } }),
+//         prisma.invoice.aggregate({
+//           where: { patientId, status: { not: 'VOID' } },
+//           _sum: { grandTotal: true, amountPaid: true },
+//           _count: { invoiceId: true }
+//         }),
+//         prisma.medicationOrder.count({ where: { patientId } }),
+//         prisma.visit.count({ where: { patientId } })
+//       ]);
+
+//       res.json({
+//         patientId,
+//         totalAppointments: appointments,
+//         totalVisits: visits,
+//         totalInvoices: invoices._count.invoiceId,
+//         totalSpent: Number(invoices._sum.grandTotal || 0).toFixed(2),
+//         totalPaid: Number(invoices._sum.amountPaid || 0).toFixed(2),
+//         totalMedications: medications,
+//         status: "Success"
+//       });
+//     } catch (error) {
+//       console.error('Widget Patient Stats Error:', error);
+//       res.status(500).json({
+//         error: error instanceof Error ? error.message : 'Failed to fetch patient stats',
+//         msg: 'Failed'
+//       });
+//     }
+//   }
+// );
+
+// 9. Patient Profile Agent API - Simple Version
+router.post(
+  '/patient-profile',
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { patientId } = req.body;
+      const user = req.user!;
+      
+      if (!patientId) {
+        return res.status(400).json({
+          error: 'Patient ID is required',
+          msg: 'Failed'
+        });
+      }
+
+      // If user is a patient, they can only view their own profile
+      if (user.role === 'Patient') {
+        if (!user.patientId) {
+          return res.status(403).json({
+            error: 'Patient ID not found in session',
+            msg: 'Failed'
+          });
+        }
+        if (patientId !== user.patientId) {
+          return res.status(403).json({
+            error: 'Patients can only view their own profile',
+            msg: 'Failed'
+          });
+        }
+      }
+
+      const token = getTokenFromRequest(req);
+      
+      // Get basic patient data only
+      const patient = await prisma.patient.findUnique({
+        where: { patientId },
+        select: {
+          patientId: true,
+          name: true,
+          dob: true,
+          gender: true,
+          contact: true,
+          insurance: true,
+          drugAllergies: true,
+          createdAt: true,
+          updatedAt: true
+        }
+      });
+
+      if (!patient) {
+        return res.status(404).json({
+          error: 'Patient not found',
+          msg: 'Failed'
+        });
+      }
+
+      // Calculate age
+      const age = new Date().getFullYear() - new Date(patient.dob).getFullYear();
+
+      // Simple response with basic patient data only
+      const result = {
+        // 🧑‍⚕️ Basic Patient Information
+        patientId: patient.patientId,
+        patientName: patient.name,
+        dateOfBirth: patient.dob.toISOString().split('T')[0],
+        age: age,
+        gender: patient.gender,
+        contact: patient.contact,
+        insurance: patient.insurance || 'Not provided',
+        drugAllergies: patient.drugAllergies || 'No known allergies',
+        memberSince: patient.createdAt.toISOString().split('T')[0],
+        lastUpdated: patient.updatedAt.toISOString().split('T')[0],
+        status: "Success"
+      };
+      
+      res.json(result);
+    } catch (error) {
+      console.error('Patient Profile Agent Error:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to fetch patient profile',
+        msg: 'Failed'
+      });
+    }
+  }
+);
 
 // Helper function to format time from minutes to HH:MM
 function formatTime(minutes: number): string {

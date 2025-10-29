@@ -82,6 +82,15 @@ export async function createPrescription(
     include: { items: true },
   });
 
+  // Notify Atenxion agent about prescription creation
+  try {
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
+    await recordAtenxionTransaction(patientId);
+    console.log('Atenxion transaction recorded for prescription creation:', prescription.prescriptionId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for prescription creation:', error);
+  }
+
   return { prescription, allergyHits };
 }
 

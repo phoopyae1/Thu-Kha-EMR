@@ -409,6 +409,15 @@ router.post('/register', async (req: Request, res: Response) => {
     return { patient: patientRecord, account: createdAccount };
   });
 
+  // Notify Atenxion agent about patient data change
+  try {
+    const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+    await recordAtenxionTransaction(patient.patientId);
+    console.log('Atenxion transaction recorded for patient data change:', patient.patientId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for patient data change:', error);
+  }
+
   res.status(201).json({
     message: 'Account created successfully. You can now sign in to your patient portal.',
     account,
@@ -964,6 +973,15 @@ router.post(
       },
     });
 
+    // Notify Atenxion agent about appointment creation
+    try {
+      const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+      await recordAtenxionTransaction(patientId);
+      console.log('Atenxion transaction recorded for patient portal appointment creation:', appointment.appointmentId);
+    } catch (error) {
+      console.warn('Failed to record Atenxion transaction for patient portal appointment creation:', error);
+    }
+
     res.status(201).json(appointment);
   }
 );
@@ -1265,6 +1283,15 @@ router.post(
       },
       select: medicationOrderSelect,
     });
+
+    // Notify Atenxion agent about medication order creation
+    try {
+      const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+      await recordAtenxionTransaction(patientId);
+      console.log('Atenxion transaction recorded for medication order creation:', order.orderId);
+    } catch (error) {
+      console.warn('Failed to record Atenxion transaction for medication order creation:', error);
+    }
 
     res.status(201).json(order);
   },

@@ -42,7 +42,7 @@ import {
   type MedicationOrderResponse,
   type MedicationOrderStatus,
 } from '../api/patientPortal';
-import { loginAtenxionUser, logoutAtenxionUser, recordAtenxionTransaction } from '../api/atenxion';
+import { loginAtenxionUser, logoutAtenxionUser } from '../api/atenxion';
 import brillarLogo from '../public/brillar.avif';
 
 interface LoginForm {
@@ -140,7 +140,7 @@ function parseStyleAttribute(styleAttr: string): {
         .toLowerCase()
         .replace(/-([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
 
-      style[camelCaseProperty as keyof CSSProperties] = trimmedValue as never;
+     
 
       switch (trimmedProperty.toLowerCase()) {
         case 'width':
@@ -404,6 +404,14 @@ export default function PatientPortal() {
     style?: CSSProperties;
   } | null>(null);
 
+  // Widget state for login page (before authentication)
+  const [loginWidget, setLoginWidget] = useState<{
+    src: string;
+    title?: string | null;
+    allow?: string | null;
+    loading?: string | null;
+  } | null>(null);
+
   const [showRegister, setShowRegister] = useState(false);
   const [registerForm, setRegisterForm] = useState<RegisterForm>(defaultRegisterForm);
   const [registerError, setRegisterError] = useState<string | null>(null);
@@ -515,6 +523,86 @@ export default function PatientPortal() {
 
     loadIntegrationIframe();
   }, [session?.patientId]);
+
+  // Load widget (both before and after login)
+  useEffect(() => {
+    const loadWidget = async () => {
+      try {
+        console.log('🔧 Widget Debug - fetching integration embed...');
+        const embed = await fetchIntegrationEmbed();
+        console.log('🔧 Widget Debug - embed result:', embed);
+        
+        // If no embed is configured, use a fallback test widget
+        if (!embed?.iframeCode || typeof document === 'undefined') {
+          console.log('🔧 Widget Debug - no iframe code, using fallback widget');
+          setLoginWidget({
+            src: 'https://calendar.google.com/calendar/embed?src=primary&ctz=America%2FNew_York',
+            title: 'Patient Portal Widget (Test)',
+            allow: 'camera; microphone; geolocation',
+            loading: 'lazy',
+          });
+          return;
+        }
+
+        console.log('🔧 Widget Debug - iframe code found:', embed.iframeCode);
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = embed.iframeCode;
+        const iframe = wrapper.querySelector('iframe');
+        
+        if (iframe) {
+          console.log('🔧 Widget Debug - iframe element found:', iframe);
+          
+          // Handle patient ID based on authentication status
+          let widgetSrc = iframe.src;
+          
+          // Ensure no patient ID is passed before login
+          if (session?.patientId) {
+            // User is logged in - include patient ID
+            console.log('🔧 Widget Debug - user is logged in, adding patient ID:', session.patientId);
+            try {
+              const url = new URL(widgetSrc, window.location.origin);
+              url.searchParams.set('userId', session.patientId);
+              widgetSrc = url.toString();
+            } catch {
+              const separator = widgetSrc.includes('?') ? '&' : '?';
+              widgetSrc = `${widgetSrc}${separator}userId=${session.patientId}`;
+            }
+          } else {
+            // User is not logged in - ensure NO patient ID is passed
+            console.log('🔧 Widget Debug - user is not logged in, ensuring NO patient ID is passed');
+            
+            // Remove any existing userId parameter to ensure clean URL
+            try {
+              const url = new URL(widgetSrc, window.location.origin);
+              url.searchParams.delete('userId');
+              widgetSrc = url.toString();
+            } catch {
+              // If URL parsing fails, remove userId parameter manually
+              widgetSrc = widgetSrc.replace(/[?&]userId=[^&]*/g, '');
+              widgetSrc = widgetSrc.replace(/\?&/, '?');
+              widgetSrc = widgetSrc.replace(/\?$/, '');
+            }
+          }
+          
+          setLoginWidget({
+            src: widgetSrc,
+            title: iframe.title || 'Patient Portal Widget',
+            allow: iframe.allow || 'camera; microphone; geolocation',
+            loading: iframe.loading || 'lazy',
+          });
+          console.log('🔧 Widget Debug - widget set successfully with src:', widgetSrc);
+        } else {
+          console.log('🔧 Widget Debug - no iframe element found in code');
+          setLoginWidget(null);
+        }
+      } catch (error) {
+        console.warn('🔧 Widget Debug - Failed to load integration widget:', error);
+        setLoginWidget(null);
+      }
+    };
+
+    loadWidget();
+  }, [session?.patientId]); // Re-load when patient ID changes
 
   const tabs = useMemo(
     () => [
@@ -674,41 +762,7 @@ export default function PatientPortal() {
           );
         });
 
-        const atenxionSummary = summary || undefined;
-        
-        // Get integration embed and use contextKey (and agentId) for Atenxion transaction
-        fetchIntegrationEmbed()
-          .then((integration) => {
-            const contextKey = integration?.contextKey;
-            const agentIdMatch = integration?.iframeCode?.match(/agentchainId=([^&"']+)/);
-            const agentId = agentIdMatch ? agentIdMatch[1] : undefined;
-            if (!contextKey) {
-              console.warn('No contextKey found for Atenxion transaction');
-              return;
-            }
-            return recordAtenxionTransaction(
-              {
-                userId: session.patientId,
-                patientName: session.patientName || profile?.patient?.name || session.email,
-                agentId,
-              },
-              {
-                type: isPrescription ? 'prescription-order' : 'medication-order',
-                orderId: order.orderId,
-                patientId: order.patientId,
-                createdAt: order.createdAt,
-                updatedAt: order.updatedAt,
-                drugName: order.drugName,
-                dosage: order.dosage,
-                quantity: order.quantity,
-                summary: atenxionSummary,
-              },
-              contextKey,
-            );
-          })
-          .catch((atenxionError) => {
-            console.warn('Atenxion transaction logging failed', atenxionError);
-          });
+        // Transaction will be automatically recorded by the backend when the medication order is created
 
         let successMessage = isPrescription
           ? t('Our pharmacy team will review your prescription shortly.')
@@ -910,7 +964,7 @@ export default function PatientPortal() {
         if (contextKey) {
           await loginAtenxionUser(
             {
-              userId: '6a1928ef-a4b2-51c2-9746-0ac0b2594f55',
+              userId: patientId,
               patientName,
               agentId,
             },
@@ -1781,22 +1835,23 @@ export default function PatientPortal() {
         )}
       </main>
       
-      {/* Fixed positioned widget in bottom-right corner */}
-      {session && integrationWidget ? (
+      {/* Fixed positioned widget in bottom-right corner - Shows for both login and post-login */}
+      {loginWidget ? (
         <div
           className="fixed bottom-4 right-4 z-40"
           style={{
-            width: integrationWidget.width ?? DEFAULT_WIDGET_WIDTH,
-            height: integrationWidget.height ?? DEFAULT_WIDGET_MIN_HEIGHT,
+            width: '400px',
+            height: '800px',
             maxWidth: '400px',
-            maxHeight: '800px',
+            maxHeight: '850px',
             overflow: 'hidden',
           }}
         >
           <iframe
-            src={integrationWidget.src}
-            title={integrationWidget.title ?? t('Patient portal assistant widget')}
-            allow={integrationWidget.allow ?? undefined}
+            src={loginWidget.src}
+            title={loginWidget.title || 'Patient Portal Widget'}
+            allow={loginWidget.allow || 'camera; microphone; geolocation'}
+            loading={loginWidget.loading as "lazy" | "eager" | undefined}
             width="100%"
             height="100%"
             style={{
@@ -1806,7 +1861,6 @@ export default function PatientPortal() {
               maxHeight: '100%',
               border: 'none',
             }}
-            className="rounded-3xl border-0 shadow-xl"
           />
         </div>
       ) : null}

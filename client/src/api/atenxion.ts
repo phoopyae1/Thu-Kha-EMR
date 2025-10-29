@@ -99,29 +99,6 @@ export async function loginAtenxionUser(credentials: AtenxionCredentials, token?
   }
 }
 
-export async function recordAtenxionTransaction(
-  credentials: AtenxionCredentials,
-  transaction: AtenxionTransactionPayload,
-  token?: string | null,
-) {
-  const url = `${resolveServerUrl()}/api/post-login/new-transaction`;
-  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
-  const body = { ...normalizeCredentials(credentials), transaction };
-  const headers = getHeaders(resolvedToken);
-  try {
-    console.log('Atenxion transaction API call:', {
-      url,
-      body,
-      headers,
-      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : 'none',
-    });
-    await axios.post(url, body, { headers });
-    return true;
-  } catch (error) {
-    console.error('Atenxion transaction failed:', error);
-    return handleAxiosError(error, 'Unable to record Atenxion transaction');
-  }
-}
 
 export async function logoutAtenxionUser(credentials: AtenxionCredentials, token?: string | null) {
   const url = `${resolveServerUrl()}/api/post-login/user-logout`;
