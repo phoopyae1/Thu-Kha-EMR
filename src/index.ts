@@ -48,7 +48,8 @@ app.use(
         styleSrc: ["'self'", "'unsafe-inline'"],
         scriptSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:', 'https:'],
-        frameSrc: ["'self'", 'https://demo.atenxion.ai'],
+        frameSrc: ["'self'", "https://qa.atenxion.ai"],
+        childSrc: ["'self'", "https://qa.atenxion.ai"],
       },
     },
   })
