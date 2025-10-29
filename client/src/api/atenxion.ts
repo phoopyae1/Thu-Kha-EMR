@@ -1,7 +1,7 @@
-import axios, { type AxiosError } from 'axios';
-import { fetchIntegrationEmbed } from './patientPortal';
+import axios, { type AxiosError } from "axios";
+import { fetchIntegrationEmbed } from "./patientPortal";
 
-const DEFAULT_SERVER_URL = 'https://api-qa.atenxion.ai';
+const DEFAULT_SERVER_URL = "https://api-qa.atenxion.ai";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -17,6 +17,7 @@ interface AtenxionRequestBody {
   userId: string;
   patientName: string;
   patientId: string;
+  patientToken: string;
   agentId?: string;
   agentchainId?: string;
 
@@ -29,11 +30,14 @@ function resolveServerUrl() {
 }
 
 function resolveAuthorizationHeader(token?: string | null) {
-  const explicitToken = token?.trim() || import.meta.env.VITE_ATENXION_API_TOKEN?.trim();
+  const explicitToken =
+    token?.trim() || import.meta.env.VITE_ATENXION_API_TOKEN?.trim();
   if (!explicitToken) {
     return undefined;
   }
-  return explicitToken.toLowerCase().startsWith('bearer ') ? explicitToken : `Bearer ${explicitToken}`;
+  return explicitToken.toLowerCase().startsWith("bearer ")
+    ? explicitToken
+    : `Bearer ${explicitToken}`;
 }
 
 function getHeaders(token?: string | null) {
@@ -41,24 +45,32 @@ function getHeaders(token?: string | null) {
   return authHeader ? { Authorization: authHeader } : undefined;
 }
 
-function normalizeCredentials(credentials: AtenxionCredentials): AtenxionRequestBody {
+function normalizeCredentials(
+  credentials: AtenxionCredentials
+): AtenxionRequestBody {
   const userId = credentials.userId.trim();
   const patientName = credentials.patientName?.trim() || userId;
   const agentId = credentials.agentId?.trim();
   const agentchainId = credentials.agentchainId?.trim();
-const patientId = credentials.patientId.trim();
+  const patientId = credentials.patientId.trim();
+  let patientToken = "";
+  const stored = localStorage.getItem("patient_portal_session");
+  if (stored) {
+    patientToken = JSON.parse(stored).token;
+  }
   const body: AtenxionRequestBody = {
     userId,
     patientName,
     patientId,
     agentId,
     agentchainId,
+    patientToken,
   };
 
   if (agentId) {
     body.agentId = agentId;
   }
-  
+
   if (agentchainId) {
     body.agentchainId = agentchainId;
   }
@@ -72,9 +84,11 @@ function handleAxiosError(error: unknown, context: string): never {
     const responseData = axiosError.response?.data;
     const status = axiosError.response?.status;
     const dataText =
-      typeof responseData === 'string' ? responseData : JSON.stringify(responseData ?? {}, null, 2);
+      typeof responseData === "string"
+        ? responseData
+        : JSON.stringify(responseData ?? {}, null, 2);
     const dataSnippet = dataText.slice(0, 500);
-    const message = `${context} (status=${status ?? 'n/a'}) ${dataSnippet}`;
+    const message = `${context} (status=${status ?? "n/a"}) ${dataSnippet}`;
     throw new Error(message);
   }
   if (error instanceof Error) {
@@ -83,45 +97,50 @@ function handleAxiosError(error: unknown, context: string): never {
   throw new Error(context);
 }
 
-export async function loginAtenxionUser(credentials: AtenxionCredentials, token?: string | null) {
+export async function loginAtenxionUser(
+  credentials: AtenxionCredentials,
+  token?: string | null
+) {
   const url = `${resolveServerUrl()}/api/post-login/user-login`;
   const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
   const requestBody = normalizeCredentials(credentials);
   const headers = { Authorization: `${resolvedToken}` };
-  
-  console.log('Atenxion API call:', {
+
+  console.log("Atenxion API call:", {
     url,
     body: requestBody,
     headers,
-    token: resolvedToken ? resolvedToken.substring(0, 20) + '...' : 'none'
+    token: resolvedToken ? resolvedToken.substring(0, 20) + "..." : "none",
   });
-  
+
   try {
     await axios.post(url, requestBody, { headers });
     return true;
   } catch (error) {
-    console.error('Atenxion login failed:', error);
-    return handleAxiosError(error, 'Unable to log in to Atenxion');
+    console.error("Atenxion login failed:", error);
+    return handleAxiosError(error, "Unable to log in to Atenxion");
   }
 }
 
-
-export async function logoutAtenxionUser(credentials: AtenxionCredentials, token?: string | null) {
+export async function logoutAtenxionUser(
+  credentials: AtenxionCredentials,
+  token?: string | null
+) {
   const url = `${resolveServerUrl()}/api/post-login/user-logout`;
   const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
   const body = normalizeCredentials(credentials);
   const headers = getHeaders(resolvedToken);
   try {
-    console.log('Atenxion logout API call:', {
+    console.log("Atenxion logout API call:", {
       url,
       body,
       headers,
-      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : 'none',
+      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : "none",
     });
     await axios.post(url, body, { headers });
     return true;
   } catch (error) {
-    console.error('Atenxion logout failed:', error);
-    return handleAxiosError(error, 'Unable to log out from Atenxion');
+    console.error("Atenxion logout failed:", error);
+    return handleAxiosError(error, "Unable to log out from Atenxion");
   }
 }
