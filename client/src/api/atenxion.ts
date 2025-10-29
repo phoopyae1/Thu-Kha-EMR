@@ -17,7 +17,7 @@ interface AtenxionRequestBody {
   userId: string;
   patientName: string;
   patientId: string;
-  patientToken: string;
+  Authorization: string;
   agentId?: string;
   agentchainId?: string;
 
@@ -64,8 +64,8 @@ function normalizeCredentials(
     patientId,
     agentId,
     agentchainId,
-    patientToken,
-  };
+      Authorization: `Bearer ${patientToken}`,
+    };
 
   if (agentId) {
     body.agentId = agentId;
