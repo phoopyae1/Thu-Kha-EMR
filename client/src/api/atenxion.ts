@@ -16,8 +16,10 @@ export interface AtenxionCredentials {
 interface AtenxionRequestBody {
   userId: string;
   patientName: string;
+  patientId: string;
   agentId?: string;
   agentchainId?: string;
+
 }
 
 export type AtenxionTransactionPayload = JsonRecord;
@@ -44,10 +46,13 @@ function normalizeCredentials(credentials: AtenxionCredentials): AtenxionRequest
   const patientName = credentials.patientName?.trim() || userId;
   const agentId = credentials.agentId?.trim();
   const agentchainId = credentials.agentchainId?.trim();
-
+const patientId = credentials.patientId.trim();
   const body: AtenxionRequestBody = {
     userId,
     patientName,
+    patientId,
+    agentId,
+    agentchainId,
   };
 
   if (agentId) {
