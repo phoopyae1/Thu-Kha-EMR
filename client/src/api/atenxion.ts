@@ -8,6 +8,7 @@ type JsonRecord = Record<string, unknown>;
 export interface AtenxionCredentials {
   userId: string;
   agentId?: string;
+  patientId: string;
   agentchainId?: string;
   patientName?: string;
 }

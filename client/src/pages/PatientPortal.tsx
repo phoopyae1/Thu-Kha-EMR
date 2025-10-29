@@ -870,6 +870,7 @@ export default function PatientPortal() {
         return loginAtenxionUser(
           {
             userId: session.patientId,
+            patientId: session.patientId,
             patientName: fallbackName,
             agentId,
           },
@@ -966,6 +967,7 @@ export default function PatientPortal() {
             {
               userId: patientId,
               patientName,
+              patientId,
               agentId,
             },
             contextKey, // Use contextKey instead of response.accessToken
@@ -1221,6 +1223,7 @@ export default function PatientPortal() {
             {
               userId: session.patientId,
               patientName: atenxionName,
+              patientId: session.patientId,
               agentId,
             },
             contextKey, // Use contextKey instead of session.token
