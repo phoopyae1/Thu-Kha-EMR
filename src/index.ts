@@ -50,6 +50,11 @@ app.use(
         imgSrc: ["'self'", 'data:', 'https:'],
         frameSrc: ["'self'", "https://qa.atenxion.ai"],
         childSrc: ["'self'", "https://qa.atenxion.ai"],
+        connectSrc: [
+          "'self'",
+          "https://api-qa.atenxion.ai",
+          "https://qa.atenxion.ai"
+        ],
       },
     },
   })
