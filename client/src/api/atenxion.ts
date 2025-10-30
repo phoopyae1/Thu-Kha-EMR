@@ -127,7 +127,7 @@ export async function logoutAtenxionUser(
   token?: string | null
 ) {
   const url = `${resolveServerUrl()}/api/post-login/user-logout`;
-  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
+  const resolvedToken =  (await fetchIntegrationEmbed())?.contextKey || token;
   const body = normalizeCredentials(credentials);
   const headers = getHeaders(resolvedToken);
   try {
