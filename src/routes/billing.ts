@@ -68,7 +68,7 @@ const ListInvoicesQuerySchema = z.object({
 router.use(requireAuth);
 
 router.post(
-  '/billing/invoices',
+  '/invoices',
   requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
   validate({ body: CreateInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -83,7 +83,7 @@ router.post(
 );
 
 router.get(
-  '/billing/invoices',
+  '/invoices',
   requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -119,7 +119,7 @@ router.get(
 );
 
 router.get(
-  '/billing/invoices/:invoiceId',
+  '/invoices/:invoiceId',
   requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -143,7 +143,7 @@ router.get(
 );
 
 router.patch(
-  '/billing/invoices/:invoiceId/items',
+  '/invoices/:invoiceId/items',
   requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: ModifyInvoiceItemsSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -177,7 +177,7 @@ router.patch(
 );
 
 router.delete(
-  '/billing/items/:itemId',
+  '/items/:itemId',
   requireRole('Cashier', 'ITAdmin', 'Doctor'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -190,7 +190,7 @@ router.delete(
 );
 
 router.post(
-  '/billing/invoices/:invoiceId/payments',
+  '/invoices/:invoiceId/payments',
   requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: PostPaymentSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -205,7 +205,7 @@ router.post(
 );
 
 router.post(
-  '/billing/invoices/:invoiceId/void',
+  '/invoices/:invoiceId/void',
   requireRole('Cashier', 'ITAdmin', 'Doctor'),
   validate({ body: VoidInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -220,7 +220,7 @@ router.post(
 );
 
 router.get(
-  '/billing/services',
+  '/services',
   requireRole('ITAdmin', 'Cashier', 'Doctor', 'Pharmacist'),
   async (_req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -235,7 +235,7 @@ router.get(
 );
 
 router.post(
-  '/billing/services',
+  '/services',
   requireRole('ITAdmin'),
   validate({
     body: z.object({
@@ -269,7 +269,7 @@ router.post(
 );
 
 router.put(
-  '/billing/services/:serviceId',
+  '/services/:serviceId',
   requireRole('ITAdmin'),
   validate({
     body: z.object({
@@ -297,7 +297,7 @@ router.put(
 );
 
 router.delete(
-  '/billing/services/:serviceId',
+  '/services/:serviceId',
   requireRole('ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -310,7 +310,7 @@ router.delete(
 );
 
 router.post(
-  '/billing/post-pharmacy/:prescriptionId',
+  '/post-pharmacy/:prescriptionId',
   requireRole('Pharmacist', 'PharmacyTech', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -323,7 +323,7 @@ router.post(
 );
 
 router.get(
-  '/billing/invoices/:invoiceId/receipt',
+  '/invoices/:invoiceId/receipt',
   requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
