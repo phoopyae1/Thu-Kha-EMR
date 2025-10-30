@@ -28,7 +28,7 @@ export async function recordAtenxionTransaction(
   }
 
   const headers = {
-    Authorization: `Bearer ${atenxionToken || ATENXION_API_TOKEN}`,
+    Authorization: `${atenxionToken || ATENXION_API_TOKEN}`,
     "Content-Type": "application/json",
   };
 
