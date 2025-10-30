@@ -22,7 +22,8 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
   } | null>(null);
 
   useEffect(() => {
-    if (!widgetEnabled) {
+    const isAdminRoute = location.pathname.startsWith('/admin');
+    if (!widgetEnabled || isAdminRoute) {
       setWidgetFrame(null);
       return;
     }
@@ -79,7 +80,7 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
     return () => {
       isCancelled = true;
     };
-  }, [widgetEnabled]);
+  }, [widgetEnabled, location.pathname]);
   if (!accessToken) {
     return <Navigate to="/admin/login" state={{ from: location }} replace />;
   }
@@ -92,7 +93,7 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
   return (
     <>
       {children}
-      {widgetEnabled && widgetFrame && (
+      {widgetEnabled && !location.pathname.startsWith('/admin') && widgetFrame && (
         <iframe
           src={widgetFrame.src}
           title={widgetFrame.title ?? 'Patient portal assistant widget'}
