@@ -2,7 +2,7 @@ import axios from "axios";
 
 const ATENXION_API_URL =
   process.env.ATENXION_API_URL || "https://api-qa.atenxion.ai";
-const ATENXION_API_TOKEN = process.env.ATENXION_API_TOKEN;
+const ATENXION_API_TOKEN = process.env.ATENXION_API_TOKEN || "asdf";
 
 // Simplified transaction function that only requires patientId and token
 export async function recordAtenxionTransaction(
