@@ -1,20 +1,20 @@
-import crypto from 'node:crypto';
-import { Router, type Response, type NextFunction } from 'express';
-import type { Request } from 'express';
-import bcrypt from 'bcrypt';
-import { PrismaClient } from '@prisma/client';
+import crypto from "node:crypto";
+import { Router, type Response, type NextFunction } from "express";
+import type { Request } from "express";
+import bcrypt from "bcrypt";
+import { PrismaClient } from "@prisma/client";
 
 type RoleName =
-  | 'Doctor'
-  | 'AdminAssistant'
-  | 'Cashier'
-  | 'ITAdmin'
-  | 'Pharmacist'
-  | 'PharmacyTech'
-  | 'InventoryManager'
-  | 'Nurse'
-  | 'LabTech'
-  | 'Patient';
+  | "Doctor"
+  | "AdminAssistant"
+  | "Cashier"
+  | "ITAdmin"
+  | "Pharmacist"
+  | "PharmacyTech"
+  | "InventoryManager"
+  | "Nurse"
+  | "LabTech"
+  | "Patient";
 
 export interface AuthUser {
   userId: string;
@@ -33,8 +33,8 @@ const PASSWORD_MIN_LENGTH = 8;
 
 function parseBearerToken(header: string | undefined): string | null {
   if (!header) return null;
-  const [scheme, value] = header.split(' ');
-  if (!scheme || scheme.toLowerCase() !== 'bearer') return null;
+  const [scheme, value] = header.split(" ");
+  if (!scheme || scheme.toLowerCase() !== "bearer") return null;
   return value?.trim() || null;
 }
 
@@ -43,75 +43,89 @@ function decodeToken(token: string): {
   role?: unknown;
   email?: unknown;
   doctorId?: unknown;
+  patientId?: unknown;
 } {
-  const parts = token.split('.');
+  const parts = token.split(".");
   if (parts.length < 2) {
-    throw new Error('Invalid token');
+    throw new Error("Invalid token");
   }
-  const payload = Buffer.from(parts[1], 'base64url').toString('utf8');
+  const payload = Buffer.from(parts[1], "base64url").toString("utf8");
   return JSON.parse(payload);
 }
 
-export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
+export async function requireAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
   try {
-    const rawToken = parseBearerToken(req.get('authorization'));
-    console.log('rawToken', rawToken);
+    const rawToken = parseBearerToken(req.get("authorization"));
+    console.log("rawToken", rawToken);
     if (!rawToken) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     const payload = decodeToken(rawToken);
     console.log(payload);
-    let user:
-      | {
-          userId: string;
-          email: string;
-          role: string;
-          status: string;
-          doctorId: string | null;
-        }
-      | null = null;
+    let user: {
+      userId: string;
+      email: string;
+      role: string;
+      status: string;
+      doctorId: string | null;
+    } | null = null;
 
     // Normal tokens include sub/role/email → lookup by userId
-    console.log(typeof payload.sub );
+    console.log(typeof payload.sub);
     console.log(typeof payload.email);
-    if (
-      typeof payload.sub === 'string' &&
-      typeof payload.email === 'string'
-    ) {
-      console.log('user found');
+    if (typeof payload.sub === "string" && typeof payload.email === "string") {
+      console.log("user found");
       user = await prisma.user.findUnique({
         where: { userId: payload.sub },
-        select: { userId: true, email: true, role: true, status: true, doctorId: true },
-
+        select: {
+          userId: true,
+          email: true,
+          role: true,
+          status: true,
+          doctorId: true,
+        },
       });
-      console.log('user', user);
-    } else if (typeof payload.email === 'string') {
+      console.log("user", user);
+    } else if (typeof payload.email === "string") {
       // Fallback: accept system tokens that only carry email
       user = await prisma.user.findFirst({
-        where: { email: { equals: String(payload.email), mode: 'insensitive' }, status: 'active' },
-        select: { userId: true, email: true, role: true, status: true, doctorId: true },
+        where: {
+          email: { equals: String(payload.email), mode: "insensitive" },
+          status: "active",
+        },
+        select: {
+          userId: true,
+          email: true,
+          role: true,
+          status: true,
+          doctorId: true,
+        },
       });
     }
-    if (!user || user.status !== 'active') {
+    if (!user || user.status !== "active") {
       // Allowlisted system accounts (email-only tokens)
-      if (typeof payload.email === 'string') {
-        const systemEmails = (process.env.SYSTEM_EMAILS || 'system@atenxion.ai')
-          .split(',')
+      if (typeof payload.email === "string") {
+        const systemEmails = (process.env.SYSTEM_EMAILS || "system@atenxion.ai")
+          .split(",")
           .map((e) => e.trim().toLowerCase())
           .filter(Boolean);
         const emailLower = payload.email.toLowerCase();
         if (systemEmails.includes(emailLower)) {
           req.user = {
-            userId: 'system',
-            role: 'ITAdmin',
+            userId: "system",
+            role: "ITAdmin",
             email: emailLower,
             doctorId: undefined,
           };
           return next();
         }
       }
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     req.user = {
@@ -123,18 +137,76 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
     next();
   } catch {
-    res.status(401).json({ error: 'Unauthorized' });
+    res.status(401).json({ error: "Unauthorized" });
   }
 }
 
-export function   requireRole(...roles: RoleName[]) {
+export async function requirePatientAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  try {
+    const rawToken = parseBearerToken(req.get("authorization"));
+    if (!rawToken) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const payload = decodeToken(rawToken) as {
+      sub?: string;
+      email?: unknown;
+      patientId?: unknown;
+    };
+
+    if (
+      typeof payload.email !== "string" ||
+      typeof payload.patientId !== "string"
+    ) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const normalizedEmail = payload.email.toLowerCase();
+    const patientId = payload.patientId;
+
+    const account = await prisma.patientPortalAccount.findFirst({
+      where: { patientId, email: normalizedEmail, status: "active" },
+      select: { accountId: true, patientId: true, email: true, status: true },
+    });
+
+    if (!account) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: { patientId: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: "Patient not found" });
+    }
+
+    req.user = {
+      userId: (payload.sub as string) ?? account.accountId,
+      role: "Patient",
+      email: normalizedEmail,
+      patientId: account.patientId,
+    };
+
+    next();
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+}
+
+export function requireRole(...roles: RoleName[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ error: 'Unauthorized' });
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (user.role === 'ITAdmin') {
+    if (user.role === "ITAdmin") {
       return next();
     }
 
@@ -142,80 +214,95 @@ export function   requireRole(...roles: RoleName[]) {
       return next();
     }
 
-    return res.status(403).json({ error: 'Forbidden' });
+    return res.status(403).json({ error: "Forbidden" });
   };
 }
 
 const router = Router();
 
-router.post('/password/change', requireAuth, async (req: AuthRequest, res: Response) => {
-  const body = req.body as
-    | {
-        currentPassword?: unknown;
-        newPassword?: unknown;
-      }
-    | undefined;
+router.post(
+  "/password/change",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const body = req.body as
+      | {
+          currentPassword?: unknown;
+          newPassword?: unknown;
+        }
+      | undefined;
 
-  if (typeof body?.currentPassword !== 'string' || typeof body?.newPassword !== 'string') {
-    return res.status(400).json({ error: 'Current password and new password are required' });
+    if (
+      typeof body?.currentPassword !== "string" ||
+      typeof body?.newPassword !== "string"
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Current password and new password are required" });
+    }
+
+    const currentPassword = body.currentPassword.trim();
+    const newPassword = body.newPassword.trim();
+
+    if (newPassword.length < PASSWORD_MIN_LENGTH) {
+      return res
+        .status(400)
+        .json({
+          error: `New password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
+        });
+    }
+
+    if (currentPassword === newPassword) {
+      return res
+        .status(400)
+        .json({
+          error: "New password must be different from the current password",
+        });
+    }
+
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { userId },
+      select: { passwordHash: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    let passwordValid = false;
+    try {
+      passwordValid = await bcrypt.compare(currentPassword, user.passwordHash);
+    } catch {
+      passwordValid = false;
+    }
+
+    if (!passwordValid) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    const now = new Date();
+
+    await prisma.$transaction([
+      prisma.user.update({ where: { userId }, data: { passwordHash } }),
+      prisma.passwordResetToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: now },
+      }),
+    ]);
+
+    res.json({ message: "Password updated" });
   }
+);
 
-  const currentPassword = body.currentPassword.trim();
-  const newPassword = body.newPassword.trim();
-
-  if (newPassword.length < PASSWORD_MIN_LENGTH) {
-    return res
-      .status(400)
-      .json({ error: `New password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
-  }
-
-  if (currentPassword === newPassword) {
-    return res.status(400).json({ error: 'New password must be different from the current password' });
-  }
-
-  const userId = req.user?.userId;
-  if (!userId) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { userId },
-    select: { passwordHash: true },
-  });
-
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  let passwordValid = false;
-  try {
-    passwordValid = await bcrypt.compare(currentPassword, user.passwordHash);
-  } catch {
-    passwordValid = false;
-  }
-
-  if (!passwordValid) {
-    return res.status(400).json({ error: 'Current password is incorrect' });
-  }
-
-  const passwordHash = await bcrypt.hash(newPassword, 10);
-  const now = new Date();
-
-  await prisma.$transaction([
-    prisma.user.update({ where: { userId }, data: { passwordHash } }),
-    prisma.passwordResetToken.updateMany({
-      where: { userId, usedAt: null },
-      data: { usedAt: now },
-    }),
-  ]);
-
-  res.json({ message: 'Password updated' });
-});
-
-router.post('/password/forgot', async (req: Request, res: Response) => {
+router.post("/password/forgot", async (req: Request, res: Response) => {
   const body = req.body as { email?: unknown } | undefined;
-  if (typeof body?.email !== 'string' || body.email.trim().length === 0) {
-    return res.status(400).json({ error: 'A valid email address is required' });
+  if (typeof body?.email !== "string" || body.email.trim().length === 0) {
+    return res.status(400).json({ error: "A valid email address is required" });
   }
 
   const email = body.email.trim();
@@ -223,19 +310,22 @@ router.post('/password/forgot', async (req: Request, res: Response) => {
 
   const user = await prisma.user.findFirst({
     where: {
-      email: { equals: normalizedEmail, mode: 'insensitive' },
-      status: 'active',
+      email: { equals: normalizedEmail, mode: "insensitive" },
+      status: "active",
     },
     select: { userId: true },
   });
 
   const response: { message: string; resetToken?: string } = {
-    message: 'If an account exists for that email, a reset link has been sent.',
+    message: "If an account exists for that email, a reset link has been sent.",
   };
 
   if (user) {
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(rawToken)
+      .digest("hex");
     const expiresAt = new Date(Date.now() + 1000 * 60 * 30);
     const now = new Date();
 
@@ -253,7 +343,7 @@ router.post('/password/forgot', async (req: Request, res: Response) => {
       }),
     ]);
 
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       response.resetToken = rawToken;
     }
   }
@@ -261,26 +351,32 @@ router.post('/password/forgot', async (req: Request, res: Response) => {
   res.json(response);
 });
 
-router.post('/password/reset', async (req: Request, res: Response) => {
+router.post("/password/reset", async (req: Request, res: Response) => {
   const body = req.body as { token?: unknown; password?: unknown } | undefined;
-  if (typeof body?.token !== 'string' || typeof body?.password !== 'string') {
-    return res.status(400).json({ error: 'Token and new password are required' });
+  if (typeof body?.token !== "string" || typeof body?.password !== "string") {
+    return res
+      .status(400)
+      .json({ error: "Token and new password are required" });
   }
 
   const token = body.token.trim();
   const password = body.password.trim();
 
   if (!token) {
-    return res.status(400).json({ error: 'Token and new password are required' });
+    return res
+      .status(400)
+      .json({ error: "Token and new password are required" });
   }
 
   if (password.length < PASSWORD_MIN_LENGTH) {
     return res
       .status(400)
-      .json({ error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long` });
+      .json({
+        error: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`,
+      });
   }
 
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
 
   const resetToken = await prisma.passwordResetToken.findFirst({
     where: {
@@ -291,14 +387,17 @@ router.post('/password/reset', async (req: Request, res: Response) => {
   });
 
   if (!resetToken) {
-    return res.status(400).json({ error: 'Invalid or expired reset token' });
+    return res.status(400).json({ error: "Invalid or expired reset token" });
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
   const now = new Date();
 
   await prisma.$transaction([
-    prisma.user.update({ where: { userId: resetToken.userId }, data: { passwordHash } }),
+    prisma.user.update({
+      where: { userId: resetToken.userId },
+      data: { passwordHash },
+    }),
     prisma.passwordResetToken.update({
       where: { tokenId: resetToken.tokenId },
       data: { usedAt: now },
@@ -313,31 +412,31 @@ router.post('/password/reset', async (req: Request, res: Response) => {
     }),
   ]);
 
-  res.json({ message: 'Password updated' });
+  res.json({ message: "Password updated" });
 });
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post("/login", async (req: Request, res: Response) => {
   const body = req.body as { email?: unknown; password?: unknown } | undefined;
   const email = body?.email;
   const password = body?.password;
 
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Email and password are required' });
+  if (typeof email !== "string" || typeof password !== "string") {
+    return res.status(400).json({ error: "Email and password are required" });
   }
 
   const normalizedEmail = email.trim();
   if (!normalizedEmail || password.trim().length === 0) {
-    return res.status(400).json({ error: 'Email and password are required' });
+    return res.status(400).json({ error: "Email and password are required" });
   }
 
   const user = await prisma.user.findFirst({
     where: {
-      email: { equals: normalizedEmail, mode: 'insensitive' },
+      email: { equals: normalizedEmail, mode: "insensitive" },
     },
   });
 
-  if (!user || user.status !== 'active') {
-    return res.status(401).json({ error: 'Invalid email or password' });
+  if (!user || user.status !== "active") {
+    return res.status(401).json({ error: "Invalid email or password" });
   }
 
   let passwordValid = false;
@@ -348,20 +447,20 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   if (!passwordValid) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+    return res.status(401).json({ error: "Invalid email or password" });
   }
 
   const header = Buffer.from(
-    JSON.stringify({ alg: 'none', typ: 'JWT' }),
-  ).toString('base64url');
+    JSON.stringify({ alg: "none", typ: "JWT" })
+  ).toString("base64url");
   const payload = Buffer.from(
     JSON.stringify({
       sub: user.userId,
       role: user.role,
       email: user.email,
       doctorId: user.doctorId ?? null,
-    }),
-  ).toString('base64url');
+    })
+  ).toString("base64url");
   const accessToken = `${header}.${payload}.`;
   res.json({
     accessToken,
@@ -375,4 +474,3 @@ router.post('/login', async (req: Request, res: Response) => {
 });
 
 export default router;
-
