@@ -1,6 +1,7 @@
 import { Router, type Response, type NextFunction } from "express";
 import { requirePatientAuth } from "../modules/auth/index.js";
 import { PrismaClient, Prisma } from "@prisma/client";
+import { z } from "zod";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -59,6 +60,7 @@ router.post(
       // Get comprehensive medical data
       const [
         medications,
+        medicationsGiven,
         visits,
         labResults,
         immunizations,
@@ -79,6 +81,14 @@ router.post(
                 },
               },
             },
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        }),
+        prisma.medication.findMany({
+          where: { visit: { patientId } },
+          include: {
+            visit: { include: { doctor: true } },
           },
           orderBy: { createdAt: "desc" },
           take: 20,
@@ -176,16 +186,21 @@ router.post(
           : "Not recorded",
         latestRespiratoryRate: "Not recorded",
 
-        // 💊 3. Medication History (detailed, human-readable, no counts)
-        medications: medications.map((m: any) => {
-          const medName = m.drugName || "Medication";
-          const dose = m.dosage ? ` ${m.dosage}` : "";
-          const doctor = m.prescription?.visit?.doctor?.name
-            ? ` (prescribed by Dr. ${m.prescription.visit.doctor.name})`
-            : "";
-          return `${medName}${dose}${doctor}`;
-        }),
+        // 💊 3. Medication Order History (from MedicationOrder) - human-readable strings
 
+        // Structured medication order entries (MedicationOrder): which medicine was ordered, by which doctor and when
+    
+        // Structured medications actually given on visits (Medication): which medicine and dosage recorded by which doctor
+        medicationsGivenDetailed: medicationsGiven.map((m: any) => ({
+          drug: [m.drugName, m.dosage].filter(Boolean).join(' ').trim() || 'Medication',
+          givenBy: m.visit?.doctor?.name || null,
+          givenOn: m.visit?.visitDate
+            ? new Date(m.visit.visitDate).toISOString().split('T')[0]
+            : null,
+          visitId: m.visitId || null,
+          instructions: m.instructions || null,
+        })),
+     
         // 💉 4. Allergies & Adverse Reactions (details only)
         allergies: patient.drugAllergies
           ? String(patient.drugAllergies)
@@ -558,9 +573,105 @@ router.post(
   }
 );
 
+const availableDoctorsSchema = z.object({
+  date: z.string().trim().min(1),          // '2025-11-01'
+  startTime: z.string().trim().optional(), // '09:00' or '9:00am'
+  endTime: z.string().trim().optional(),
+  department: z.string().trim().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+
+router.post('/available-doctors', async (req: any, res: Response) => {
+  const parsed = availableDoctorsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.flatten() });
+  }
+  const { date, startTime, endTime, department, limit = 20 } = parsed.data;
+
+  let day: Date;
+  try {
+    day = new Date(date);
+    if (Number.isNaN(day.getTime())) throw new Error('Invalid date');
+  } catch {
+    return res.status(400).json({ error: 'Invalid date' });
+  }
+
+  // Time window in minutes (optional)
+  let windowStart: number | null = null;
+  let windowEnd: number | null = null;
+  try {
+    if (startTime) {
+      windowStart = parseTimeToMinutes(startTime);
+      windowEnd = endTime ? parseTimeToMinutes(endTime) : windowStart + 30;
+    }
+  } catch (e: any) {
+    return res.status(400).json({ error: e.message || 'Invalid time format' });
+  }
+
+  // Compute dayOfWeek (0=Sunday .. 6=Saturday) per JS, align with your data
+  const dayOfWeek = day.getDay();
+
+  // Fetch candidate doctors (+ availability + blackouts)
+  const doctors = await prisma.doctor.findMany({
+    where: department ? { department: { contains: department, mode: 'insensitive' } } : {},
+    select: {
+      doctorId: true,
+      name: true,
+      department: true,
+      availabilities: {
+        where: { dayOfWeek },
+        select: { startMin: true, endMin: true },
+        orderBy: { startMin: 'asc' },
+      },
+      blackouts: {
+        where: {
+          // Any blackout overlapping the date
+          OR: [
+            { startAt: { lte: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) } },
+            { endAt:   { gte: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0) } },
+          ],
+        },
+        select: { startAt: true, endAt: true, reason: true },
+      },
+    },
+    orderBy: [{ name: 'asc' }],
+    take: Math.min(limit, 100),
+  });
+
+  // Check availability overlap
+  const isTimeWindowAvailable = (slots: { startMin: number; endMin: number }[]) => {
+    if (windowStart == null || windowEnd == null) {
+      return slots.length > 0; // available sometime that day
+    }
+    return slots.some((s) => !(s.endMin <= windowStart! || s.startMin >= windowEnd!));
+  };
+
+  const isBlackoutBlocking = (blackouts: { startAt: Date; endAt: Date }[]) => {
+    if (windowStart == null || windowEnd == null) return false;
+    const start = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(windowStart / 60), windowStart % 60);
+    const end   = new Date(day.getFullYear(), day.getMonth(), day.getDate(), Math.floor(windowEnd / 60), windowEnd % 60);
+    return blackouts.some((b) => !(b.endAt <= start || b.startAt >= end));
+  };
+
+  const available = doctors
+    .filter((d) => d.availabilities.length > 0 && !isBlackoutBlocking(d.blackouts) && isTimeWindowAvailable(d.availabilities))
+    .map((d) => ({
+      doctorId: d.doctorId,
+      name: d.name,
+      department: d.department,
+      dayOfWeek,
+      slots: d.availabilities.map((s) => ({
+        startMin: s.startMin,
+        endMin: s.endMin,
+      })),
+    }));
+
+  res.json({ date, startTime: startTime ?? null, endTime: endTime ?? null, department: department ?? null, count: available.length, data: available });
+});
 // 3. Medication Order Agent API
 router.post(
   "/medication-orders",
+  requirePatientAuth,
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;

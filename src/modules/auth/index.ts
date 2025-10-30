@@ -140,6 +140,32 @@ export async function requireAuth(
     res.status(401).json({ error: "Unauthorized" });
   }
 }
+// Add near other imports
+import { z } from 'zod';
+
+// Helper to convert "HH:MM" or "h:MMam/pm" → minutes
+function parseTimeToMinutes(timeStr: string): number {
+  const clean = timeStr.trim().toLowerCase();
+  const m = clean.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/);
+  if (!m) throw new Error(`Invalid time: ${timeStr}`);
+  let h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  const ap = m[3];
+  if (min >= 60) throw new Error(`Invalid minutes: ${min}`);
+  if (ap === 'pm' && h !== 12) h += 12;
+  if (ap === 'am' && h === 12) h = 0;
+  if (h >= 24) throw new Error(`Invalid hour: ${h}`);
+  return h * 60 + min;
+}
+
+const availableDoctorsSchema = z.object({
+  date: z.string().trim().min(1),          // '2025-11-01'
+  startTime: z.string().trim().optional(), // '09:00' or '9:00am'
+  endTime: z.string().trim().optional(),
+  department: z.string().trim().optional(),
+  limit: z.number().int().positive().max(100).optional(),
+});
+
 
 export async function requirePatientAuth(
   req: AuthRequest,
@@ -148,6 +174,7 @@ export async function requirePatientAuth(
 ) {
   try {
     const rawToken = parseBearerToken(req.get("authorization"));
+    console.log("rawToken", rawToken);
     if (!rawToken) {
       return res.status(401).json({ error: "Unauthorized" });
     }
