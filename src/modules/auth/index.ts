@@ -174,7 +174,6 @@ export async function requirePatientAuth(
 ) {
   try {
     const rawToken = parseBearerToken(req.get("authorization"));
-    console.log("rawToken", rawToken);
     if (!rawToken) {
       return res.status(401).json({ error: "Unauthorized" });
     }

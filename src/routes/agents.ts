@@ -574,26 +574,35 @@ router.post(
 );
 
 const availableDoctorsSchema = z.object({
-  date: z.string().trim().min(1),          // '2025-11-01'
+  date: z.string().trim().optional(),      // '2025-11-01' (optional; defaults to today)
   startTime: z.string().trim().optional(), // '09:00' or '9:00am'
   endTime: z.string().trim().optional(),
   department: z.string().trim().optional(),
+  search: z.string().trim().optional(),    // free-text search, e.g. "physician" or "duke"
   limit: z.number().int().positive().max(100).optional(),
 });
 
-router.post('/available-doctors', async (req: any, res: Response) => {
+router.post('/available-doctors',
+  requirePatientAuth,
+  async (req: any, res: Response, next: NextFunction) => {
   const parsed = availableDoctorsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
-  const { date, startTime, endTime, department, limit = 20 } = parsed.data;
+  const { date, startTime, endTime, department, search, limit = 20 } = parsed.data;
 
+  // Resolve date (default to today if not provided)
   let day: Date;
-  try {
-    day = new Date(date);
-    if (Number.isNaN(day.getTime())) throw new Error('Invalid date');
-  } catch {
-    return res.status(400).json({ error: 'Invalid date' });
+  if (date) {
+    try {
+      day = new Date(date);
+      if (Number.isNaN(day.getTime())) throw new Error('Invalid date');
+    } catch {
+      return res.status(400).json({ error: 'Invalid date' });
+    }
+  } else {
+    const now = new Date();
+    day = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   }
 
   // Time window in minutes (optional)
@@ -611,9 +620,34 @@ router.post('/available-doctors', async (req: any, res: Response) => {
   // Compute dayOfWeek (0=Sunday .. 6=Saturday) per JS, align with your data
   const dayOfWeek = day.getDay();
 
-  // Fetch candidate doctors (+ availability + blackouts)
+  // Build where clause: department filter and/or free-text search across name/department
+  const doctorWhere: any = {};
+  if (department) {
+    doctorWhere.department = { contains: department, mode: 'insensitive' };
+  }
+  if (search) {
+    doctorWhere.OR = [
+      { name: { contains: search, mode: 'insensitive' } },
+      { department: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  // If no time window/date provided, return full doctor list mapping (name + department) with optional search filters
+  if (!startTime && !endTime && !date) {
+    const allDoctors = await prisma.doctor.findMany({
+      where: doctorWhere,
+      select: { name: true, department: true },
+      orderBy: { name: 'asc' },
+      take: Math.min(limit, 100),
+    });
+
+    const mapping = allDoctors.map((d) => ({ name: d.name, department: d.department }));
+    return res.json({ count: mapping.length, data: mapping });
+  }
+
+  // Fetch candidate doctors (+ availability + blackouts) for time/date-specific queries
   const doctors = await prisma.doctor.findMany({
-    where: department ? { department: { contains: department, mode: 'insensitive' } } : {},
+    where: doctorWhere,
     select: {
       doctorId: true,
       name: true,
@@ -625,7 +659,6 @@ router.post('/available-doctors', async (req: any, res: Response) => {
       },
       blackouts: {
         where: {
-          // Any blackout overlapping the date
           OR: [
             { startAt: { lte: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59, 59) } },
             { endAt:   { gte: new Date(day.getFullYear(), day.getMonth(), day.getDate(), 0, 0, 0) } },
@@ -659,6 +692,7 @@ router.post('/available-doctors', async (req: any, res: Response) => {
       doctorId: d.doctorId,
       name: d.name,
       department: d.department,
+      doctorWithDepartment: `Dr. ${d.name}${d.department ? ", " + d.department : ''}`,
       dayOfWeek,
       slots: d.availabilities.map((s) => ({
         startMin: s.startMin,
@@ -666,7 +700,17 @@ router.post('/available-doctors', async (req: any, res: Response) => {
       })),
     }));
 
-  res.json({ date, startTime: startTime ?? null, endTime: endTime ?? null, department: department ?? null, count: available.length, data: available });
+  // Prefer body flags: { doctorname: true } or { department: true }
+  // Fallback to doctor names if neither is set
+  const chooseDepartment = Boolean(req.body && req.body.department);
+  const chooseDoctorName = Boolean(req.body && req.body.doctorname);
+  const chosenField = chooseDepartment ? 'department' : 'doctorName';
+
+  // If both are provided, doctorname wins only when department is falsey
+  const minimal = available
+    .map((d) => ((chosenField === 'department' && !chooseDoctorName) ? d.department : d.name))
+    .filter((v) => v != null);
+  res.json({ count: minimal.length, data: minimal });
 });
 // 3. Medication Order Agent API
 router.post(
@@ -803,6 +847,77 @@ router.post(
             ? error.message
             : "Failed to fetch medication orders",
         msg: "Failed",
+      });
+    }
+  }
+);
+
+// Create a new medication order (minimal fields)
+router.post(
+  "/medication-orders/create",
+  requirePatientAuth,
+  async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const schema = z.object({
+        patientId: z.string().uuid(),
+        drugName: z.string().trim().min(1),
+        dosage: z.string().trim().optional(),
+        instructions: z.string().trim().optional(),
+        quantity: z.number().int().positive().optional(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: parsed.error.flatten() });
+      }
+
+      const { patientId, drugName, dosage, instructions, quantity } = parsed.data;
+
+      // Ensure patient exists
+      const patient = await prisma.patient.findUnique({
+        where: { patientId },
+        select: { patientId: true, name: true },
+      });
+      if (!patient) {
+        return res.status(404).json({ error: "Patient not found", msg: "Failed" });
+      }
+
+      const created = await prisma.medicationOrder.create({
+        data: {
+          patientId,
+          drugName,
+          dosage: dosage ?? null,
+          instructions: instructions ?? null,
+          quantity: typeof quantity === 'number' ? quantity : null,
+          // status defaults to PENDING per schema
+        },
+        select: {
+          orderId: true,
+          patientId: true,
+          drugName: true,
+          dosage: true,
+          instructions: true,
+          quantity: true,
+          status: true,
+          createdAt: true,
+        },
+      });
+
+      return res.status(201).json({
+        orderId: created.orderId,
+        patientId: created.patientId,
+        drug: [created.drugName, created.dosage].filter(Boolean).join(' ').trim() || created.drugName,
+        instructions: created.instructions,
+        quantity: created.quantity,
+        status: created.status,
+        createdAt: created.createdAt,
+        message: "Medication order created successfully",
+        statusText: "Success",
+      });
+    } catch (error) {
+      console.error("Create Medication Order Error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to create medication order',
+        msg: 'Failed',
       });
     }
   }
