@@ -103,6 +103,11 @@ router.post(
               patientId
             }
           },
+          include: {
+            visit: {
+              include: { doctor: true }
+            }
+          },
           orderBy: { createdAt: 'desc' },
           take: 10
         }),
@@ -143,13 +148,13 @@ router.post(
         latestSpO2: latestVitals?.spo2 ? `${latestVitals.spo2}%` : 'Not recorded',
         latestRespiratoryRate: 'Not recorded',
 
-        // 💊 3. Medication History
-        currentMedications: medications.filter((m: any) => m.status === 'ACTIVE').slice(0, 5).map((m: any) => 
-          `Medication order - ${m.status}`
-        ),
-        totalMedications: medications.length,
-        activeMedications: medications.filter((m: any) => m.status === 'ACTIVE').length,
-        pastMedications: medications.filter((m: any) => m.status !== 'ACTIVE').length,
+        // 💊 3. Medication History (detailed, human-readable, no counts)
+        medications: medications.map((m: any) => {
+          const medName = m.drugName || 'Medication';
+          const dose = m.dosage ? ` ${m.dosage}` : '';
+          const doctor = m.prescription?.visit?.doctor?.name ? ` (prescribed by Dr. ${m.prescription.visit.doctor.name})` : '';
+          return `${medName}${dose}${doctor}`;
+        }),
 
         // 💉 4. Allergies & Adverse Reactions
         drugAllergies: patient.drugAllergies ? [patient.drugAllergies] : [],
@@ -181,9 +186,13 @@ router.post(
           `${imm.vaccineName} - ${imm.dateAdministered.toISOString().split('T')[0]}`
         ),
 
-        // 🧾 8. Current Medical Conditions & Treatment Plan
-        currentDiagnoses: diagnoses.filter((d: any) => d.status === 'ACTIVE').map((d: any) => d.description),
-        totalDiagnoses: diagnoses.length,
+        // 🧾 8. Current Medical Conditions & Treatment Plan (diagnoses detail, no counts)
+        diagnoses: diagnoses.map((d: any) => {
+          const desc = d.description || d.diagnosis || 'Diagnosis';
+          const date = d.createdAt ? new Date(d.createdAt).toISOString().split('T')[0] : undefined;
+          const doctor = d.visit?.doctor?.name ? ` (by Dr. ${d.visit.doctor.name}` + (date ? ` on ${date}` : '') + ')' : (date ? ` (${date})` : '');
+          return `${desc}${doctor || ''}`;
+        }),
         activeProblems: problems.filter((p: any) => p.status === 'ACTIVE').length,
         resolvedProblems: problems.filter((p: any) => p.status === 'RESOLVED').length,
 
