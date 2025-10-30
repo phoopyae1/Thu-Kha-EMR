@@ -1,4 +1,5 @@
 import axios from "axios";
+import { fetchLatestIntegrationEmbed } from "./localMongoService.js";
 
 const ATENXION_API_URL =
   process.env.ATENXION_API_URL || "https://api-qa.atenxion.ai";
@@ -15,8 +16,19 @@ export async function recordAtenxionTransaction(
     userId: patientId.trim(),
   };
 
+  let atenxionToken = "";
+  try {
+    const latest = await fetchLatestIntegrationEmbed();
+    const embeddedToken = (latest as any)?.contextKey as string | undefined;
+    if (embeddedToken && embeddedToken.trim().length > 0) {
+      atenxionToken = embeddedToken.trim();
+    }
+  } catch {
+    atenxionToken = "asdf";
+  }
+
   const headers = {
-    Authorization: `Bearer ${token || ATENXION_API_TOKEN}`,
+    Authorization: `Bearer ${atenxionToken || ATENXION_API_TOKEN}`,
     "Content-Type": "application/json",
   };
 
@@ -25,8 +37,8 @@ export async function recordAtenxionTransaction(
       url,
       body,
       token:
-        token || ATENXION_API_TOKEN
-          ? `${(token || ATENXION_API_TOKEN).substring(0, 16)}...`
+        atenxionToken || ATENXION_API_TOKEN
+          ? `${(atenxionToken || ATENXION_API_TOKEN).substring(0, 16)}...`
           : "none",
     });
 
