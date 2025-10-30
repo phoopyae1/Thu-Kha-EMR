@@ -29,6 +29,7 @@ import PatientPortalLanding from './pages/PatientPortalLanding';
 import Integration from './pages/Integration';
 import AppointmentRedirect from './components/AppointmentRedirect';
 import PatientRedirect from './components/PatientRedirect';
+import LabOrderRedirect from './components/LabOrderRedirect';
 import './styles/App.css';
 
 function App() {
@@ -41,6 +42,8 @@ function App() {
       
       {/* Redirect route for wrong appointment URL format */}
       <Route path="/appointments/:id" element={<AppointmentRedirect />} />
+      {/* Redirect route for direct lab order link */}
+      <Route path="/lab-orders/:labOrderId" element={<LabOrderRedirect />} />
       
       {/* Admin Login */}
       <Route path="/admin/login" element={<Login />} />

@@ -156,11 +156,13 @@ router.post(
           return `${medName}${dose}${doctor}`;
         }),
 
-        // 💉 4. Allergies & Adverse Reactions
-        drugAllergies: patient.drugAllergies ? [patient.drugAllergies] : [],
-        totalAllergies: patient.drugAllergies ? 1 : 0,
-        hasAllergies: !!patient.drugAllergies,
-        patientAllergies: patient.drugAllergies || 'No known allergies',
+        // 💉 4. Allergies & Adverse Reactions (details only)
+        allergies: patient.drugAllergies
+          ? String(patient.drugAllergies)
+              .split(/[,;\n]+/)
+              .map((entry: string) => entry.trim())
+              .filter(Boolean)
+          : [],
 
         // 🧬 5. Past Medical History (PMH)
         chronicConditions: problems.filter((p: any) => p.status === 'ACTIVE').map((p: any) => p.description),
