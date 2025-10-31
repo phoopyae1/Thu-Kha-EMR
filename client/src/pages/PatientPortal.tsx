@@ -56,6 +56,7 @@ interface RegisterForm {
   password: string;
   confirmPassword: string;
   dob: string;
+  gender: 'M' | 'F' | '';
   contact: string;
   insurance: string;
   drugAllergies: string;
@@ -224,7 +225,7 @@ function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, 
                 </div>
               )}
               <div>
-                <p className="text-lg font-semibold text-slate-900">{displayName}</p>
+                {displayName && <p className="text-lg font-semibold text-slate-900">{displayName}</p>}
                 <p className="text-xs uppercase tracking-wide text-slate-500">{t('Payment receipt')}</p>
               </div>
             </div>
@@ -360,6 +361,7 @@ const defaultRegisterForm: RegisterForm = {
   password: '',
   confirmPassword: '',
   dob: '',
+  gender: '',
   contact: '',
   insurance: '',
   drugAllergies: '',
@@ -920,7 +922,7 @@ export default function PatientPortal() {
       });
   }, [showToast, t]);
 
-  const displayName = useMemo(() => appName || t('EMR System'), [appName, t]);
+  const displayName = useMemo(() => appName || '', [appName]);
 
   const handleLoginChange = (event: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
@@ -987,7 +989,7 @@ export default function PatientPortal() {
     }
   };
 
-  const handleRegisterChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleRegisterChange = (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = event.target;
     setRegisterForm((previous) => ({ ...previous, [name]: value }));
   };
@@ -1001,6 +1003,11 @@ export default function PatientPortal() {
       return;
     }
 
+    if (!registerForm.gender) {
+      setRegisterError(t('Please select a gender'));
+      return;
+    }
+
     setRegisterStatus('loading');
 
     try {
@@ -1009,6 +1016,7 @@ export default function PatientPortal() {
         email: registerForm.email.trim(),
         password: registerForm.password,
         dob: registerForm.dob,
+        gender: registerForm.gender,
         contact: registerForm.contact.trim(),
         ...(registerForm.insurance.trim()
           ? { insurance: registerForm.insurance.trim() }
@@ -1030,7 +1038,17 @@ export default function PatientPortal() {
 
       // Reset form and switch to login
       setTimeout(() => {
-        setRegisterForm(defaultRegisterForm);
+        setRegisterForm({
+          name: '',
+          email: '',
+          password: '',
+          confirmPassword: '',
+          dob: '',
+          gender: '',
+          contact: '',
+          insurance: '',
+          drugAllergies: '',
+        });
         setShowRegister(false);
         setRegisterStatus('idle');
       }, 2000);
@@ -1451,8 +1469,17 @@ export default function PatientPortal() {
               </div>
             )}
             <div>
-              <p className="text-xl font-semibold text-blue-700">{displayName}</p>
-              <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient portal')}</p>
+              {displayName ? (
+                <>
+                  <p className="text-xl font-semibold text-blue-700">{displayName}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient portal')}</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xl font-semibold text-blue-700">Patient</p>
+                  <p className="text-xl font-semibold text-blue-700">portal</p>
+                </>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -1732,6 +1759,24 @@ export default function PatientPortal() {
                             />
                           </div>
                           <div>
+                      <label htmlFor="register-gender" className="text-sm font-medium text-slate-700">
+                        {t('Gender')}
+                            </label>
+                            <select
+                        id="register-gender"
+                        name="gender"
+                        value={registerForm.gender || ''}
+                        onChange={handleRegisterChange}
+                              required
+                              className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            >
+                              <option value="" disabled>{t('Select gender')}</option>
+                              <option value="M" style={{ color: '#2563eb' }}>{t('Male')}</option>
+                              <option value="F" style={{ color: '#ec4899' }}>{t('Female')}</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div>
                       <label htmlFor="register-contact" className="text-sm font-medium text-slate-700">
                         {t('Contact number')}
                             </label>
@@ -1744,7 +1789,6 @@ export default function PatientPortal() {
                               required
                               className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                             />
-                          </div>
                         </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                         <div>

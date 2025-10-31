@@ -28,7 +28,7 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [appName, setAppName] = useState<string>('EMR System');
+  const [appName, setAppName] = useState<string>('');
   const [logo, setLogo] = useState<string | null>(null);
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -40,7 +40,9 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (stored) {
       try {
         const parsed = JSON.parse(stored);
-        if (parsed.appName) setAppName(parsed.appName);
+        // Convert "EMR System" to empty string to remove it from display
+        const appNameValue = parsed.appName === 'EMR System' ? '' : parsed.appName;
+        if (appNameValue) setAppName(appNameValue);
         if (parsed.logo) setLogo(parsed.logo);
         if (typeof parsed.widgetEnabled === 'boolean') setWidgetEnabled(parsed.widgetEnabled);
       } catch {
@@ -102,12 +104,16 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.title = appName || 'EMR System';
+      document.title = appName || 'Patient Portal';
     }
   }, [appName]);
 
   const updateSettings = (data: { appName?: string; logo?: string | null }) => {
-    if (data.appName !== undefined) setAppName(data.appName);
+    if (data.appName !== undefined) {
+      // Convert "EMR System" to empty string to remove it from display
+      const appNameValue = data.appName === 'EMR System' ? '' : data.appName;
+      setAppName(appNameValue);
+    }
     if (data.logo !== undefined) setLogo(data.logo);
   };
 

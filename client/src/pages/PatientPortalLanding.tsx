@@ -33,7 +33,7 @@ function formatMinutes(minutes: number) {
 export default function PatientPortalLanding() {
   const { appName, logo } = useSettings();
   const { t } = useTranslation();
-  const displayName = useMemo(() => appName || t('EMR System'), [appName, t]);
+  const displayName = useMemo(() => appName || '', [appName]);
 
   const featureCards = [
     {

@@ -244,7 +244,7 @@ export default function Settings() {
 
   function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    updateSettings({ appName: name.trim() || 'EMR System' });
+    updateSettings({ appName: name.trim() || '' });
   }
 
   async function handleAddUser(event: FormEvent<HTMLFormElement>) {

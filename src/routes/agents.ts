@@ -717,8 +717,10 @@ router.post(
   "/medication-orders",
   requirePatientAuth,
   async (req: any, res: Response, next: NextFunction) => {
+    console.log("[medication-orders] Request received");
     try {
       const { patientId } = req.body;
+      console.log("[medication-orders] PatientId:", patientId);
 
       if (!patientId) {
         return res.status(400).json({
@@ -727,127 +729,159 @@ router.post(
         });
       }
 
-      const orders = await prisma.medicationOrder.findMany({
-        where: { patientId },
-        include: {
-          prescription: {
-            include: {
-              visit: {
-                include: {
-                  doctor: true,
+      let orders;
+      try {
+        orders = await prisma.medicationOrder.findMany({
+          where: { patientId },
+          include: {
+            prescription: {
+              include: {
+                items: {
+                  include: {
+                    drug: true,
+                  },
+                },
+                visit: {
+                  include: {
+                    doctor: true,
+                  },
                 },
               },
             },
+            approvedBy: true,
+            updatedBy: true,
           },
-          approvedBy: true,
-          updatedBy: true,
-        },
-        orderBy: { createdAt: "desc" },
-      });
-      console.log("Medication Order Result");
-      console.log(orders);
+          orderBy: { createdAt: "desc" },
+        });
+        console.log("Medication Order Result - Found", orders.length, "orders");
+      } catch (queryError) {
+        console.error("Prisma query error:", queryError);
+        throw new Error(`Database query failed: ${queryError instanceof Error ? queryError.message : String(queryError)}`);
+      }
 
-      // Get all ordered medicines summary
-      const orderedMedicines = orders
-        .filter((o: any) => o.prescription?.medication)
-        .map((o: any) => ({
-          name: o.prescription.medication.name,
-          dosage: o.prescription.dosage,
-          frequency: o.prescription.frequency,
-          status: o.status,
-        }));
-
-      // Flatten all medication orders to top level
-      const result: any = {
-        // Summary Counts
-        totalOrders: orders.length,
-        pendingOrders: orders.filter((o: any) => o.status === "PENDING").length,
-        approvedOrders: orders.filter((o: any) => o.status === "APPROVED")
-          .length,
-        rejectedOrders: orders.filter((o: any) => o.status === "REJECTED")
-          .length,
-
-        // Ordered Medicines Summary
-        totalOrderedMedicines: orderedMedicines.length,
-        orderedMedicinesList: orderedMedicines.map(
-          (med) =>
-            `${med.name} ${med.dosage} - ${med.frequency} (${med.status})`
-        ),
-        uniqueMedicines: [...new Set(orderedMedicines.map((med) => med.name))],
-
-        status: "Success",
+      // Helper function to map status to readable text
+      const getStatusText = (status: string): string => {
+        const statusMap: Record<string, string> = {
+          PENDING: "Pending",
+          APPROVED: "Approved",
+          SHIPPING: "Shipping",
+          ON_THE_WAY: "On the way",
+          SHIPPED: "Shipped",
+          DELIVERED: "Delivered",
+          CANCELLED: "Cancelled",
+          REJECTED: "Rejected",
+        };
+        return statusMap[status] || status;
       };
 
-      // Add medication orders as flat fields
-      orders.forEach((order: any, index) => {
-        const prefix = `medicationOrder${index + 1}`;
-        result[`${prefix}Id`] = order.orderId;
-        result[`${prefix}Status`] = order.status;
-        result[`${prefix}CreatedDate`] = order.createdAt
-          .toISOString()
-          .split("T")[0];
-        result[`${prefix}CreatedTime`] = order.createdAt
-          .toISOString()
-          .split("T")[1]
-          .split(".")[0];
-        result[`${prefix}Notes`] = order.notes || "No notes";
-        result[`${prefix}ApprovedBy`] =
-          order.approvedBy?.name || "Not approved";
-        result[`${prefix}ApprovedDate`] = order.approvedAt
-          ? order.approvedAt.toISOString().split("T")[0]
-          : "Not approved";
-        result[`${prefix}UpdatedBy`] = order.updatedBy?.name || "Not updated";
-        result[`${prefix}UpdatedDate`] = order.updatedAt
-          ? order.updatedAt.toISOString().split("T")[0]
-          : "Not updated";
+      // Helper function to format medicine name with dosage
+      const formatMedicineName = (order: any): string => {
+        const drugName = order.drugName || order.prescription?.items?.[0]?.drug?.name || "Unknown medication";
+        const dosage = order.dosage || order.prescription?.items?.[0]?.dose || "";
+        
+        if (dosage && dosage.trim()) {
+          return `${drugName}-${dosage}`;
+        }
+        return drugName;
+      };
 
-        // Prescription details
-        if (order.prescription) {
-          result[`${prefix}PrescriptionId`] = order.prescription.prescriptionId;
-          result[`${prefix}MedicationName`] =
-            order.prescription.medication?.name || "Unknown medication";
-          result[`${prefix}MedicationGenericName`] =
-            order.prescription.medication?.genericName || "Not specified";
-          result[`${prefix}MedicationForm`] =
-            order.prescription.medication?.form || "Not specified";
-          result[`${prefix}MedicationStrength`] =
-            order.prescription.medication?.strength || "Not specified";
-          result[`${prefix}Dosage`] =
-            order.prescription.dosage || "Not specified";
-          result[`${prefix}Instructions`] =
-            order.prescription.instructions || "No instructions";
-          result[`${prefix}Frequency`] =
-            order.prescription.frequency || "Not specified";
-          result[`${prefix}Duration`] =
-            order.prescription.duration || "Not specified";
-          result[`${prefix}Quantity`] =
-            order.prescription.quantity || "Not specified";
-          result[`${prefix}Refills`] = order.prescription.refills || "0";
+      // Process orders into optimized format
+      const medicationOrders = orders.map((order: any) => {
+        const firstPrescriptionItem = order.prescription?.items?.[0];
+        const drug = firstPrescriptionItem?.drug;
+        const medicineName = formatMedicineName(order);
+        const status = getStatusText(order.status || "PENDING");
+
+        // Safe date handling
+        let createdAtDate = "Not specified";
+        try {
+          if (order.createdAt) {
+            const createdAt = order.createdAt instanceof Date ? order.createdAt : new Date(order.createdAt);
+            if (!isNaN(createdAt.getTime())) {
+              createdAtDate = createdAt.toISOString().split("T")[0];
+            }
+          }
+        } catch {
+          // Keep default
         }
 
-        // Visit details
-        if (order.prescription?.visit) {
-          result[`${prefix}VisitId`] = order.prescription.visit.visitId;
-          result[`${prefix}VisitDate`] = order.prescription.visit.visitDate
-            .toISOString()
-            .split("T")[0];
-          result[`${prefix}DoctorName`] =
-            order.prescription.visit.doctor?.name || "Unknown doctor";
-          result[`${prefix}Department`] =
-            order.prescription.visit.department || "Not specified";
+        let approvedDate = null;
+        try {
+          if (order.approvedAt) {
+            const approvedAt = order.approvedAt instanceof Date ? order.approvedAt : new Date(order.approvedAt);
+            if (!isNaN(approvedAt.getTime())) {
+              approvedDate = approvedAt.toISOString().split("T")[0];
+            }
+          }
+        } catch {
+          // Keep null
         }
+
+        return {
+          orderId: order.orderId,
+          medicine: medicineName,
+          status: status,
+          statusCode: order.status,
+          dosage: order.dosage || firstPrescriptionItem?.dose || null,
+          instructions: order.instructions || firstPrescriptionItem?.notes || null,
+          quantity: order.quantity || firstPrescriptionItem?.quantityPrescribed || null,
+          frequency: firstPrescriptionItem?.frequency || null,
+          duration: firstPrescriptionItem?.durationDays ? `${firstPrescriptionItem.durationDays} days` : null,
+          createdAt: createdAtDate,
+          approvedAt: approvedDate,
+          approvedBy: order.approvedBy?.name || null,
+          prescriptionId: order.prescription?.prescriptionId || null,
+          visitId: order.prescription?.visit?.visitId || null,
+          doctorName: order.prescription?.visit?.doctor?.name || null,
+          department: order.prescription?.visit?.department || null,
+        };
       });
 
+      // Summary counts
+      const statusCounts = {
+        total: orders.length,
+        pending: orders.filter((o: any) => o.status === "PENDING").length,
+        approved: orders.filter((o: any) => o.status === "APPROVED").length,
+        onTheWay: orders.filter((o: any) => o.status === "ON_THE_WAY").length,
+        shipping: orders.filter((o: any) => o.status === "SHIPPING").length,
+        shipped: orders.filter((o: any) => o.status === "SHIPPED").length,
+        delivered: orders.filter((o: any) => o.status === "DELIVERED").length,
+        cancelled: orders.filter((o: any) => o.status === "CANCELLED").length,
+      };
+
+      // Build optimized response
+      const result: any = {
+        status: "Success",
+        summary: statusCounts,
+        orders: medicationOrders,
+        // Additional summary for backward compatibility
+        totalOrders: orders.length,
+        medicineNames: [...new Set(medicationOrders.map((o: any) => o.medicine).filter(Boolean))],
+      };
+
+      console.log("[medication-orders] Sending response");
       res.json(result);
     } catch (error) {
-      console.error("Medication Order Agent Error:", error);
-      res.status(500).json({
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch medication orders",
-        msg: "Failed",
-      });
+      console.error("[medication-orders] Error caught:", error);
+      try {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        console.error("[medication-orders] Error details:", errorMessage, errorStack);
+        res.status(500).json({
+          error: errorMessage || "Failed to fetch medication orders",
+          msg: "Failed",
+          ...(errorStack && { details: errorStack }),
+        });
+      } catch (errorHandlerError) {
+        console.error("[medication-orders] Error handler failed:", errorHandlerError);
+        // Last resort - send minimal error
+        try {
+          res.status(500).json({ error: "Internal server error" });
+        } catch {
+          // If even this fails, just log it
+          console.error("[medication-orders] Complete failure to send error response");
+        }
+      }
     }
   }
 );

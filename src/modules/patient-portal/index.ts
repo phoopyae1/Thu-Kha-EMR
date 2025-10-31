@@ -54,6 +54,7 @@ const portalAccountRegisterSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
   dob: z.coerce.date(),
+  gender: z.enum(['M', 'F']),
   contact: z.string().trim().min(1),
   insurance: z.string().trim().min(1).optional(),
   drugAllergies: z.string().trim().min(1).optional(),
@@ -325,7 +326,7 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: parsed.error.flatten() });
   }
 
-  const { name, email, password, dob, contact, insurance, drugAllergies } = parsed.data;
+  const { name, email, password, dob, gender, contact, insurance, drugAllergies } = parsed.data;
   const normalizedEmail = email.toLowerCase();
 
   const existingAccount = await prisma.patientPortalAccount.findUnique({
@@ -364,6 +365,7 @@ router.post('/register', async (req: Request, res: Response) => {
       ? await tx.patient.update({
           where: { patientId: existingPatient.patientId },
         data: {
+          gender,
           contact,
           ...(typeof insurance === 'string' ? { insurance } : {}),
           ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),
@@ -381,7 +383,7 @@ router.post('/register', async (req: Request, res: Response) => {
           data: {
             name,
             dob,
-            gender: 'M',
+            gender,
             contact,
             ...(typeof insurance === 'string' ? { insurance } : {}),
             ...(typeof drugAllergies === 'string' ? { drugAllergies } : {}),

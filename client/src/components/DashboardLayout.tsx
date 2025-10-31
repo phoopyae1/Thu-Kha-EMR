@@ -100,7 +100,7 @@ export default function DashboardLayout({
     }
     return true;
   });
-  const displayName = appName || t('EMR System');
+  const displayName = appName || '';
   const showSettings = user?.role === 'ITAdmin';
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const userEmail = user?.email ?? t('Signed-in user');
