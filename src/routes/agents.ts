@@ -68,6 +68,7 @@ router.post(
         allergies,
         diagnoses,
         problems,
+        observations,
       ] = await Promise.all([
         prisma.medicationOrder.findMany({
           where: { patientId },
@@ -137,17 +138,58 @@ router.post(
           orderBy: { createdAt: "desc" },
           take: 10,
         }),
+        prisma.observation.findMany({
+          where: { patientId },
+          include: {
+            visit: {
+              include: { doctor: true },
+            },
+            doctor: true,
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20,
+        }),
       ]);
 
-      // Calculate BMI from latest vitals
+      // Calculate BMI from latest vitals or observations
       const latestVitals = vitals[0];
+      const latestObservation = observations[0];
+      
+      // Prefer observation BMI if available, otherwise calculate from vitals
       const bmi =
-        latestVitals && latestVitals.weightKg && latestVitals.heightCm
+        latestObservation?.bmi
+          ? latestObservation.bmi.toString()
+          : latestVitals && latestVitals.weightKg && latestVitals.heightCm
           ? (
               Number(latestVitals.weightKg) /
               Math.pow(Number(latestVitals.heightCm) / 100, 2)
             ).toFixed(1)
           : "Not available";
+
+      // Use observations for latest vitals if available (more recent)
+      const latestBloodPressure = latestObservation?.bpSystolic && latestObservation?.bpDiastolic
+        ? `${latestObservation.bpSystolic}/${latestObservation.bpDiastolic}`
+        : latestVitals?.systolic && latestVitals?.diastolic
+        ? `${latestVitals.systolic}/${latestVitals.diastolic}`
+        : "Not recorded";
+      
+      const latestHeartRate = latestObservation?.heartRate
+        ? `${latestObservation.heartRate} bpm`
+        : latestVitals?.heartRate
+        ? `${latestVitals.heartRate} bpm`
+        : "Not recorded";
+      
+      const latestTemperature = latestObservation?.temperatureC
+        ? `${latestObservation.temperatureC}°C`
+        : latestVitals?.temperature
+        ? `${latestVitals.temperature}°C`
+        : "Not recorded";
+      
+      const latestSpO2 = latestObservation?.spo2
+        ? `${latestObservation.spo2}%`
+        : latestVitals?.spo2
+        ? `${latestVitals.spo2}%`
+        : "Not recorded";
 
       const result = {
         // 🧠 1. Basic Patient Information
@@ -163,7 +205,7 @@ router.post(
         occupation: "Not provided",
         insurance: patient.insurance || "Not provided",
 
-        // 🩺 2. Vital Signs and Measurements
+        // 🩺 2. Vital Signs and Measurements (from observations or vitals table)
         bmi: bmi,
         latestWeight: latestVitals?.weightKg
           ? `${latestVitals.weightKg} kg`
@@ -171,19 +213,10 @@ router.post(
         latestHeight: latestVitals?.heightCm
           ? `${latestVitals.heightCm} cm`
           : "Not recorded",
-        latestBloodPressure:
-          latestVitals?.systolic && latestVitals?.diastolic
-            ? `${latestVitals.systolic}/${latestVitals.diastolic}`
-            : "Not recorded",
-        latestHeartRate: latestVitals?.heartRate
-          ? `${latestVitals.heartRate} bpm`
-          : "Not recorded",
-        latestTemperature: latestVitals?.temperature
-          ? `${latestVitals.temperature}°C`
-          : "Not recorded",
-        latestSpO2: latestVitals?.spo2
-          ? `${latestVitals.spo2}%`
-          : "Not recorded",
+        latestBloodPressure: latestBloodPressure,
+        latestHeartRate: latestHeartRate,
+        latestTemperature: latestTemperature,
+        latestSpO2: latestSpO2,
         latestRespiratoryRate: "Not recorded",
 
         // 💊 3. Medication Order History (from MedicationOrder) - human-readable strings
@@ -277,6 +310,30 @@ router.post(
         resolvedProblems: problems.filter((p: any) => p.status === "RESOLVED")
           .length,
 
+        // 📝 9. Clinical Observations (Notes, Vitals, SpO2, etc.) - Flattened
+        totalObservations: observations.length,
+        latestObservation: observations.length > 0
+          ? (() => {
+              const latest = observations[0];
+              const vitalsParts: string[] = [];
+              if (latest.bpSystolic && latest.bpDiastolic) {
+                vitalsParts.push(`BP ${latest.bpSystolic}/${latest.bpDiastolic}`);
+              }
+              if (latest.heartRate) {
+                vitalsParts.push(`HR ${latest.heartRate}`);
+              }
+              if (latest.spo2) {
+                vitalsParts.push(`SpO2 ${latest.spo2}%`);
+              }
+              const vitalsStr = vitalsParts.length > 0 ? ` - ${vitalsParts.join(', ')}` : '';
+              return (latest.noteText || 'Vitals recorded') + vitalsStr;
+            })()
+          : "No observations recorded",
+        lastObservationDate:
+          observations.length > 0
+            ? new Date(observations[0].createdAt).toISOString().split("T")[0]
+            : "No observations",
+
         // 📊 Summary Statistics
         lastVisitDate:
           visits.length > 0
@@ -294,7 +351,56 @@ router.post(
         status: "Success",
       };
 
-      res.json(result);
+      // Flatten observations as numbered fields
+      const flattenedResult: any = result;
+      observations.forEach((obs: any, index: number) => {
+        const prefix = `observation${index + 1}`;
+        const vitalsParts: string[] = [];
+        if (obs.bpSystolic && obs.bpDiastolic) {
+          vitalsParts.push(`BP: ${obs.bpSystolic}/${obs.bpDiastolic} mmHg`);
+        }
+        if (obs.heartRate) {
+          vitalsParts.push(`HR: ${obs.heartRate} bpm`);
+        }
+        if (obs.temperatureC) {
+          vitalsParts.push(`Temp: ${obs.temperatureC}°C`);
+        }
+        if (obs.spo2) {
+          vitalsParts.push(`SpO2: ${obs.spo2}%`);
+        }
+        if (obs.bmi) {
+          vitalsParts.push(`BMI: ${obs.bmi}`);
+        }
+        
+        const vitalsStr = vitalsParts.length > 0 ? ` (${vitalsParts.join(', ')})` : '';
+        const note = obs.noteText || '';
+        const observationText = note + vitalsStr;
+        
+        flattenedResult[`${prefix}Id`] = obs.obsId;
+        flattenedResult[`${prefix}Note`] = obs.noteText || 'Vitals recorded';
+        flattenedResult[`${prefix}Text`] = observationText || 'Vitals recorded';
+        flattenedResult[`${prefix}BloodPressure`] = obs.bpSystolic && obs.bpDiastolic 
+          ? `${obs.bpSystolic}/${obs.bpDiastolic} mmHg` 
+          : "Not recorded";
+        flattenedResult[`${prefix}HeartRate`] = obs.heartRate ? `${obs.heartRate} bpm` : "Not recorded";
+        flattenedResult[`${prefix}Temperature`] = obs.temperatureC ? `${obs.temperatureC}°C` : "Not recorded";
+        flattenedResult[`${prefix}SpO2`] = obs.spo2 ? `${obs.spo2}%` : "Not recorded";
+        flattenedResult[`${prefix}BMI`] = obs.bmi ? obs.bmi.toString() : "Not recorded";
+        flattenedResult[`${prefix}RecordedBy`] = obs.doctor?.name || obs.visit?.doctor?.name || "Unknown";
+        flattenedResult[`${prefix}Department`] = obs.visit?.department || "Not specified";
+        flattenedResult[`${prefix}RecordedDate`] = obs.createdAt
+          ? new Date(obs.createdAt).toISOString().split("T")[0]
+          : "Not specified";
+        flattenedResult[`${prefix}RecordedTime`] = obs.createdAt
+          ? new Date(obs.createdAt).toISOString().split("T")[1]?.split(".")[0] || "00:00:00"
+          : "Not specified";
+        flattenedResult[`${prefix}VisitId`] = obs.visitId || "Not linked";
+        flattenedResult[`${prefix}VisitDate`] = obs.visit?.visitDate
+          ? new Date(obs.visit.visitDate).toISOString().split("T")[0]
+          : "Not specified";
+      });
+
+      res.json(flattenedResult);
     } catch (error) {
       console.error("Medical History Agent Error:", error);
       res.status(500).json({

@@ -8,14 +8,28 @@ const prisma = new PrismaClient();
 const router = Router();
 
 const observationSchema = z.object({
-  noteText: z.string().min(1),
+  noteText: z.string().optional(),
   bpSystolic: z.coerce.number().int().optional(),
   bpDiastolic: z.coerce.number().int().optional(),
   heartRate: z.coerce.number().int().optional(),
   temperatureC: z.coerce.number().optional(),
   spo2: z.coerce.number().int().optional(),
   bmi: z.coerce.number().optional(),
-});
+}).refine(
+  (data) => {
+    // At least one field must be provided
+    return (
+      data.noteText?.trim() ||
+      data.bpSystolic !== undefined ||
+      data.bpDiastolic !== undefined ||
+      data.heartRate !== undefined ||
+      data.temperatureC !== undefined ||
+      data.spo2 !== undefined ||
+      data.bmi !== undefined
+    );
+  },
+  { message: 'At least one observation field must be provided' }
+);
 
 router.post('/visits/:id/observations', requireAuth, requireRole('Doctor'), async (req: AuthRequest, res: Response) => {
   const { id } = req.params;
@@ -24,22 +38,40 @@ router.post('/visits/:id/observations', requireAuth, requireRole('Doctor'), asyn
   } catch {
     return res.status(400).json({ error: 'invalid id' });
   }
-  const visit = await prisma.visit.findUnique({ where: { visitId: id } });
-  if (!visit) return res.sendStatus(404);
-  const parsed = observationSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: parsed.error.flatten() });
-  }
-  const obs = await prisma.observation.create({
-    data: {
-      visitId: id,
-      patientId: visit.patientId,
-      doctorId: visit.doctorId,
+  
+  try {
+    const visit = await prisma.visit.findUnique({ where: { visitId: id } });
+    if (!visit) {
+      return res.status(404).json({ error: 'Visit not found' });
+    }
+    
+    const parsed = observationSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: parsed.error.flatten() });
+    }
+    
+    // Provide default noteText if not provided
+    const observationData = {
       ...parsed.data,
-    },
-  });
-  await logDataChange(req.user!.userId, 'observation', obs.obsId, undefined, obs);
-  res.status(201).json(obs);
+      noteText: parsed.data.noteText?.trim() || 'Vitals recorded',
+    };
+    
+    const obs = await prisma.observation.create({
+      data: {
+        visitId: id,
+        patientId: visit.patientId,
+        doctorId: visit.doctorId,
+        ...observationData,
+      },
+    });
+    
+    await logDataChange(req.user!.userId, 'observation', obs.obsId, undefined, obs);
+    res.status(201).json(obs);
+  } catch (error) {
+    console.error('Error creating observation:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Failed to create observation';
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 router.get('/visits/:id/observations', requireAuth, async (req: AuthRequest, res: Response) => {
@@ -67,12 +99,15 @@ router.get('/visits/:id/observations', requireAuth, async (req: AuthRequest, res
   const { scope, author, before, order, limit = 20, offset = 0 } = parsed.data;
 
   if (scope === 'patient' && author === 'me' && before === 'visit') {
+    if (!req.user!.doctorId) {
+      return res.status(403).json({ error: 'User does not have an associated doctor ID' });
+    }
     const orderSql = order === 'asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
     const rows = await prisma.$queryRaw<Observation[]>(Prisma.sql`
       SELECT o.* FROM "Observation" o
       JOIN "Visit" v ON o."visitId" = v."visitId"
       WHERE o."patientId" = ${visit.patientId}
-        AND o."doctorId" = ${req.user!.userId}
+        AND o."doctorId" = ${req.user!.doctorId}
         AND v."visitDate" < ${visit.visitDate}
       ORDER BY o."createdAt" ${orderSql}
       LIMIT ${limit} OFFSET ${offset}
@@ -90,7 +125,10 @@ router.get('/visits/:id/observations', requireAuth, async (req: AuthRequest, res
     }
   }
   if (author === 'me') {
-    where.doctorId = req.user!.userId;
+    if (!req.user!.doctorId) {
+      return res.status(403).json({ error: 'User does not have an associated doctor ID' });
+    }
+    where.doctorId = req.user!.doctorId;
   }
   const observations = await prisma.observation.findMany({
     where,
@@ -133,13 +171,16 @@ router.get('/patients/:patientId/observations', requireAuth, async (req: AuthReq
   }
 
   if (author === 'me' && beforeDate) {
+    if (!req.user!.doctorId) {
+      return res.status(403).json({ error: 'User does not have an associated doctor ID' });
+    }
     const orderSql = order === 'asc' ? Prisma.sql`ASC` : Prisma.sql`DESC`;
     const excludeSql = exclude_visit ? Prisma.sql`AND o."visitId" <> ${exclude_visit}` : Prisma.empty;
     const rows = await prisma.$queryRaw<Observation[]>(Prisma.sql`
       SELECT o.* FROM "Observation" o
       JOIN "Visit" v ON o."visitId" = v."visitId"
       WHERE o."patientId" = ${patientId}
-        AND o."doctorId" = ${req.user!.userId}
+        AND o."doctorId" = ${req.user!.doctorId}
         ${excludeSql}
         AND v."visitDate" < ${beforeDate}
       ORDER BY o."createdAt" ${orderSql}
@@ -154,7 +195,10 @@ router.get('/patients/:patientId/observations', requireAuth, async (req: AuthReq
     where.visit = { visitDate: { lt: beforeDate } };
   }
   if (author === 'me') {
-    where.doctorId = req.user!.userId;
+    if (!req.user!.doctorId) {
+      return res.status(403).json({ error: 'User does not have an associated doctor ID' });
+    }
+    where.doctorId = req.user!.doctorId;
   }
   const observations = await prisma.observation.findMany({
     where,
