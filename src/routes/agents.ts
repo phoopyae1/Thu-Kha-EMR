@@ -2,6 +2,8 @@ import { Router, type Response, type NextFunction } from "express";
 import { requirePatientAuth } from "../modules/auth/index.js";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { z } from "zod";
+import { assertCreatable } from "../services/appointmentService.js";
+import { toDateOnly } from "../utils/time.js";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -28,14 +30,14 @@ router.post(
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-
+      
       if (!patientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
         });
       }
-
+      
       // Get patient data with comprehensive information
       const patient = await prisma.patient.findUnique({
         where: { patientId },
@@ -120,7 +122,7 @@ router.post(
         // Get patient's drug allergies from their profile
         Promise.resolve([]), // We'll use patient.drugAllergies instead
         prisma.diagnosis.findMany({
-          where: {
+          where: { 
             visit: {
               patientId,
             },
@@ -260,7 +262,7 @@ router.post(
               `${v.visitDate.toISOString().split("T")[0]} - ${v.doctor.name} (${
                 v.department
               })`
-          ),
+        ),
 
         // 🧪 6. Lab Results & Diagnostics
         totalLabResults: labResults.length,
@@ -421,14 +423,14 @@ router.post(
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-
+      
       if (!patientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
         });
       }
-
+      
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -488,7 +490,7 @@ router.post(
         result[`${prefix}Location`] = apt.location;
         result[`${prefix}Status`] = apt.status;
       });
-
+      
       res.json(result);
     } catch (error) {
       console.error("Appointment Agent Error:", error);
@@ -507,40 +509,40 @@ router.post(
 function parseTimeToMinutes(timeStr: string): number {
   // Remove spaces and convert to lowercase
   const cleanTime = timeStr.trim().toLowerCase();
-
+  
   // Handle formats like "2:30pm", "14:30", "2:30 pm", "2:30 PM"
   const timeRegex = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/;
   const match = cleanTime.match(timeRegex);
-
+  
   if (!match) {
     throw new Error(
       `Invalid time format: ${timeStr}. Use format like "2:30pm" or "14:30"`
     );
   }
-
+  
   let hours = parseInt(match[1]);
   const minutes = parseInt(match[2]);
   const period = match[3];
-
+  
   // Validate minutes
   if (minutes >= 60) {
     throw new Error(
       `Invalid minutes: ${minutes}. Minutes must be less than 60`
     );
   }
-
+  
   // Handle AM/PM
   if (period === "pm" && hours !== 12) {
     hours += 12;
   } else if (period === "am" && hours === 12) {
     hours = 0;
   }
-
+  
   // Validate hours
   if (hours >= 24) {
     throw new Error(`Invalid time: ${timeStr}. Hours must be less than 24`);
   }
-
+  
   return hours * 60 + minutes;
 }
 
@@ -551,10 +553,10 @@ router.post(
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const body = req.body;
-
+      
       const { patientId, doctorName, department, date, startTime, reason } =
         body;
-
+      
       if (!patientId || !doctorName || !department || !date || !startTime) {
         return res.status(400).json({
           error:
@@ -568,7 +570,7 @@ router.post(
         where: { patientId },
         select: { patientId: true, name: true },
       });
-
+      
       if (!patient) {
         return res.status(404).json({
           error: "Patient not found",
@@ -578,15 +580,15 @@ router.post(
 
       // Find doctor by name
       const doctor = await prisma.doctor.findFirst({
-        where: {
-          name: {
-            contains: doctorName,
+        where: { 
+          name: { 
+            contains: doctorName, 
             mode: "insensitive",
-          },
+        },
         },
         select: { doctorId: true, name: true, department: true },
       });
-
+      
       if (!doctor) {
         return res.status(404).json({
           error: `Doctor not found with name: ${doctorName}`,
@@ -596,7 +598,7 @@ router.post(
 
       // Parse start time to minutes
       let startTimeMin: number;
-
+      
       try {
         startTimeMin = parseTimeToMinutes(startTime);
       } catch (timeError) {
@@ -612,13 +614,54 @@ router.post(
       // Default appointment duration: 30 minutes
       const endTimeMin = startTimeMin + 30;
 
+      // Convert date to Date object and normalize to date-only
+      const appointmentDate = toDateOnly(date);
+
+      // Check if time slot is available (availability, blackouts, overlaps)
+      try {
+        await assertCreatable(prisma as any, {
+          patientId,
+          doctorId: doctor.doctorId,
+          department,
+          date: appointmentDate.toISOString().split("T")[0],
+          startTimeMin,
+          endTimeMin,
+          reason: reason || undefined,
+          location: undefined,
+        });
+      } catch (validationError: any) {
+        // Handle specific validation errors
+        const statusCode = validationError.status || validationError.statusCode;
+        
+        if (statusCode === 404) {
+          return res.status(404).json({
+            error: validationError.message || "Resource not found",
+            msg: "Failed",
+          });
+        }
+        if (statusCode === 409) {
+          return res.status(409).json({
+            error: validationError.message || "Time slot is already occupied",
+            msg: "Failed",
+          });
+        }
+        if (statusCode === 422) {
+          return res.status(422).json({
+            error: validationError.message || "Time slot is not available",
+            msg: "Failed",
+          });
+        }
+        // Re-throw unexpected errors
+        throw validationError;
+      }
+
       // Create the appointment
       const appointment = await prisma.appointment.create({
         data: {
           patientId,
           doctorId: doctor.doctorId,
           department,
-          date: new Date(date),
+          date: appointmentDate,
           startTimeMin,
           endTimeMin,
           reason: reason || null,
@@ -827,34 +870,34 @@ router.post(
     try {
       const { patientId } = req.body;
       console.log("[medication-orders] PatientId:", patientId);
-
+      
       if (!patientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
         });
       }
-
+      
       let orders;
       try {
         orders = await prisma.medicationOrder.findMany({
-          where: { patientId },
-          include: {
-            prescription: {
-              include: {
+        where: { patientId },
+        include: {
+          prescription: {
+            include: {
                 items: {
                   include: {
                     drug: true,
                   },
                 },
-                visit: {
-                  include: {
+              visit: {
+                include: {
                     doctor: true,
                   },
                 },
               },
-            },
-            approvedBy: true,
+          },
+          approvedBy: true,
             updatedBy: true,
           },
           orderBy: { createdAt: "desc" },
@@ -973,7 +1016,7 @@ router.post(
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorStack = error instanceof Error ? error.stack : undefined;
         console.error("[medication-orders] Error details:", errorMessage, errorStack);
-        res.status(500).json({
+      res.status(500).json({
           error: errorMessage || "Failed to fetch medication orders",
           msg: "Failed",
           ...(errorStack && { details: errorStack }),
@@ -1070,14 +1113,14 @@ router.post(
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId, startDate, endDate, doctorId } = req.body;
-
+      
       if (!patientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
         });
       }
-
+      
       // Build where clause for date filtering
       const whereClause: any = { patientId };
       if (startDate || endDate) {
@@ -1090,12 +1133,12 @@ router.post(
       // Get spending analytics by doctor using raw SQL for better performance
       const spendingByDoctor = await prisma.$queryRaw<
         Array<{
-          doctorId: string;
-          doctorName: string;
-          totalSpent: number;
-          totalPaid: number;
-          visitCount: number;
-          lastVisit: Date;
+        doctorId: string;
+        doctorName: string;
+        totalSpent: number;
+        totalPaid: number;
+        visitCount: number;
+        lastVisit: Date;
         }>
       >`
         SELECT 
@@ -1174,7 +1217,7 @@ router.post(
 
       // Get recent payments
       const recentPayments = await prisma.payment.findMany({
-        where: {
+        where: { 
           Invoice: {
             patientId: patientId,
           },
@@ -1194,13 +1237,30 @@ router.post(
       const totalDue = Number(overallSummary._sum.amountDue || 0);
       const totalInvoices = overallSummary._count.invoiceId;
 
+      // Currency formatting helper
+      const formatCurrency = (amount: number): string => {
+        return new Intl.NumberFormat('en-SG', { 
+          style: 'currency', 
+          currency: 'SGD',
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2
+        }).format(amount);
+      };
+
       // FLAT RESPONSE - Numbered flat keys (no arrays, no nested objects)
       const result: any = {
+        // Currency
+        currency: "SGD",
+        currencySymbol: "$",
+        
         // Core Summary
         totalSpent: totalSpent.toFixed(2),
+        totalSpentFormatted: formatCurrency(totalSpent),
         totalPaid: totalPaid.toFixed(2),
+        totalPaidFormatted: formatCurrency(totalPaid),
         totalDue: totalDue.toFixed(2),
-
+        totalDueFormatted: formatCurrency(totalDue),
+        
         // Top Doctor (flat fields for quick answers)
         topDoctorName:
           spendingByDoctor.length > 0 ? spendingByDoctor[0].doctorName : null,
@@ -1208,27 +1268,39 @@ router.post(
           spendingByDoctor.length > 0
             ? spendingByDoctor[0].totalSpent.toFixed(2)
             : "0.00",
+        topDoctorSpentFormatted:
+          spendingByDoctor.length > 0
+            ? formatCurrency(spendingByDoctor[0].totalSpent)
+            : "$0.00",
         topDoctorPaid:
           spendingByDoctor.length > 0
             ? spendingByDoctor[0].totalPaid.toFixed(2)
             : "0.00",
+        topDoctorPaidFormatted:
+          spendingByDoctor.length > 0
+            ? formatCurrency(spendingByDoctor[0].totalPaid)
+            : "$0.00",
         topDoctorVisits:
           spendingByDoctor.length > 0
             ? Number(spendingByDoctor[0].visitCount)
             : 0,
-
+        
         // Recent Payment (flat fields)
         lastPaymentAmount:
           recentPayments.length > 0
             ? Number(recentPayments[0].amount).toFixed(2)
             : "0.00",
+        lastPaymentAmountFormatted:
+          recentPayments.length > 0
+            ? formatCurrency(Number(recentPayments[0].amount))
+            : "$0.00",
         lastPaymentDate:
           recentPayments.length > 0
             ? recentPayments[0].paidAt.toISOString().split("T")[0]
             : null,
         lastPaymentMethod:
           recentPayments.length > 0 ? recentPayments[0].method : null,
-
+        
         // Doctor Count
         doctorCount: spendingByDoctor.length,
       };
@@ -1238,20 +1310,24 @@ router.post(
         const prefix = `doctor${index + 1}`;
         result[`${prefix}Name`] = doctor.doctorName;
         result[`${prefix}Spent`] = doctor.totalSpent.toFixed(2);
+        result[`${prefix}SpentFormatted`] = formatCurrency(doctor.totalSpent);
         result[`${prefix}Paid`] = doctor.totalPaid.toFixed(2);
+        result[`${prefix}PaidFormatted`] = formatCurrency(doctor.totalPaid);
         result[`${prefix}Visits`] = Number(doctor.visitCount);
       });
 
       // Add numbered recent invoice fields (recentInvoice1, recentInvoice2, etc.)
       recentInvoices.slice(0, 3).forEach((invoice, index) => {
         const prefix = `recentInvoice${index + 1}`;
+        const invoiceAmount = Number(invoice.grandTotal);
         result[`${prefix}Number`] = invoice.invoiceNo;
-        result[`${prefix}Amount`] = Number(invoice.grandTotal).toFixed(2);
+        result[`${prefix}Amount`] = invoiceAmount.toFixed(2);
+        result[`${prefix}AmountFormatted`] = formatCurrency(invoiceAmount);
         result[`${prefix}Status`] = invoice.status;
         result[`${prefix}Doctor`] = invoice.Visit.doctor.name;
         result[`${prefix}Date`] = invoice.createdAt.toISOString().split("T")[0];
       });
-
+      
       res.json(result);
     } catch (error) {
       console.error("Billing Agent Error:", error);
@@ -1273,14 +1349,14 @@ router.post(
   async (req: any, res: Response, next: NextFunction) => {
     try {
       const { patientId } = req.body;
-
+      
       if (!patientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
         });
       }
-
+      
       const patient = await prisma.patient.findUnique({
         where: { patientId },
         select: {
@@ -1307,7 +1383,7 @@ router.post(
 
       // Generate appointment letters based on appointment status
       const appointmentLetters = [];
-
+      
       for (const appointment of appointments) {
         const letterTypes = generateAppointmentLetters(appointment, patient);
         appointmentLetters.push(...letterTypes);
@@ -1356,7 +1432,7 @@ router.post(
           ),
         status: "Success",
       };
-
+      
       res.json(result);
     } catch (error) {
       console.error("Appointment Letter Agent Error:", error);
@@ -1376,7 +1452,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
   const letters = [];
   const now = new Date();
   const appointmentDate = new Date(appointment.date);
-
+  
   // Generate letters based on appointment status and timing
   if (appointment.status === "CONFIRMED" && appointmentDate > now) {
     // Appointment accepted letter
@@ -1420,7 +1496,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
       readAt: null,
     });
   }
-
+  
   if (appointment.status === "COMPLETED") {
     // Appointment completed letter
     letters.push({
@@ -1457,7 +1533,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
       readAt: null,
     });
   }
-
+  
   if (appointment.status === "CANCELLED") {
     // Appointment cancelled letter
     letters.push({
@@ -1494,7 +1570,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
       readAt: null,
     });
   }
-
+  
   return letters;
 }
 
@@ -1506,7 +1582,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 //     try {
 //       const { patientId, doctorId, startDate, endDate } = req.body;
 //       const user = req.user!;
-
+      
 //       if (!patientId) {
 //         return res.status(400).json({
 //           error: 'Patient ID is required',
@@ -1533,7 +1609,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 //         visitCount: number;
 //         lastVisit: Date;
 //       }>>`
-//         SELECT
+//         SELECT 
 //           v."doctorId",
 //           d.name as "doctorName",
 //           COALESCE(SUM(i."grandTotal"), 0) as "totalSpent",
@@ -1613,7 +1689,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 //   async (req: AuthRequest, res: Response, next: NextFunction) => {
 //     try {
 //       const { doctorId, startDate, endDate, groupBy = 'month' } = req.body;
-
+      
 //       if (!doctorId) {
 //         return res.status(400).json({
 //           error: 'Doctor ID is required',
@@ -1637,7 +1713,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 //         invoiceCount: number;
 //         patientCount: number;
 //       }>>`
-//         SELECT
+//         SELECT 
 //           ${groupByClause} as period,
 //           COALESCE(SUM(i."grandTotal"), 0) as "totalRevenue",
 //           COALESCE(SUM(i."amountPaid"), 0) as "totalPaid",
@@ -1701,7 +1777,7 @@ function generateAppointmentLetters(appointment: any, patient: any) {
 //     try {
 //       const { patientId } = req.body;
 //       const user = req.user!;
-
+      
 //       if (!patientId) {
 //         return res.status(400).json({
 //           error: 'Patient ID is required',
@@ -1763,7 +1839,7 @@ router.post(
           msg: "Failed",
         });
       }
-
+      
       // Get basic patient data only
       const patient = await prisma.patient.findUnique({
         where: { patientId },
@@ -1806,7 +1882,7 @@ router.post(
         lastUpdated: patient.updatedAt.toISOString().split("T")[0],
         status: "Success",
       };
-
+      
       res.json(result);
     } catch (error) {
       console.error("Patient Profile Agent Error:", error);

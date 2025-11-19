@@ -161,6 +161,151 @@ function parseStyleAttribute(styleAttr: string): {
   return { style, width, height, minHeight };
 }
 
+interface AppointmentDetailModalProps {
+  appointment: any;
+  onClose: () => void;
+  t: (key: string, variables?: Record<string, string | number>) => string;
+}
+
+function AppointmentDetailModal({ appointment, onClose, t }: AppointmentDetailModalProps) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  if (!appointment) return null;
+
+  const appointmentDate = new Date(appointment.date);
+  const startTime = formatMinutes(appointment.startTimeMin);
+  const endTime = appointment.endTimeMin ? formatMinutes(appointment.endTimeMin) : null;
+  const statusLabels: Record<string, string> = {
+    Scheduled: t('Scheduled'),
+    CheckedIn: t('Checked in'),
+    InProgress: t('In progress'),
+    Completed: t('Completed'),
+    Cancelled: t('Cancelled'),
+  };
+  const statusLabel = statusLabels[appointment.status] || appointment.status;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">{t('Appointment details')}</h2>
+              <p className="mt-1 text-sm text-slate-500">{t('View your appointment information')}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+            >
+              <CloseIcon className="h-4 w-4" />
+              <span className="sr-only">{t('Close')}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="px-8 py-6 text-sm text-slate-600">
+          <div className="grid gap-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">{t('Date')}</span>
+                  <span className="font-semibold text-slate-900">{appointmentDate.toLocaleDateString()}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">{t('Time')}</span>
+                  <span className="font-semibold text-slate-900">
+                    {startTime}
+                    {endTime ? ` - ${endTime}` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">{t('Status')}</span>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      appointment.status === 'Completed'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : appointment.status === 'Cancelled'
+                          ? 'bg-rose-100 text-rose-700'
+                          : appointment.status === 'InProgress'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {statusLabel}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {appointment.doctor ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <h3 className="mb-3 text-sm font-semibold text-slate-900">{t('Provider information')}</h3>
+                <div className="grid gap-2">
+                  <div>
+                    <span className="text-slate-500">{t('Doctor')}</span>
+                    <p className="font-semibold text-slate-900">{appointment.doctor.name}</p>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">{t('Department')}</span>
+                    <p className="font-semibold text-slate-900">{appointment.doctor.department || appointment.department}</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="mb-3 text-sm font-semibold text-slate-900">{t('Appointment information')}</h3>
+              <div className="grid gap-2">
+                {appointment.location ? (
+                  <div>
+                    <span className="text-slate-500">{t('Location')}</span>
+                    <p className="font-semibold text-slate-900">{appointment.location}</p>
+                  </div>
+                ) : null}
+                {appointment.department && !appointment.doctor?.department ? (
+                  <div>
+                    <span className="text-slate-500">{t('Department')}</span>
+                    <p className="font-semibold text-slate-900">{appointment.department}</p>
+                  </div>
+                ) : null}
+                {appointment.reason ? (
+                  <div>
+                    <span className="text-slate-500">{t('Reason for visit')}</span>
+                    <p className="font-semibold text-slate-900">{appointment.reason}</p>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-slate-500">{t('Reason for visit')}</span>
+                    <p className="text-slate-400 italic">{t('Not specified')}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {appointment.appointmentId ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div>
+                  <span className="text-xs text-slate-500">{t('Appointment ID')}</span>
+                  <p className="mt-1 font-mono text-xs text-slate-600">{appointment.appointmentId}</p>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PaymentReceiptModal({ invoice, patient, onClose, t, displayName, logo, formatCurrency }: PaymentReceiptModalProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -336,7 +481,7 @@ function formatMinutes(minutes: number) {
 }
 
 function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'MMK', maximumFractionDigits: 0 }).format(
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'SGD', maximumFractionDigits: 0 }).format(
     amount,
   );
 }
@@ -436,6 +581,7 @@ export default function PatientPortal() {
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'success'>('idle');
   const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const [receiptInvoice, setReceiptInvoice] = useState<any | null>(null);
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [activeTab, setActiveTab] = useState<PortalSectionId>('overview');
 
@@ -1365,6 +1511,7 @@ export default function PatientPortal() {
             lastVisit={lastVisit}
             recentVisits={recentVisits}
             formatMinutes={formatMinutes}
+            onAppointmentClick={setSelectedAppointment}
           />
         );
       case 'appointments':
@@ -1382,6 +1529,7 @@ export default function PatientPortal() {
             onAppointmentChange={handleAppointmentChange}
             onAppointmentSubmit={handleAppointmentSubmit}
             formatMinutes={formatMinutes}
+            onAppointmentClick={setSelectedAppointment}
           />
         );
       case 'medications':
@@ -1646,6 +1794,14 @@ export default function PatientPortal() {
                 formatCurrency={formatCurrency}
               />
                     ) : null}
+
+            {selectedAppointment ? (
+              <AppointmentDetailModal
+                appointment={selectedAppointment}
+                onClose={() => setSelectedAppointment(null)}
+                t={t}
+              />
+            ) : null}
           </>
         ) : (
           <section className="mx-auto w-full max-w-md">
@@ -2062,7 +2218,7 @@ function OverviewSection({
   );
 }
 
-function TimelineSection({ t, nextAppointment, lastVisit, recentVisits, formatMinutes }: any) {
+function TimelineSection({ t, nextAppointment, lastVisit, recentVisits, formatMinutes, onAppointmentClick }: any) {
   return (
       <div className="space-y-8">
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -2072,7 +2228,10 @@ function TimelineSection({ t, nextAppointment, lastVisit, recentVisits, formatMi
           </div>
           <div className="mt-4 grid gap-4 md:grid-cols-2">
             {nextAppointment ? (
-              <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
+              <div
+                onClick={() => onAppointmentClick?.(nextAppointment)}
+                className="cursor-pointer rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800 transition hover:bg-blue-100 hover:shadow-sm"
+              >
                 <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Next appointment')}</div>
                 <div className="mt-2 text-base font-semibold text-blue-900">
                   {new Date(nextAppointment.date).toLocaleDateString()} • {nextAppointment.doctor?.name ?? ''}
@@ -2140,6 +2299,7 @@ function AppointmentsSection({
   onAppointmentChange,
   onAppointmentSubmit,
   formatMinutes,
+  onAppointmentClick,
 }: any) {
   return (
     <div className="space-y-8">
@@ -2239,7 +2399,11 @@ function AppointmentsSection({
               ) : (
                 <ul className="mt-3 space-y-3 text-sm text-slate-600">
                 {pastAppointments.slice(0, 6).map((item: any) => (
-                    <li key={item.appointmentId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                    <li
+                      key={item.appointmentId}
+                      onClick={() => onAppointmentClick?.(item)}
+                      className="cursor-pointer rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 transition hover:bg-slate-100 hover:shadow-sm"
+                    >
                       <div className="font-semibold text-slate-900">
                         {new Date(item.date).toLocaleDateString()} • {item.doctor.name}
                       </div>
@@ -2265,8 +2429,9 @@ function AppointmentsSection({
             {upcomingAppointments.slice(0, 5).map((item: any, index: number) => (
               <li
                 key={item.appointmentId}
-                className={`rounded-2xl border px-4 py-3 ${
-                  index === 0 ? 'border-blue-200 bg-blue-50' : 'border-slate-200 bg-slate-50'
+                onClick={() => onAppointmentClick?.(item)}
+                className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
+                  index === 0 ? 'border-blue-200 bg-blue-50 hover:bg-blue-100' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                 }`}
               >
                 <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
@@ -3029,12 +3194,12 @@ function BillingSection({ t, invoiceSummary, payments, formatCurrency, setReceip
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="mt-3 space-y-1 text-xs text-slate-500">{formatCurrency(invoice.amountDue ?? 0)}</div>
-                      <div className="space-y-1 text-xs text-slate-500">{t('Balance due')}</div>
+                      <div className="font-semibold text-slate-900">{formatCurrency(invoice.amountDue ?? 0)}</div>
+                      <div className="text-xs text-slate-500">{t('Balance due')}</div>
                     </div>
                   </div>
                   {invoicePayments.length > 0 ? (
-                    <div className="mt-3 text-md font-semibold text-slate-900">
+                    <div className="mt-3 space-y-1 text-xs text-slate-500">
                       {invoicePayments.map((payment: any) => (
                         <div key={payment.paymentId} className="flex items-center justify-between">
                           <span>

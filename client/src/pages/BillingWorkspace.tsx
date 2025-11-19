@@ -53,7 +53,7 @@ function isUuid(value: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(value.trim());
 }
 
-function formatMoney(value: string, currency = 'MMK') {
+function formatMoney(value: string, currency = 'SGD') {
   const numeric = Number.parseFloat(value);
   if (Number.isNaN(numeric)) {
     return value;
@@ -215,7 +215,7 @@ export default function BillingWorkspace() {
     };
   }, [debouncedPatientQuery]);
 
-  const lookupCurrency = useMemo(() => visitInvoice?.currency ?? 'MMK', [visitInvoice]);
+  const lookupCurrency = useMemo(() => visitInvoice?.currency ?? 'SGD', [visitInvoice]);
 
   async function performVisitLookup(visitId: string) {
     setLookupLoading(true);
@@ -791,10 +791,10 @@ export default function BillingWorkspace() {
                       <InvoiceStatusBadge status={invoice.status} />
                     </td>
                     <td className="px-4 py-2 text-right text-gray-700">
-                      {formatMoney(invoice.grandTotal, invoice.currency ?? 'MMK')}
+                      {formatMoney(invoice.grandTotal, invoice.currency ?? 'SGD')}
                     </td>
                     <td className="px-4 py-2 text-right font-semibold text-gray-900">
-                      {formatMoney(invoice.amountDue, invoice.currency ?? 'MMK')}
+                      {formatMoney(invoice.amountDue, invoice.currency ?? 'SGD')}
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex justify-end gap-2">
@@ -837,7 +837,7 @@ export default function BillingWorkspace() {
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Record payment</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, selectedInvoiceForPayment.currency ?? 'MMK')}
+              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, selectedInvoiceForPayment.currency ?? 'SGD')}
             </p>
             <form className="mt-4 space-y-4" onSubmit={handleSubmitPayment}>
               <label className="flex flex-col gap-1 text-sm">

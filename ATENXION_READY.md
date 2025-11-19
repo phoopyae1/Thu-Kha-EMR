@@ -178,7 +178,7 @@ Agent: "Your latest labs from Oct 15: Hemoglobin 14.5 g/dL (normal), WBC 7.2 (no
 ```
 User: "Do I owe any money?"
 Agent: *Calls GET /api/patient-portal/payments/:patientId*
-Agent: "You have one outstanding invoice for 25,000 MMK from your Oct 10 visit"
+Agent: "You have one outstanding invoice for 25,000 SGD from your Oct 10 visit"
 ```
 
 ---
