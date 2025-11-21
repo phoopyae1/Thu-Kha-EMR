@@ -206,13 +206,41 @@ router.post(
 
 router.post(
   '/invoices/:invoiceId/void',
-  requireRole('Cashier', 'ITAdmin', 'Doctor'),
+  requireRole('Cashier', 'ITAdmin', 'Doctor', 'AdminAssistant'),
   validate({ body: VoidInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = req.body as z.infer<typeof VoidInvoiceSchema>;
       const invoice = await voidInvoice(req.params.invoiceId, body.reason);
       res.json(invoice);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  '/invoices/:invoiceId',
+  requireRole('ITAdmin'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const invoiceId = req.params.invoiceId;
+      
+      // Check if invoice exists
+      const invoice = await prisma.invoice.findUnique({
+        where: { invoiceId },
+      });
+      
+      if (!invoice) {
+        throw new NotFoundError('Invoice not found');
+      }
+      
+      // Delete invoice (cascade will handle related items and payments)
+      await prisma.invoice.delete({
+        where: { invoiceId },
+      });
+      
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

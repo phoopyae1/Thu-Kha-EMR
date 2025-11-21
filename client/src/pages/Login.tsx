@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
 import LoginCard from '../components/LoginCard';
 import PageLayout from '../components/PageLayout';
@@ -11,28 +11,52 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false);
   // Removed success toast; we redirect on successful login
-  const { login, user } = useAuth();
+  const { login, user, accessToken } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const { appName, logo } = useSettings();
   const { t } = useTranslation();
 
   // Handle redirect after successful login
+  // Only redirect if we're on the login page, user is logged in, AND we've attempted a login
+  // Also check accessToken to ensure user is actually authenticated (not just stale state)
+  // This prevents redirect loops when user logs out
   useEffect(() => {
-    if (user?.userId) {
-      navigate(`/admin/${user.userId}`);
+    // Only redirect if:
+    // 1. User exists and has userId
+    // 2. Access token exists (ensures user is actually authenticated, not just stale state)
+    // 3. We're on the login page
+    // 4. We've attempted a login (prevents redirect on page load after logout)
+    if (user?.userId && accessToken && location.pathname === '/admin/login' && hasAttemptedLogin) {
+      console.log('[Login] User logged in:', user.role, user.userId);
+      // Check if there's a redirect location from RouteGuard
+      const from = (location.state as { from?: { pathname: string } })?.from;
+      console.log('[Login] Redirect from:', from?.pathname);
+      if (from?.pathname && from.pathname !== '/admin/login') {
+        // Redirect to the original destination
+        console.log('[Login] Redirecting to:', from.pathname);
+        navigate(from.pathname, { replace: true });
+      } else {
+        // Default redirect to user's dashboard
+        console.log('[Login] Redirecting to default dashboard');
+        navigate(`/admin/${user.userId}`, { replace: true });
+      }
     }
-  }, [user, navigate]);
+  }, [user, accessToken, navigate, location.state, location.pathname, hasAttemptedLogin]);
 
   // Removed widget debug/test loader on admin login page
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setHasAttemptedLogin(true);
     try {
       await login(email, password);
     } catch (err: any) {
       setError(err.message);
+      setHasAttemptedLogin(false);
     }
   };
 

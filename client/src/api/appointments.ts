@@ -162,3 +162,9 @@ export function getAppointmentQueue(params?: AppointmentQueueParams): Promise<Ap
   const query = buildQuery(params as QueryParams | undefined);
   return fetchJSON(`/appointments/queue${query}`);
 }
+
+export function deleteAppointment(id: string): Promise<void> {
+  return fetchJSON(`/appointments/${id}`, {
+    method: 'DELETE',
+  });
+}

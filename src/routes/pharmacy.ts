@@ -360,7 +360,7 @@ router.patch(
 
 router.get(
   '/medication-orders',
-  requireRole('Pharmacist', 'PharmacyTech', 'ITAdmin'),
+  requireRole('Pharmacist', 'PharmacyTech', 'ITAdmin', 'AdminAssistant'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const parsed = MedicationOrderListQuerySchema.safeParse(req.query);
@@ -390,7 +390,7 @@ router.get(
 
 router.patch(
   '/medication-orders/:orderId',
-  requireRole('Pharmacist', 'ITAdmin'),
+  requireRole('Pharmacist', 'ITAdmin', 'AdminAssistant'),
   validate({ params: MedicationOrderParamsSchema, body: MedicationOrderUpdateSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -442,6 +442,36 @@ router.patch(
       });
 
       res.json(order);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  '/medication-orders/:orderId',
+  requireRole('ITAdmin', 'AdminAssistant'),
+  validate({ params: MedicationOrderParamsSchema }),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { orderId } = req.params as z.infer<typeof MedicationOrderParamsSchema>;
+
+      // Check if medication order exists
+      const existing = await prisma.medicationOrder.findUnique({
+        where: { orderId },
+        select: { orderId: true },
+      });
+
+      if (!existing) {
+        return res.status(404).json({ error: 'Medication order not found' });
+      }
+
+      // Delete the medication order
+      await prisma.medicationOrder.delete({
+        where: { orderId },
+      });
+
+      res.status(204).end();
     } catch (error) {
       next(error);
     }

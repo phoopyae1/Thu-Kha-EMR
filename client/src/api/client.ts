@@ -311,6 +311,12 @@ export async function createDoctor(payload: CreateDoctorPayload): Promise<Doctor
   });
 }
 
+export async function deleteDoctor(doctorId: string): Promise<void> {
+  return fetchJSON(`/doctors/${doctorId}`, {
+    method: 'DELETE',
+  });
+}
+
 export function listDoctorAvailability(doctorId: string): Promise<DoctorAvailabilityResponse> {
   return fetchJSON(`/doctors/${doctorId}/availability`);
 }

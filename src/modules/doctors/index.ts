@@ -147,4 +147,33 @@ router.post(
   }
 );
 
+router.delete(
+  '/:doctorId',
+  requireAuth,
+  requireRole('ITAdmin', 'AdminAssistant'),
+  async (req: AuthRequest, res: Response) => {
+    const params = doctorIdSchema.safeParse(req.params);
+    if (!params.success) {
+      return res.status(400).json({ message: 'Invalid doctorId' });
+    }
+
+    const { doctorId } = params.data;
+
+    const doctor = await prisma.doctor.findUnique({
+      where: { doctorId },
+      select: { doctorId: true },
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ message: 'Doctor not found' });
+    }
+
+    await prisma.doctor.delete({
+      where: { doctorId },
+    });
+
+    res.status(204).end();
+  }
+);
+
 export default router;

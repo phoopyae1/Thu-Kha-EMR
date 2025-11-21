@@ -68,7 +68,9 @@ export default function DashboardLayout({
   const { accessToken, user } = useAuth();
   const { appName, logo } = useSettings();
   const { t } = useTranslation();
-  const { adminId } = useParams<{ adminId: string }>();
+  const { adminId: adminIdParam } = useParams<{ adminId?: string }>();
+  // Use adminId from params if available, otherwise use userId from auth context
+  const adminId = adminIdParam || user?.userId || '';
   const roleLabel = user ? t(ROLE_LABELS[user.role] ?? 'Team Member') : t('Team Member');
   
   // Create navigation dynamically based on adminId

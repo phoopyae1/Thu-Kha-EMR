@@ -12,13 +12,14 @@ export default function LogoutButton({
   const navigate = useNavigate();
   const location = useLocation();
 
-  function handleClick() {
-    logout();
+  async function handleClick() {
+    await logout();
+    // Refresh the page to ensure clean state
     // Check if we're in admin routes or patient routes
     if (location.pathname.startsWith('/admin')) {
-      navigate('/admin/login');
+      window.location.href = '/admin/login';
     } else {
-      navigate('/login');
+      window.location.href = '/login';
     }
   }
 

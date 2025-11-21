@@ -72,6 +72,15 @@ export async function fetchJSON(
       setAccessToken(null);
     }
     const errText = await response.text();
+    // Try to parse JSON error response
+    try {
+      const errorJson = JSON.parse(errText);
+      if (errorJson && typeof errorJson.error === 'string') {
+        throw new Error(errorJson.error);
+      }
+    } catch {
+      // If parsing fails, use the raw text or status text
+    }
     throw new Error(errText || response.statusText);
   }
   return response.json();

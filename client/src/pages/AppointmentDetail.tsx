@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import {
   getAppointment,
   getAvailability,
   patchStatus,
   updateAppointment,
+  deleteAppointment,
   type Appointment,
   type AppointmentStatus,
   type AppointmentStatusPatch,
   type AvailabilityResponse,
 } from '../api/appointments';
+import { useAuth } from '../context/AuthProvider';
 import {
   getPatient,
   listDoctors,
@@ -200,9 +202,13 @@ function findMatchingVisit(appointment: Appointment, visits: Visit[]): string | 
 
 export default function AppointmentDetail() {
   const { id, adminId } = useParams<{ id: string; adminId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [appointment, setAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [patientLoading, setPatientLoading] = useState(false);
@@ -649,6 +655,28 @@ export default function AppointmentDetail() {
     setAvailabilityError(null);
   }
 
+  async function handleDelete() {
+    if (!appointment) return;
+    
+    const confirmed = window.confirm(
+      `Are you sure you want to delete this appointment for ${appointment.patient.name}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAppointment(appointment.appointmentId);
+      navigate(`/admin/${adminId}/appointments`);
+    } catch (err) {
+      setDeleteError(parseErrorMessage(err));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const canDelete = user && ['ITAdmin', 'AdminAssistant'].includes(user.role);
+
   const headerActions = (
     <div className="flex flex-col gap-2 md:flex-row md:items-center">
       <Link
@@ -781,17 +809,36 @@ export default function AppointmentDetail() {
                     </div>
                   )}
                   {!editing ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditing(true);
-                        setSaveSuccess(null);
-                        setSubmitError(null);
-                      }}
-                      className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
-                    >
-                      Edit details
-                    </button>
+                    <div className="flex flex-col gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(true);
+                          setSaveSuccess(null);
+                          setSubmitError(null);
+                        }}
+                        className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+                      >
+                        Edit details
+                      </button>
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={handleDelete}
+                          disabled={deleting}
+                          className={`inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white shadow transition ${
+                            deleting
+                              ? 'cursor-not-allowed bg-gray-400'
+                              : 'bg-red-600 hover:bg-red-700'
+                          }`}
+                        >
+                          {deleting ? 'Deleting…' : 'Delete appointment'}
+                        </button>
+                      )}
+                      {deleteError && (
+                        <p className="mt-2 text-sm text-red-600">{deleteError}</p>
+                      )}
+                    </div>
                   ) : null}
                 </div>
               </div>

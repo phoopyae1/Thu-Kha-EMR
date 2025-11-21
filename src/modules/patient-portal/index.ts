@@ -10,6 +10,8 @@ import { medicationOrderSelect } from '../../services/medicationOrderService.js'
 import {
   insertIntegrationEmbed,
   fetchLatestIntegrationEmbed,
+  insertAdminIntegrationEmbed,
+  fetchLatestAdminIntegrationEmbed,
   LocalMongoError,
   type IntegrationEmbedDocument,
 } from '../../services/localMongoService.js';
@@ -180,6 +182,53 @@ router.get('/integration-embeds/latest', async (_req: Request, res: Response) =>
 
     console.error('Failed to load integration embed', error);
     return res.status(500).json({ error: 'Failed to load integration embed' });
+  }
+});
+
+// Admin integration endpoints - uses adminIntegrationSettings collection
+router.post(
+  '/admin-integration-embeds',
+  validate({ body: integrationEmbedSchema }),
+  async (req: Request, res: Response) => {
+    const { iframeCode, contextKey } = req.body as z.infer<typeof integrationEmbedSchema>;
+    const timestamp = new Date().toISOString();
+
+    try {
+      const result = await insertAdminIntegrationEmbed({
+        iframeCode,
+        contextKey,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      });
+
+      return res.status(201).json({ id: result.insertedId ?? null });
+    } catch (error) {
+      if (error instanceof LocalMongoError) {
+        return res.status(503).json({ error: error.message });
+      }
+
+      console.error('Failed to save admin integration embed', error);
+      return res.status(500).json({ error: 'Failed to save admin integration embed' });
+    }
+  },
+);
+
+router.get('/admin-integration-embeds/latest', async (_req: Request, res: Response) => {
+  try {
+    const document = await fetchLatestAdminIntegrationEmbed();
+
+    if (!document) {
+      return res.status(404).json({ error: 'No admin integration embed configured' });
+    }
+
+    return res.json({ embed: document });
+  } catch (error) {
+    if (error instanceof LocalMongoError) {
+      return res.status(503).json({ error: error.message });
+    }
+
+    console.error('Failed to load admin integration embed', error);
+    return res.status(500).json({ error: 'Failed to load admin integration embed' });
   }
 });
 

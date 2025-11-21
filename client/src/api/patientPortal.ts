@@ -71,6 +71,22 @@ export async function fetchIntegrationEmbed(): Promise<IntegrationEmbed | null> 
   return body.embed ?? null;
 }
 
+export async function fetchAdminIntegrationEmbed(): Promise<IntegrationEmbed | null> {
+  const response = await fetch('/api/patient-portal/admin-integration-embeds/latest');
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+
+  const body = (await response.json()) as { embed?: IntegrationEmbed | null };
+  return body.embed ?? null;
+}
+
 export async function loginPatient(email: string, password: string): Promise<PatientLoginResponse> {
   const result = (await request('/api/patient-portal/login', {
     method: 'POST',

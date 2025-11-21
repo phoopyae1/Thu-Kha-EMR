@@ -140,6 +140,12 @@ export async function updateMedicationOrder(
   return response as MedicationOrderSummary;
 }
 
+export async function deleteMedicationOrder(orderId: string): Promise<void> {
+  await fetchJSON(`/pharmacy/medication-orders/${orderId}`, {
+    method: 'DELETE',
+  });
+}
+
 export interface InventoryLocationSummary {
   location: string;
   qtyOnHand: number;

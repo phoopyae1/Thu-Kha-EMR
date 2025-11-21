@@ -5,6 +5,7 @@ import {
   listPharmacyQueue,
   listMedicationOrders,
   updateMedicationOrder,
+  deleteMedicationOrder,
   type PharmacyQueueItem,
   type PharmacyQueueStatus,
   type MedicationOrderSummary,
@@ -57,8 +58,10 @@ export default function PharmacyQueue() {
   const [ordersSuccess, setOrdersSuccess] = useState<string | null>(null);
   const [statusEdits, setStatusEdits] = useState<Record<string, MedicationOrderStatus>>({});
   const [updatingOrders, setUpdatingOrders] = useState<Record<string, boolean>>({});
+  const [deletingOrders, setDeletingOrders] = useState<Record<string, boolean>>({});
   const canDispense = user ? ['Pharmacist', 'PharmacyTech'].includes(user.role) : false;
   const canManageInventory = user ? ['InventoryManager', 'ITAdmin'].includes(user.role) : false;
+  const canDeleteOrders = user ? ['ITAdmin', 'AdminAssistant'].includes(user.role) : false;
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +190,39 @@ export default function PharmacyQueue() {
       }
     },
     [orderStatusFilter, orders, statusEdits],
+  );
+
+  const handleDeleteOrder = useCallback(
+    async (orderId: string) => {
+      if (!window.confirm('Are you sure you want to delete this medication order? This action cannot be undone.')) {
+        return;
+      }
+
+      setDeletingOrders((prev) => ({ ...prev, [orderId]: true }));
+      setOrdersError(null);
+      setOrdersSuccess(null);
+      try {
+        await deleteMedicationOrder(orderId);
+        setOrders((prev) => prev.filter((order) => order.orderId !== orderId));
+        setStatusEdits((prev) => {
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
+        setOrdersSuccess('Medication order deleted.');
+      } catch (err) {
+        setOrdersError(
+          err instanceof Error ? err.message : 'Unable to delete medication order',
+        );
+      } finally {
+        setDeletingOrders((prev) => {
+          const next = { ...prev };
+          delete next[orderId];
+          return next;
+        });
+      }
+    },
+    [],
   );
 
   return (
@@ -336,6 +372,7 @@ export default function PharmacyQueue() {
                 const selectedStatus = statusEdits[order.orderId] ?? order.status;
                 const hasChanges = selectedStatus !== order.status;
                 const busy = isUpdating(order.orderId);
+                const deleting = deletingOrders[order.orderId] ?? false;
                 return (
                   <li key={order.orderId} className="px-6 py-5">
                     <div className="flex flex-wrap items-start justify-between gap-4">
@@ -395,7 +432,7 @@ export default function PharmacyQueue() {
                           handleSelectStatus(order.orderId, event.target.value as MedicationOrderStatus)
                         }
                         className="rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        disabled={busy}
+                        disabled={busy || deleting}
                       >
                         {MEDICATION_ORDER_STATUS_OPTIONS.map((option) => (
                           <option key={option} value={option}>
@@ -406,14 +443,14 @@ export default function PharmacyQueue() {
                       <button
                         type="button"
                         className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold transition ${
-                          busy
+                          busy || deleting
                             ? 'cursor-not-allowed bg-gray-200 text-gray-500'
                             : hasChanges
                             ? 'bg-blue-600 text-white hover:bg-blue-700'
                             : 'bg-gray-100 text-gray-500'
                         }`}
                         onClick={() => handleUpdateOrder(order.orderId)}
-                        disabled={busy || !hasChanges}
+                        disabled={busy || deleting || !hasChanges}
                       >
                         {busy ? 'Updating…' : hasChanges ? 'Update status' : 'Up to date'}
                       </button>
@@ -421,6 +458,20 @@ export default function PharmacyQueue() {
                         <span className="text-xs font-medium uppercase tracking-wide text-amber-500">
                           Pending save
                         </span>
+                      ) : null}
+                      {canDeleteOrders ? (
+                        <button
+                          type="button"
+                          className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-semibold text-white transition ${
+                            deleting
+                              ? 'cursor-not-allowed bg-gray-400'
+                              : 'bg-red-600 hover:bg-red-700'
+                          }`}
+                          onClick={() => handleDeleteOrder(order.orderId)}
+                          disabled={busy || deleting}
+                        >
+                          {deleting ? 'Deleting…' : 'Delete'}
+                        </button>
                       ) : null}
                     </div>
                   </li>

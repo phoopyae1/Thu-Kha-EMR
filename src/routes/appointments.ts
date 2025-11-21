@@ -232,7 +232,7 @@ router.get(
 
 router.post(
   '/',
-  requireRole('AdminAssistant'),
+  requireRole('AdminAssistant', 'ITAdmin'),
   validate({ body: CreateAppointmentSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -273,7 +273,7 @@ router.post(
 
 router.put(
   '/:appointmentId',
-  requireRole('AdminAssistant'),
+  requireRole('AdminAssistant', 'ITAdmin'),
   validate({ params: UpdateAppointmentParamsSchema, body: UpdateAppointmentBodySchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -643,7 +643,7 @@ router.get(
 
 router.delete(
   '/:appointmentId',
-  requireRole('AdminAssistant'),
+  requireRole('AdminAssistant', 'ITAdmin'),
   validate({ params: UpdateAppointmentParamsSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {

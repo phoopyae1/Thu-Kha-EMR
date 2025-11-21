@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   createDoctor,
+  deleteDoctor,
   createUserAccount,
   listDoctors,
   listUsers,
@@ -21,6 +22,7 @@ interface SettingsContextType {
   addUser: (user: CreateUserPayload) => Promise<UserAccount>;
   updateUser: (id: string, data: UpdateUserPayload) => Promise<UserAccount>;
   addDoctor: (doctor: { name: string; department: string }) => Promise<Doctor>;
+  deleteDoctor: (doctorId: string) => Promise<void>;
   widgetEnabled: boolean;
   setWidgetEnabled: (enabled: boolean) => void;
 }
@@ -139,6 +141,11 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return created;
   };
 
+  const deleteDoctorHandler = async (doctorId: string) => {
+    await deleteDoctor(doctorId);
+    setDoctors((prev) => prev.filter((doctor) => doctor.doctorId !== doctorId));
+  };
+
   return (
     <SettingsContext.Provider
       value={{
@@ -150,6 +157,7 @@ export const SettingsProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addUser,
         updateUser,
         addDoctor,
+        deleteDoctor: deleteDoctorHandler,
         widgetEnabled,
         setWidgetEnabled,
       }}

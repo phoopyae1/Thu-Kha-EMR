@@ -1,5 +1,5 @@
 import axios, { type AxiosError } from "axios";
-import { fetchIntegrationEmbed } from "./patientPortal";
+import { fetchIntegrationEmbed, fetchAdminIntegrationEmbed } from "./patientPortal";
 
 const DEFAULT_SERVER_URL = "https://api-qa.atenxion.ai";
 
@@ -26,7 +26,7 @@ interface AtenxionRequestBody {
 export type AtenxionTransactionPayload = JsonRecord;
 
 function resolveServerUrl() {
-  return import.meta.env.VITE_ATENXION_API_URL?.trim() || DEFAULT_SERVER_URL;
+  return DEFAULT_SERVER_URL;
 }
 
 function resolveAuthorizationHeader(token?: string | null) {
@@ -46,26 +46,38 @@ function getHeaders(token?: string | null) {
 }
 
 function normalizeCredentials(
-  credentials: AtenxionCredentials
+  credentials: AtenxionCredentials,
+  useEmrToken: boolean = false
 ): AtenxionRequestBody {
   const userId = credentials.userId.trim();
   const patientName = credentials.patientName?.trim() || userId;
   const agentId = credentials.agentId?.trim();
   const agentchainId = credentials.agentchainId?.trim();
   const patientId = credentials.patientId.trim();
-  let patientToken = "";
-  const stored = localStorage.getItem("patient_portal_session");
-  if (stored) {
-    patientToken = JSON.parse(stored).token;
+  let authToken = "";
+  
+  if (useEmrToken) {
+    // Use EMR access token for doctors
+    const emrToken = localStorage.getItem("emr_access_token");
+    if (emrToken) {
+      authToken = emrToken;
+    }
+  } else {
+    // Use patient portal token for patients
+    const stored = localStorage.getItem("patient_portal_session");
+    if (stored) {
+      authToken = JSON.parse(stored).token;
+    }
   }
+  
   const body: AtenxionRequestBody = {
     userId,
     patientName,
     patientId,
     agentId,
     agentchainId,
-      Authorization: `Bearer ${patientToken}`,
-    };
+    Authorization: `Bearer ${authToken}`,
+  };
 
   if (agentId) {
     body.agentId = agentId;
@@ -99,43 +111,73 @@ function handleAxiosError(error: unknown, context: string): never {
 
 export async function loginAtenxionUser(
   credentials: AtenxionCredentials,
-  token?: string | null
+  token?: string | null,
+  useAdminIntegration: boolean = false
 ) {
   const url = `${resolveServerUrl()}/api/post-login/user-login`;
-  const resolvedToken = token || (await fetchIntegrationEmbed())?.contextKey;
-  const requestBody = normalizeCredentials(credentials);
-  const headers = { Authorization: `${resolvedToken}` };
+  let resolvedToken = token;
+  if (!resolvedToken) {
+    // Use admin integration for doctors, patient portal integration for others
+    const embed = useAdminIntegration 
+      ? await fetchAdminIntegrationEmbed()
+      : await fetchIntegrationEmbed();
+    resolvedToken = embed?.contextKey;
+  }
+  
+  if (!resolvedToken) {
+    console.warn("Atenxion login: No contextKey found in integration embed");
+    // Continue anyway - the API might work without it or return a proper error
+  }
+  
+  const requestBody = normalizeCredentials(credentials, useAdminIntegration);
+  const headers = getHeaders(resolvedToken) || {};
 
-  console.log("Atenxion API call:", {
+  console.log("Atenxion login API call:", {
     url,
     body: requestBody,
     headers,
     token: resolvedToken ? resolvedToken.substring(0, 20) + "..." : "none",
+    useAdminIntegration,
+    hasContextKey: !!resolvedToken,
   });
 
   try {
-    await axios.post(url, requestBody, { headers });
+    const pp = await axios.post(url, requestBody, { headers });
+    console.log("Atenxion login response:", pp);
     return true;
   } catch (error) {
     console.error("Atenxion login failed:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("Response status:", error.response?.status);
+      console.error("Response data:", error.response?.data);
+    }
     return handleAxiosError(error, "Unable to log in to Atenxion");
   }
 }
 
 export async function logoutAtenxionUser(
   credentials: AtenxionCredentials,
-  token?: string | null
+  token?: string | null,
+  useAdminIntegration: boolean = false
 ) {
   const url = `${resolveServerUrl()}/api/post-login/user-logout`;
-  const resolvedToken =  (await fetchIntegrationEmbed())?.contextKey || token;
-  const body = normalizeCredentials(credentials);
-  const headers = getHeaders(resolvedToken);
+  let resolvedToken = token;
+  if (!resolvedToken) {
+    // Use admin integration for doctors, patient portal integration for others
+    const embed = useAdminIntegration 
+      ? await fetchAdminIntegrationEmbed()
+      : await fetchIntegrationEmbed();
+    resolvedToken = embed?.contextKey;
+  }
+  const body = normalizeCredentials(credentials, useAdminIntegration);
+  const headers = getHeaders(resolvedToken) || {};
   try {
     console.log("Atenxion logout API call:", {
       url,
       body,
       headers,
       token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : "none",
+      useAdminIntegration,
     });
     await axios.post(url, body, { headers });
     return true;

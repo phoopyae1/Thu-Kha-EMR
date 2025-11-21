@@ -27,6 +27,7 @@ import LabOrderDetailPage from './pages/LabOrderDetail';
 import PatientPortal from './pages/PatientPortal';
 import PatientPortalLanding from './pages/PatientPortalLanding';
 import Integration from './pages/Integration';
+import AdminIntegration from './pages/AdminIntegration';
 import AppointmentRedirect from './components/AppointmentRedirect';
 import PatientRedirect from './components/PatientRedirect';
 import LabOrderRedirect from './components/LabOrderRedirect';
@@ -44,6 +45,9 @@ function App() {
       <Route path="/appointments/:id" element={<AppointmentRedirect />} />
       {/* Redirect route for direct lab order link */}
       <Route path="/lab-orders/:labOrderId" element={<LabOrderRedirect />} />
+      
+      {/* Admin Integration - Public route before login */}
+      <Route path="/admin/integration" element={<AdminIntegration />} />
       
       {/* Admin Login */}
       <Route path="/admin/login" element={<Login />} />
@@ -98,7 +102,7 @@ function App() {
       <Route
         path="/admin/:adminId/appointments/new"
         element={
-          <RouteGuard allowedRoles={['AdminAssistant']}>
+          <RouteGuard allowedRoles={['AdminAssistant', 'ITAdmin']}>
             <AppointmentForm />
           </RouteGuard>
         }
@@ -170,7 +174,7 @@ function App() {
       <Route
         path="/admin/:adminId/pharmacy/queue"
         element={
-          <RouteGuard allowedRoles={['Pharmacist', 'PharmacyTech', 'InventoryManager', 'ITAdmin']}>
+          <RouteGuard allowedRoles={['Pharmacist', 'PharmacyTech', 'InventoryManager', 'ITAdmin', 'AdminAssistant']}>
             <PharmacyQueue />
           </RouteGuard>
         }

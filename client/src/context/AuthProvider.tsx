@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAccessToken, setAccessToken, subscribeAccessToken } from '../api/http';
 import { login as apiLogin, type LoginResponse, type Role } from '../api/client';
+import { loginAtenxionUser, logoutAtenxionUser, type AtenxionCredentials } from '../api/atenxion';
+import { fetchAdminIntegrationEmbed } from '../api/patientPortal';
 
 interface User {
   userId: string;
@@ -13,7 +15,7 @@ interface AuthContextType {
   accessToken: string | null;
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,6 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     getAccessToken(),
   );
   const [user, setUser] = useState<User | null>(() => decodeAccessToken(getAccessToken()));
+  const [currentUserCredentials, setCurrentUserCredentials] = useState<AtenxionCredentials | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeAccessToken((token) => {
@@ -41,15 +44,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const login = async (email: string, password: string) => {
     const data: LoginResponse = await apiLogin(email, password);
     setAccessToken(data.accessToken);
-    setUser({
+    const loggedInUser = {
       userId: data.user.userId,
       role: data.user.role,
       email: data.user.email,
       doctorId: data.user.doctorId ?? null,
-    });
+    };
+    setUser(loggedInUser);
+
+    // Call Atenxion login for doctors
+    if (loggedInUser.role === 'Doctor') {
+      try {
+        // Get admin integration embed to extract agentId if available
+        const adminEmbed = await fetchAdminIntegrationEmbed();
+        let agentId: string | undefined;
+        
+        // Try to extract agentId from iframeCode if it's a script tag
+        if (adminEmbed?.iframeCode) {
+          const agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+          if (agentIdMatch) {
+            agentId = agentIdMatch[1];
+          }
+        }
+
+        const credentials: AtenxionCredentials = {
+          userId: loggedInUser.userId,
+          patientId: loggedInUser.userId, // For doctors, use userId as patientId
+          patientName: loggedInUser.email,
+          agentId,
+        };
+        
+        setCurrentUserCredentials(credentials);
+        await loginAtenxionUser(credentials, undefined, true); // true = useAdminIntegration
+        console.log('[AuthProvider] Atenxion login successful for doctor');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion login failed for doctor:', error);
+        // Don't block login if Atenxion login fails
+      }
+    }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Call Atenxion logout for doctors before clearing session
+    if (user?.role === 'Doctor' && currentUserCredentials) {
+      try {
+        await logoutAtenxionUser(currentUserCredentials, undefined, true); // true = useAdminIntegration
+        console.log('[AuthProvider] Atenxion logout successful for doctor');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion logout failed for doctor:', error);
+        // Continue with logout even if Atenxion logout fails
+      }
+    }
+    
+    setCurrentUserCredentials(null);
     setAccessToken(null);
     setUser(null);
   };

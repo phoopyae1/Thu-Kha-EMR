@@ -1,7 +1,9 @@
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { AvatarIcon, CheckIcon, PatientsIcon, SettingsIcon } from '../components/icons';
 import { useSettings } from '../context/SettingsProvider';
+import { useAuth } from '../context/AuthProvider';
 import { useTranslation, type Language } from '../hooks/useTranslation';
 import {
   DoctorAvailabilitySlot,
@@ -97,6 +99,8 @@ function formatTimeRange(startMin: number, endMin: number): string {
 }
 
 export default function Settings() {
+  const { adminId } = useParams<{ adminId: string }>();
+  const { user } = useAuth();
   const {
     appName,
     logo,
@@ -106,10 +110,12 @@ export default function Settings() {
     addUser,
     updateUser,
     addDoctor,
+    deleteDoctor,
     widgetEnabled,
     setWidgetEnabled,
   } = useSettings();
   const { t, language, setLanguage } = useTranslation();
+  const canDeleteDoctor = user && (user.role === 'ITAdmin' || user.role === 'AdminAssistant');
 
   const [name, setName] = useState(appName);
   const [userForm, setUserForm] = useState<{ email: string; password: string; role: Role; doctorId: string }>(
@@ -129,6 +135,8 @@ export default function Settings() {
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [availabilitySuccess, setAvailabilitySuccess] = useState<string | null>(null);
   const [addingAvailability, setAddingAvailability] = useState(false);
+  const [deletingDoctor, setDeletingDoctor] = useState<Record<string, boolean>>({});
+  const [doctorDeleteError, setDoctorDeleteError] = useState<string | null>(null);
 
   const totalUsers = users.length;
   const totalDoctors = doctors.length;
@@ -338,6 +346,33 @@ export default function Settings() {
     setAvailabilityForm({ dayOfWeek: '1', start: '09:00', end: '17:00' });
   }
 
+  async function handleDeleteDoctor(doctorId: string, doctorName: string) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${doctorName}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingDoctor((prev) => ({ ...prev, [doctorId]: true }));
+    setDoctorDeleteError(null);
+    try {
+      await deleteDoctor(doctorId);
+      // If the deleted doctor was selected, clear the selection
+      if (selectedDoctorId === doctorId) {
+        setSelectedDoctorId('');
+        setAvailabilitySlots([]);
+        setDefaultAvailability([]);
+      }
+    } catch (error) {
+      setDoctorDeleteError(parseErrorMessage(error, 'Unable to delete doctor.'));
+    } finally {
+      setDeletingDoctor((prev) => {
+        const next = { ...prev };
+        delete next[doctorId];
+        return next;
+      });
+    }
+  }
+
   async function handleAddAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedDoctorId) {
@@ -502,6 +537,23 @@ export default function Settings() {
                 </div>
               </div>
 
+              <div className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-blue-900">{t('Integration Settings')}</h3>
+                    <p className="mt-1 text-xs text-blue-700">
+                      {t('Configure the iframe embed code and context key for the patient portal widget.')}
+                    </p>
+                  </div>
+                  <Link
+                    to="/admin/integration"
+                    className="ml-4 inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                  >
+                    {t('Manage Integration')}
+                  </Link>
+                </div>
+              </div>
+
               <form onSubmit={handleSave} className="mt-6 space-y-5">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
@@ -637,19 +689,41 @@ export default function Settings() {
 
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-gray-900">Active Doctors</h3>
+                {doctorDeleteError && (
+                  <p className="mt-2 text-sm text-red-600">{doctorDeleteError}</p>
+                )}
                 {totalDoctors > 0 ? (
                   <ul className="mt-3 space-y-3">
-                    {doctors.map((doctor) => (
-                      <li
-                        key={`${doctor.name}-${doctor.department}`}
-                        className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-700"
-                      >
-                        <span className="font-medium text-gray-900">{doctor.name}</span>
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-600 shadow-sm">
-                          {doctor.department}
-                        </span>
-                      </li>
-                    ))}
+                    {doctors.map((doctor) => {
+                      const isDeleting = deletingDoctor[doctor.doctorId] ?? false;
+                      return (
+                        <li
+                          key={doctor.doctorId}
+                          className="flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm text-gray-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium text-gray-900">{doctor.name}</span>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-blue-600 shadow-sm">
+                              {doctor.department}
+                            </span>
+                          </div>
+                          {canDeleteDoctor && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDoctor(doctor.doctorId, doctor.name)}
+                              disabled={isDeleting}
+                              className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold text-white transition ${
+                                isDeleting
+                                  ? 'cursor-not-allowed bg-gray-400'
+                                  : 'bg-red-600 hover:bg-red-700'
+                              }`}
+                            >
+                              {isDeleting ? 'Deleting…' : 'Delete'}
+                            </button>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 ) : (
                   <p className="mt-3 text-sm text-gray-500">

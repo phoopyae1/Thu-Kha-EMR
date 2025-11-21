@@ -5,6 +5,7 @@ import { CalendarIcon } from '../components/icons';
 import {
   listAppointments,
   patchStatus,
+  deleteAppointment,
   type Appointment,
   type AppointmentListParams,
   type AppointmentStatus,
@@ -223,8 +224,10 @@ export default function AppointmentsPage() {
 
   const [actionError, setActionError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState<Record<string, boolean>>({});
   const [toast, setToast] = useState<ToastState | null>(null);
   const effectiveDoctorId = isDoctorUser ? user?.doctorId ?? '' : doctorId;
+  const canDelete = userRole === 'ITAdmin' || userRole === 'AdminAssistant';
 
   useEffect(() => {
     if (isDoctorUser) {
@@ -480,6 +483,33 @@ export default function AppointmentsPage() {
     params.set('start', String(startMinute));
     params.set('end', String(endMinute));
     navigate(`/admin/${adminId}/appointments/new?${params.toString()}`);
+  }
+
+  async function handleDelete(appointment: Appointment) {
+    const confirmed = window.confirm(
+      `Are you sure you want to delete the appointment for ${appointment.patient.name}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeleting((prev) => ({ ...prev, [appointment.appointmentId]: true }));
+    setActionError(null);
+    try {
+      await deleteAppointment(appointment.appointmentId);
+      setAppointments((prev) => prev.filter((apt) => apt.appointmentId !== appointment.appointmentId));
+      setToast({
+        id: Date.now(),
+        title: 'Appointment deleted',
+        message: 'The appointment has been successfully deleted.',
+      });
+    } catch (err) {
+      setActionError(parseErrorMessage(err));
+    } finally {
+      setDeleting((prev) => {
+        const next = { ...prev };
+        delete next[appointment.appointmentId];
+        return next;
+      });
+    }
   }
 
   function handleDayGridClick(event: MouseEvent<HTMLDivElement>) {
@@ -994,6 +1024,7 @@ export default function AppointmentsPage() {
                       {appointments.map((appointment) => {
                         const visuals = statusVisuals[appointment.status];
                         const busy = isUpdating(appointment.appointmentId);
+                        const isDeleting = deleting[appointment.appointmentId] ?? false;
                         return (
                           <tr key={appointment.appointmentId} className="transition hover:bg-blue-50/40">
                             <td className="px-6 py-4 align-top">
@@ -1023,7 +1054,7 @@ export default function AppointmentsPage() {
                               <div className="flex flex-wrap justify-end gap-2">
                                 {visibleActionConfigs.map((action) => {
                                   const allowed = allowedTransitions[appointment.status]?.includes(action.targetStatus) ?? false;
-                                  const enabled = allowed && !busy;
+                                  const enabled = allowed && !busy && !isDeleting;
                                   const tone = toneStyles[action.tone];
                                   const className = `inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
                                     enabled ? tone.enabled : tone.disabled
@@ -1042,6 +1073,20 @@ export default function AppointmentsPage() {
                                     </button>
                                   );
                                 })}
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    disabled={busy || isDeleting}
+                                    onClick={() => handleDelete(appointment)}
+                                    className={`inline-flex items-center rounded-full px-3 py-1.5 text-xs font-semibold text-white transition focus:outline-none focus:ring-2 focus:ring-offset-1 ${
+                                      busy || isDeleting
+                                        ? 'cursor-not-allowed bg-gray-400'
+                                        : 'bg-red-600 hover:bg-red-700'
+                                    }`}
+                                  >
+                                    {isDeleting ? t('Deleting...') : t('Delete')}
+                                  </button>
+                                )}
                               </div>
                               {busy && (
                                 <div className="mt-2 text-xs font-medium text-blue-600">{t('Updating status...')}</div>

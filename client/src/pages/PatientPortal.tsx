@@ -1610,7 +1610,7 @@ export default function PatientPortal() {
         <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
             {logo ? (
-              <img src={logo} alt={`${displayName} logo`} className="h-10 w-auto rounded" />
+              <img src={logo} alt={`${displayName} logo`} className="h-14 w-auto rounded" />
             ) : (
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white">
                 <DashboardIcon className="h-6 w-6" />
@@ -1618,15 +1618,11 @@ export default function PatientPortal() {
             )}
             <div>
               {displayName ? (
-                <>
-                  <p className="text-xl font-semibold text-blue-700">{displayName}</p>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Patient portal')}</p>
-                </>
+                <p className="text-xl font-semibold text-blue-700">
+                  {displayName} - {t('Patient portal')}
+                </p>
               ) : (
-                <>
-                  <p className="text-xl font-semibold text-blue-700">Patient</p>
-                  <p className="text-xl font-semibold text-blue-700">portal</p>
-                </>
+                <p className="text-xl font-semibold text-blue-700">Patient portal</p>
               )}
             </div>
           </div>
@@ -1643,21 +1639,6 @@ export default function PatientPortal() {
                 {t('Sign out')}
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={() => {
-                navigate('/');
-              }}
-              className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-            >
-              {t('Portal home')}
-            </button>
-            <Link
-              to="/admin/login"
-              className="rounded-full border border-blue-200 bg-white px-4 py-2 text-sm font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-            >
-              {t('Return to staff login')}
-            </Link>
           </div>
         </div>
         {session ? (
