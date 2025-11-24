@@ -2,7 +2,7 @@ import axios from "axios";
 import { fetchLatestIntegrationEmbed } from "./localMongoService.js";
 
 const ATENXION_API_URL =
-  process.env.ATENXION_API_URL || "https://api-qa.atenxion.ai";
+  process.env.ATENXION_API_URL || "https://backend.atenxion.ai";
 const ATENXION_API_TOKEN = process.env.ATENXION_API_TOKEN || "asdf";
 
 // Simplified transaction function that only requires patientId and token
@@ -28,7 +28,7 @@ export async function recordAtenxionTransaction(
   }
 
   const headers = {
-    Authorization: `Bearer ${atenxionToken || ATENXION_API_TOKEN}`,
+    Authorization: `${atenxionToken || ATENXION_API_TOKEN}`,
     "Content-Type": "application/json",
   };
 
