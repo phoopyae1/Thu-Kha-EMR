@@ -97,15 +97,33 @@ export default function VitalsCard({ patientId, defaultVisitId = '', limit = 10 
     const payload: CreateVitalsPayload = {
       visitId: form.visitId,
       patientId,
-      systolic: parseNumber(form.systolic) ?? undefined,
-      diastolic: parseNumber(form.diastolic) ?? undefined,
-      heartRate: parseNumber(form.heartRate) ?? undefined,
-      temperature: parseNumber(form.temperature) ?? undefined,
-      spo2: parseNumber(form.spo2) ?? undefined,
-      heightCm: parseNumber(form.heightCm) ?? undefined,
-      weightKg: parseNumber(form.weightKg) ?? undefined,
-      notes: form.notes ? form.notes.trim() : undefined,
     };
+
+    // Only include fields that have values
+    const systolic = parseNumber(form.systolic);
+    if (systolic !== null) payload.systolic = systolic;
+    
+    const diastolic = parseNumber(form.diastolic);
+    if (diastolic !== null) payload.diastolic = diastolic;
+    
+    const heartRate = parseNumber(form.heartRate);
+    if (heartRate !== null) payload.heartRate = heartRate;
+    
+    const temperature = parseNumber(form.temperature);
+    if (temperature !== null) payload.temperature = temperature;
+    
+    const spo2 = parseNumber(form.spo2);
+    if (spo2 !== null) payload.spo2 = spo2;
+    
+    const heightCm = parseNumber(form.heightCm);
+    if (heightCm !== null) payload.heightCm = heightCm;
+    
+    const weightKg = parseNumber(form.weightKg);
+    if (weightKg !== null) payload.weightKg = weightKg;
+    
+    if (form.notes?.trim()) {
+      payload.notes = form.notes.trim();
+    }
 
     setSaving(true);
     setError(null);
@@ -124,8 +142,21 @@ export default function VitalsCard({ patientId, defaultVisitId = '', limit = 10 
         notes: '',
       });
     } catch (err) {
-      console.error(err);
-      setError(t('Unable to save vitals entry.'));
+      console.error('Error saving vitals:', err);
+      let errorMessage = t('Unable to save vitals entry.');
+      if (err instanceof Error) {
+        try {
+          const parsed = JSON.parse(err.message);
+          if (parsed?.error || parsed?.details) {
+            errorMessage = parsed.error || JSON.stringify(parsed.details);
+          } else {
+            errorMessage = err.message;
+          }
+        } catch {
+          errorMessage = err.message || errorMessage;
+        }
+      }
+      setError(errorMessage);
     } finally {
       setSaving(false);
     }

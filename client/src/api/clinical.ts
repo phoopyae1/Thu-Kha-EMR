@@ -207,3 +207,44 @@ export async function enterLabResult(payload: EnterLabResultPayload): Promise<La
     body: JSON.stringify(payload),
   });
 }
+
+export interface CreateClinicalDocPayload {
+  visitId?: string;
+  patientId?: string;
+  visitDate?: string | Date;
+  doctorId?: string;
+  diagnoses?: Array<{ diagnosis: string }>;
+  prescriptions?: Array<{
+    drugName: string;
+    dose: string;
+    route: string;
+    frequency: string;
+    durationDays: number;
+    quantityPrescribed?: number;
+    prn?: boolean;
+    allowGeneric?: boolean;
+    notes?: string;
+  }>;
+  labResults?: Array<{
+    testName: string;
+    value?: number;
+    unit?: string;
+  }>;
+  observationNote?: {
+    noteText?: string;
+    bpSystolic?: number;
+    bpDiastolic?: number;
+    heartRate?: number;
+    temperatureC?: number;
+    spo2?: number;
+    bmi?: number;
+  };
+}
+
+export async function createClinicalDoc(payload: CreateClinicalDocPayload): Promise<any> {
+  return fetchJSON('/doctor-agent/create-clinical-doc', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}

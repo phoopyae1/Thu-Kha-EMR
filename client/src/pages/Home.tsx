@@ -38,6 +38,7 @@ import {
   type PharmacyQueueItem,
 } from '../api/pharmacy';
 import { getPatientInsightSummary, type PatientAiSummary } from '../api/insights';
+import { createClinicalDoc } from '../api/clinical';
 import VisitForm from '../components/VisitForm';
 import {
   createVisitFormInitialValues,
@@ -1531,61 +1532,107 @@ function DoctorQueueDashboard() {
     setError(null);
 
     try {
-      let visitId = selectedVisitId;
-      let detail = selectedVisitDetail;
+      // Transform form data to API format
+      const apiPayload: any = {
+        patientId: selected.patientId,
+        visitDate: values.visitDate,
+        doctorId: values.doctorId,
+      };
 
-      if (!visitId) {
-        const visit = await createVisit({
-          patientId: selected.patientId,
-          visitDate: values.visitDate,
-          doctorId: values.doctorId,
-          department: values.department,
-          reason: values.reason,
-        });
-        visitId = visit.visitId;
-        await persistVisitFormValues(visitId, values);
-        detail = await getVisit(visitId);
-      } else {
-        const additions = computeVisitAdditions(values, detail);
-        const hasAdditions =
-          additions.diagnoses.length > 0 ||
-          additions.medications.length > 0 ||
-          additions.labs.length > 0 ||
-          Boolean(additions.observation);
-
-        if (hasAdditions) {
-          await persistVisitFormValues(visitId, additions);
-          detail = await getVisit(visitId);
-        }
+      // Use existing visitId if available
+      if (selectedVisitId) {
+        apiPayload.visitId = selectedVisitId;
       }
 
-      if (detail) {
-        setSelectedVisitDetail(detail);
-        setVisitInitialValues(visitDetailToInitialValues(detail));
+      // Transform diagnoses
+      if (values.diagnoses && values.diagnoses.length > 0) {
+        apiPayload.diagnoses = values.diagnoses
+          .filter((d) => d.trim().length > 0)
+          .map((d) => ({ diagnosis: d.trim() }));
       }
 
+      // Transform prescriptions - parse dosage, frequency, duration
+      if (values.medications && values.medications.length > 0) {
+        apiPayload.prescriptions = values.medications
+          .filter((m) => m.drugName && m.drugName.trim().length > 0)
+          .map((m) => {
+            // Parse dosage string (format: "500 | edf | 3 days" or separate fields)
+            let dose = '';
+            let route = '';
+            let frequency = m.frequency?.trim() || '';
+            let durationDays = 0;
+
+            if (m.dosage && m.dosage.includes('|')) {
+              // Parse combined format: "500 | edf | 3 days"
+              const parts = m.dosage.split('|').map((p) => p.trim());
+              dose = parts[0] || '';
+              route = parts[1] || '';
+              if (parts[2]) {
+                const daysMatch = parts[2].match(/(\d+)/);
+                durationDays = daysMatch ? parseInt(daysMatch[1], 10) : 0;
+              }
+            } else {
+              // Use separate fields
+              dose = m.dosage?.trim() || '';
+              route = ''; // Route not in form, use empty or default
+              frequency = m.frequency?.trim() || '';
+              const durationStr = m.duration?.trim() || '';
+              const daysMatch = durationStr.match(/(\d+)/);
+              durationDays = daysMatch ? parseInt(daysMatch[1], 10) : 0;
+            }
+
+            return {
+              drugName: m.drugName.trim(),
+              dose: dose || '1',
+              route: route || 'Oral',
+              frequency: frequency || 'OD',
+              durationDays: durationDays || 1,
+              quantityPrescribed: 1,
+              prn: false,
+              allowGeneric: true,
+            };
+          });
+      }
+
+      // Transform lab results
+      if (values.labs && values.labs.length > 0) {
+        apiPayload.labResults = values.labs
+          .filter((l) => l.testName && l.testName.trim().length > 0)
+          .map((l) => ({
+            testName: l.testName.trim(),
+            value: l.resultValue,
+            unit: l.unit?.trim() || undefined,
+          }));
+      }
+
+      // Transform observation
+      if (values.observation) {
+        apiPayload.observationNote = {
+          noteText: values.observation.noteText,
+          bpSystolic: values.observation.bpSystolic,
+          bpDiastolic: values.observation.bpDiastolic,
+          heartRate: values.observation.heartRate,
+          temperatureC: values.observation.temperatureC,
+          spo2: values.observation.spo2,
+          bmi: values.observation.bmi,
+        };
+      }
+
+      // Call the create-clinical-doc API
+      const result = await createClinicalDoc(apiPayload);
+      
+      // Update local state with the result
+      const visitId = result.visitId;
       if (visitId) {
         setSelectedVisitId(visitId);
-      }
-
-      if (selected.status !== 'Completed') {
-        const result = await patchStatus(selected.appointmentId, { status: 'Completed' });
-        if ('visitId' in result && typeof result.visitId === 'string') {
-          visitId = result.visitId;
-          setSelectedVisitId(result.visitId);
-          if (!detail || detail.visitId !== result.visitId) {
-            const refreshed = await getVisit(result.visitId);
-            setSelectedVisitDetail(refreshed);
-            setVisitInitialValues(visitDetailToInitialValues(refreshed));
-          }
+        const detail = await getVisit(visitId);
+        if (detail) {
+          setSelectedVisitDetail(detail);
+          setVisitInitialValues(visitDetailToInitialValues(detail));
         }
       }
 
-      setSuccess(
-        selected.status === 'Completed'
-          ? t('Visit details updated.')
-          : t('Visit saved and appointment completed.'),
-      );
+      setSuccess(t('Visit saved successfully.'));
       await loadQueue();
       setSelectedId(selected.appointmentId);
       if (summaryState[summaryPatientId]) {
@@ -1744,34 +1791,9 @@ function DoctorQueueDashboard() {
                       saving={savingVisit}
                       disableDoctorSelection
                       disableVisitDate
-                      submitLabel={
-                        selected.status === 'Completed'
-                          ? t('Update Visit')
-                          : t('Save Visit & Complete')
-                      }
-                      submitDisabled={
-                        !(selected.status === 'InProgress' || selected.status === 'Completed')
-                      }
-                      extraActions={
-                        selected.status === 'Scheduled' || selected.status === 'CheckedIn'
-                          ? (
-                              <button
-                                type="button"
-                                onClick={() => handleInvite(selected)}
-                                disabled={invitingId === selected.appointmentId}
-                                className={`rounded-full px-4 py-2 text-sm font-semibold text-white shadow transition ${
-                                  invitingId === selected.appointmentId
-                                    ? 'cursor-not-allowed bg-blue-300'
-                                    : 'bg-blue-600 hover:bg-blue-700'
-                                }`}
-                              >
-                                {invitingId === selected.appointmentId
-                                  ? (selected.status === 'Scheduled' ? t('Checking In...') : t('Inviting...'))
-                                  : (selected.status === 'Scheduled' ? t('Check In') : t('Invite Patient'))}
-                              </button>
-                            )
-                          : null
-                      }
+                      submitLabel={t('Save Visit & Complete')}
+                      submitDisabled={false}
+                      extraActions={null}
                     />
                   ) : (
                     <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-6 text-sm text-gray-500">

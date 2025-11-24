@@ -114,19 +114,15 @@ export default function VisitForm({
           return null;
         }
 
-        const durationLabel = duration.trim();
-        const detailParts = [dosage.trim(), frequency.trim()];
-        if (durationLabel) {
-          detailParts.push(`${durationLabel} days`);
-        }
-        const sanitizedParts = detailParts.filter((part) => part.length > 0);
-
+        // Keep separate fields for API compatibility
         return {
           drugName: name,
-          ...(sanitizedParts.length ? { dosage: sanitizedParts.join(' | ') } : {}),
+          dosage: dosage.trim(),
+          frequency: frequency.trim(),
+          duration: duration.trim(),
         };
       })
-      .filter((medication): medication is { drugName: string; dosage?: string } => medication !== null);
+      .filter((medication): medication is { drugName: string; dosage: string; frequency: string; duration: string } => medication !== null && medication.drugName.length > 0);
 
     const labs = state.labs
       .map(({ testName, resultValue, unit }) => {

@@ -1,5 +1,5 @@
 import { Router, type Response, type NextFunction } from "express";
-import { requirePatientAuth } from "../modules/auth/index.js";
+import { requirePatientAuth, requireAuth, type AuthRequest } from "../modules/auth/index.js";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { assertCreatable } from "../services/appointmentService.js";
@@ -23,15 +23,156 @@ function getTokenFromRequest(req: any): string {
 
 // Agent service functions will be defined inline
 
-// 1. Medical History Agent API
+function parseBearerToken(header: string | undefined): string | null {
+  if (!header) return null;
+  const [scheme, value] = header.split(" ");
+  if (!scheme || scheme.toLowerCase() !== "bearer") return null;
+  return value?.trim() || null;
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error("Invalid token");
+  }
+  const payload = Buffer.from(parts[1], "base64url").toString("utf8");
+  return JSON.parse(payload);
+}
+
+// Middleware to allow either Doctor or Patient authentication
+function requireDoctorOrPatientAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  const rawHeader = req.get("authorization");
+  const rawToken = parseBearerToken(rawHeader);
+  if (!rawToken) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = decodeJwtPayload(rawToken);
+  } catch {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const isPatientToken = typeof payload.patientId === "string";
+
+  if (isPatientToken) {
+    // Patient portal token
+    return requirePatientAuth(req, res, next);
+  }
+
+  // Default to doctor/staff token
+  return requireAuth(req, res, () => {
+    if (!req.user || req.user.role !== "Doctor") {
+      return res.status(403).json({ error: "Doctor access required", msg: "Failed" });
+    }
+    return next();
+  });
+}
+
+// 1. Medical History Agent API - Now supports both Doctor and Patient authentication
 router.post(
   "/medical-history",
-  requirePatientAuth,
-  async (req: any, res: Response, next: NextFunction) => {
+  requireDoctorOrPatientAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId } = req.body;
+      const { patientId, patientName, doctorId } = req.body;
+      const user = req.user;
       
-      if (!patientId) {
+      if (!user) {
+        return res.status(401).json({ error: "Unauthorized", msg: "Failed" });
+      }
+      
+      // Determine which patientId to use
+      let targetPatientId: string | null = null;
+      
+      if (patientId) {
+        // If patientId is provided in request body
+        if (user.role === "Patient" && user.patientId !== patientId) {
+          // Patients can only access their own medical history
+          return res.status(403).json({
+            error: "Patients can only access their own medical history",
+            msg: "Failed",
+          });
+        }
+        // Doctors can query any patient, patients can query themselves
+        targetPatientId = patientId;
+      } else if (patientName && user.role === "Doctor") {
+        // If patientName is provided and user is a doctor, search for patient by name
+        if (!patientName.trim()) {
+          return res.status(400).json({
+            error: "patientName cannot be empty",
+            msg: "Failed",
+          });
+        }
+        
+        // Search for patient by name (case-insensitive, partial match)
+        const patients = await prisma.patient.findMany({
+          where: {
+            name: {
+              contains: patientName.trim(),
+              mode: 'insensitive',
+            },
+          },
+          select: {
+            patientId: true,
+            name: true,
+          },
+          take: 10,
+          orderBy: {
+            name: 'asc',
+          },
+        });
+        
+        if (patients.length === 0) {
+          return res.status(404).json({
+            error: `No patient found with name matching "${patientName}"`,
+            msg: "Failed",
+          });
+        }
+        
+        if (patients.length > 1) {
+          // Multiple patients found - return list for doctor to choose
+          return res.status(400).json({
+            error: "Multiple patients found with that name. Please use patientId instead.",
+            msg: "Failed",
+            matches: patients.map(p => ({
+              patientId: p.patientId,
+              name: p.name,
+            })),
+          });
+        }
+        
+        // Single patient found
+        targetPatientId = patients[0].patientId;
+      } else if (user.role === "Patient" && user.patientId) {
+        // Patient authenticated but no patientId in body - use their own
+        targetPatientId = user.patientId;
+      } else if (doctorId && user.role === "Doctor") {
+        // If doctorId is provided, validate it matches authenticated doctor
+        if (user.doctorId !== doctorId) {
+          return res.status(403).json({
+            error: "Doctor ID does not match authenticated doctor",
+            msg: "Failed",
+          });
+        }
+        // Doctor provided their ID but no patientId or patientName - still need one to query
+        return res.status(400).json({
+          error: "patientId or patientName is required to fetch medical history",
+          msg: "Failed",
+        });
+      } else {
+        return res.status(400).json({
+          error: "patientId is required (or patientName for doctors)",
+          msg: "Failed",
+        });
+      }
+      
+      if (!targetPatientId) {
         return res.status(400).json({
           error: "Patient ID is required",
           msg: "Failed",
@@ -40,7 +181,7 @@ router.post(
       
       // Get patient data with comprehensive information
       const patient = await prisma.patient.findUnique({
-        where: { patientId },
+        where: { patientId: targetPatientId },
         select: {
           patientId: true,
           name: true,
@@ -73,7 +214,7 @@ router.post(
         observations,
       ] = await Promise.all([
         prisma.medicationOrder.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           include: {
             prescription: {
               include: {
@@ -89,7 +230,7 @@ router.post(
           take: 20,
         }),
         prisma.medication.findMany({
-          where: { visit: { patientId } },
+          where: { visit: { patientId: targetPatientId } },
           include: {
             visit: { include: { doctor: true } },
           },
@@ -97,7 +238,7 @@ router.post(
           take: 20,
         }),
         prisma.visit.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           include: {
             doctor: true,
           },
@@ -105,17 +246,17 @@ router.post(
           take: 15,
         }),
         prisma.labResult.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           orderBy: { resultedAt: "desc" },
           take: 15,
         }),
         prisma.immunizationRecord.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           orderBy: { immunizationId: "desc" },
           take: 10,
         }),
         prisma.vitals.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           orderBy: { recordedAt: "desc" },
           take: 10,
         }),
@@ -124,7 +265,7 @@ router.post(
         prisma.diagnosis.findMany({
           where: { 
             visit: {
-              patientId,
+              patientId: targetPatientId,
             },
           },
           include: {
@@ -136,12 +277,12 @@ router.post(
           take: 10,
         }),
         prisma.problem.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           orderBy: { createdAt: "desc" },
           take: 10,
         }),
         prisma.observation.findMany({
-          where: { patientId },
+          where: { patientId: targetPatientId },
           include: {
             visit: {
               include: { doctor: true },

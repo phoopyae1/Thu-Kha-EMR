@@ -3,7 +3,9 @@ import { requireAuth, requireRole, type AuthRequest } from "../modules/auth/inde
 import { PrismaClient } from "@prisma/client";
 import { CreateLabOrderSchema } from "../validation/clinical.js";
 import * as labService from "../services/labService.js";
+import { createPrescription } from "../services/pharmacyService.js";
 import { z } from "zod";
+import { toDateOnly } from "../utils/time.js";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -1134,6 +1136,541 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to fetch appointments queue",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Validation schema for clinical documentation creation
+const CreateClinicalDocSchema = z.object({
+  // Either visitId (for existing visit) OR visit creation fields
+  visitId: z.string().uuid().optional(),
+  // Visit creation fields (required if visitId is not provided)
+  patientId: z.string().uuid().optional(),
+  visitDate: z.coerce.date().optional(),
+  doctorId: z.string().uuid().optional(), // Optional: if provided, must match authenticated doctor
+  // Clinical documentation fields
+  diagnoses: z.array(z.object({
+    diagnosis: z.string().min(1),
+  })).optional(),
+  prescriptions: z.array(z.object({
+    drugName: z.string().min(1), // Accept drugName instead of drugId
+    dose: z.string().min(1),
+    route: z.string().min(1),
+    frequency: z.string().min(1),
+    durationDays: z.number().int().positive().max(365),
+    quantityPrescribed: z.number().int().positive().max(1000).optional(),
+    prn: z.boolean().optional().default(false),
+    allowGeneric: z.boolean().optional().default(true),
+    notes: z.string().max(300).optional(),
+  })).optional(),
+  labResults: z.array(z.object({
+    testName: z.string().min(1),
+    value: z.number().optional(),
+    unit: z.string().optional(),
+  })).optional(),
+  observationNote: z.object({
+    noteText: z.string().optional(),
+    bpSystolic: z.number().int().optional(),
+    bpDiastolic: z.number().int().optional(),
+    heartRate: z.number().int().optional(),
+    temperatureC: z.number().optional(),
+    spo2: z.number().int().optional(),
+    bmi: z.number().optional(),
+  }).optional(),
+}).refine(
+  (data) => {
+    // Either visitId must be provided, OR all visit creation fields must be provided
+    if (data.visitId) {
+      return true; // visitId provided, no need for visit creation fields
+    }
+    // If no visitId, patientId and visitDate are required
+    return !!(data.patientId && data.visitDate);
+  },
+  {
+    message: "Either visitId must be provided, or all visit creation fields (patientId, visitDate) must be provided.",
+  }
+);
+
+// Create Clinical Documentation API - Creates diagnoses, prescriptions, lab results, and observations
+router.post(
+  "/create-clinical-doc",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      const doctorId = user.doctorId;
+      if (!doctorId) {
+        return res.status(403).json({
+          error: "User is not linked to a doctor profile",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = CreateClinicalDocSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const payload = validationResult.data;
+
+      // Note: We always use the authenticated doctor's ID (doctorId from user)
+      // The doctorId in request body is optional and ignored - we use the authenticated doctor's ID
+      // If doctorId is provided but doesn't match, we just ignore it and use the authenticated one
+      if (payload.doctorId && payload.doctorId !== doctorId) {
+        console.warn(`[create-clinical-doc] doctorId in request body (${payload.doctorId}) does not match authenticated doctor (${doctorId}). Using authenticated doctor's ID.`);
+      }
+
+      // Wrap all database operations in a transaction for atomicity
+      const transactionResult = await prisma.$transaction(async (tx) => {
+        let visit: { visitId: string; patientId: string; doctorId: string } | null = null;
+        let isNewVisit = false;
+
+        // If visitId is provided, use existing visit
+        if (payload.visitId) {
+          visit = await tx.visit.findUnique({
+            where: { visitId: payload.visitId },
+            select: { visitId: true, patientId: true, doctorId: true },
+          });
+
+          if (!visit) {
+            throw new Error("Visit not found");
+          }
+
+          if (visit.doctorId !== doctorId) {
+            throw new Error("Visit does not belong to this doctor");
+          }
+        } else {
+          // Create new visit if visitId is not provided
+          // Verify patient exists
+          const patient = await tx.patient.findUnique({
+            where: { patientId: payload.patientId! },
+            select: { patientId: true },
+          });
+
+          if (!patient) {
+            throw new Error("Patient not found");
+          }
+
+          // Get doctor's department from database
+          const doctor = await tx.doctor.findUnique({
+            where: { doctorId: doctorId },
+            select: { department: true },
+          });
+
+          if (!doctor) {
+            throw new Error("Doctor not found");
+          }
+
+          // Create the visit using authenticated doctor's ID
+          // Department is fetched from doctor profile, reason is set to null
+          const newVisit = await tx.visit.create({
+            data: {
+              patientId: payload.patientId!,
+              visitDate: payload.visitDate!,
+              doctorId: doctorId,
+              department: doctor.department,
+              reason: null,
+            },
+            select: { visitId: true, patientId: true, doctorId: true },
+          });
+
+          visit = newVisit;
+          isNewVisit = true;
+        }
+
+        // At this point, visit is guaranteed to be non-null
+        if (!visit) {
+          throw new Error("Failed to get or create visit");
+        }
+
+        const results: any = {
+          status: "Success",
+          visitId: visit.visitId,
+          patientId: visit.patientId,
+          doctorId: doctorId,
+        };
+
+        // Create diagnoses
+        if (payload.diagnoses && payload.diagnoses.length > 0) {
+          const createdDiagnoses = await Promise.all(
+            payload.diagnoses.map((diag) =>
+              tx.diagnosis.create({
+                data: {
+                  visitId: visit!.visitId,
+                  diagnosis: diag.diagnosis,
+                },
+              })
+            )
+          );
+          results.diagnoses = createdDiagnoses.map((d) => ({
+            diagId: d.diagId,
+            diagnosis: d.diagnosis,
+          }));
+          results.diagnosesCount = createdDiagnoses.length;
+        } else {
+          results.diagnoses = [];
+          results.diagnosesCount = 0;
+        }
+
+        // Create prescriptions
+        if (payload.prescriptions && payload.prescriptions.length > 0) {
+          try {
+            // Look up drugs by name for each prescription (outside transaction for read)
+            const prescriptionItems = await Promise.all(
+              payload.prescriptions.map(async (rx) => {
+                // Search for drug by name (case-insensitive, partial match)
+                const drugs = await prisma.drug.findMany({
+                  where: {
+                    isActive: true,
+                    OR: [
+                      { name: { contains: rx.drugName, mode: 'insensitive' } },
+                      { genericName: { contains: rx.drugName, mode: 'insensitive' } },
+                    ],
+                  },
+                  take: 1,
+                  orderBy: { name: 'asc' },
+                });
+
+                if (drugs.length === 0) {
+                  throw new Error(`Drug not found: "${rx.drugName}". Please check the drug name.`);
+                }
+
+                const drug = drugs[0];
+                return {
+                  drugId: drug.drugId,
+                  dose: rx.dose,
+                  route: rx.route,
+                  frequency: rx.frequency,
+                  durationDays: rx.durationDays,
+                  quantityPrescribed: rx.quantityPrescribed || 1,
+                  prn: rx.prn || false,
+                  allowGeneric: rx.allowGeneric !== undefined ? rx.allowGeneric : true,
+                  notes: rx.notes,
+                };
+              })
+            );
+
+            // Check allergies
+            const drugIds = prescriptionItems.map((item) => item.drugId);
+            const drugs = await tx.drug.findMany({ where: { drugId: { in: drugIds } } });
+            const drugNames = drugs.map((drug) => `${drug.name} ${drug.strength}`.trim());
+            const allergyHits: string[] = [];
+            if (visit.patientId) {
+              const patient = await tx.patient.findUnique({
+                where: { patientId: visit.patientId },
+                select: { drugAllergies: true },
+              });
+              if (patient?.drugAllergies) {
+                const allergies = String(patient.drugAllergies)
+                  .split(/[,;\n]+/)
+                  .map((a) => a.trim().toLowerCase())
+                  .filter(Boolean);
+                drugNames.forEach((drugName) => {
+                  const lowerDrug = drugName.toLowerCase();
+                  if (allergies.some((allergy) => lowerDrug.includes(allergy) || allergy.includes(lowerDrug))) {
+                    allergyHits.push(drugName);
+                  }
+                });
+              }
+            }
+
+            // Create prescription within transaction
+            const prescription = await tx.prescription.create({
+              data: {
+                visitId: visit.visitId,
+                doctorId: doctorId,
+                patientId: visit.patientId,
+                notes: null,
+                items: {
+                  create: prescriptionItems.map((item) => ({
+                    drugId: item.drugId,
+                    dose: item.dose,
+                    route: item.route,
+                    frequency: item.frequency,
+                    durationDays: item.durationDays,
+                    quantityPrescribed: item.quantityPrescribed,
+                    prn: Boolean(item.prn),
+                    allowGeneric: item.allowGeneric ?? true,
+                    notes: item.notes ?? null,
+                  })),
+                },
+              },
+              include: { items: { include: { drug: true } } },
+            });
+
+            // Also create Medication records for "Past Medications (Visit History)" display
+            // This ensures medications show up in the patient portal's visit history
+            const createdMedications = await Promise.all(
+              prescription.items.map(async (item) => {
+                const drug = item.drug;
+                const drugName = drug ? `${drug.name} ${drug.strength}`.trim() : 'Unknown medication';
+                const dosage = [item.dose, item.route, item.frequency]
+                  .filter(Boolean)
+                  .join(' ');
+                const instructions = [
+                  item.frequency,
+                  item.durationDays ? `for ${item.durationDays} days` : null,
+                  item.prn ? 'PRN' : null,
+                  item.notes,
+                ]
+                  .filter(Boolean)
+                  .join(' - ');
+
+                return tx.medication.create({
+                  data: {
+                    visitId: visit!.visitId,
+                    drugName: drugName,
+                    dosage: dosage || null,
+                    instructions: instructions || null,
+                  },
+                });
+              })
+            );
+
+            results.prescription = {
+              prescriptionId: prescription.prescriptionId,
+              status: prescription.status,
+              itemsCount: prescription.items.length,
+            };
+            results.prescriptionsCount = 1;
+            results.medicationsCreated = createdMedications.length;
+            if (allergyHits.length > 0) {
+              results.allergyHits = allergyHits;
+            }
+          } catch (error) {
+            results.prescriptionError = error instanceof Error ? error.message : "Failed to create prescription";
+            results.prescriptionsCount = 0;
+          }
+        } else {
+          results.prescriptionsCount = 0;
+        }
+
+        // Create lab results
+        if (payload.labResults && payload.labResults.length > 0) {
+          const createdLabResults = await Promise.all(
+            payload.labResults.map((lab) =>
+              tx.visitLabResult.create({
+                data: {
+                  visitId: visit!.visitId,
+                  testName: lab.testName,
+                  resultValue: lab.value || null,
+                  unit: lab.unit || null,
+                },
+              })
+            )
+          );
+          results.labResults = createdLabResults.map((lr) => ({
+            labId: lr.labId,
+            testName: lr.testName,
+            resultValue: lr.resultValue,
+            unit: lr.unit,
+          }));
+          results.labResultsCount = createdLabResults.length;
+        } else {
+          results.labResults = [];
+          results.labResultsCount = 0;
+        }
+
+        // Create observation note with vitals
+        if (payload.observationNote) {
+          const obsData = payload.observationNote;
+          // At least one field must be provided
+          if (
+            obsData.noteText?.trim() ||
+            obsData.bpSystolic !== undefined ||
+            obsData.bpDiastolic !== undefined ||
+            obsData.heartRate !== undefined ||
+            obsData.temperatureC !== undefined ||
+            obsData.spo2 !== undefined ||
+            obsData.bmi !== undefined
+          ) {
+            const observation = await tx.observation.create({
+              data: {
+                visitId: visit!.visitId,
+                patientId: visit.patientId,
+                doctorId: doctorId,
+                noteText: obsData.noteText?.trim() || "Vitals recorded",
+                bpSystolic: obsData.bpSystolic || null,
+                bpDiastolic: obsData.bpDiastolic || null,
+                heartRate: obsData.heartRate || null,
+                temperatureC: obsData.temperatureC || null,
+                spo2: obsData.spo2 || null,
+                bmi: obsData.bmi || null,
+              },
+            });
+
+            results.observation = {
+              obsId: observation.obsId,
+              noteText: observation.noteText,
+              bpSystolic: observation.bpSystolic,
+              bpDiastolic: observation.bpDiastolic,
+              heartRate: observation.heartRate,
+              temperatureC: observation.temperatureC,
+              spo2: observation.spo2,
+              bmi: observation.bmi,
+            };
+            results.observationCreated = true;
+          } else {
+            results.observationCreated = false;
+            results.observationError = "At least one observation field must be provided";
+          }
+        } else {
+          results.observationCreated = false;
+        }
+
+        // Find and update related appointments to "Completed" status
+        // This simulates the "Save & Complete" button behavior
+        let appointmentDateOnly: Date | null = null;
+        
+        if (payload.visitId) {
+          // If using existing visit, get the visit date
+          const visitWithDate = await tx.visit.findUnique({
+            where: { visitId: visit!.visitId },
+            select: { visitDate: true },
+          });
+          if (visitWithDate?.visitDate) {
+            appointmentDateOnly = toDateOnly(visitWithDate.visitDate.toISOString().slice(0, 10));
+          }
+        } else if (payload.visitDate) {
+          // If creating new visit, use the provided visitDate (zod coerces it to Date)
+          const visitDate = payload.visitDate instanceof Date 
+            ? payload.visitDate 
+            : new Date(payload.visitDate);
+          appointmentDateOnly = toDateOnly(visitDate.toISOString().slice(0, 10));
+        }
+
+        if (appointmentDateOnly) {
+          // Find matching appointments that are not already completed or cancelled
+          // Use date range to match appointments for the entire day (like queue endpoint)
+          // appointment.date is DateTime, so we need to match the entire day range
+          const startOfDay = new Date(appointmentDateOnly);
+          startOfDay.setUTCHours(0, 0, 0, 0);
+          const endOfDay = new Date(appointmentDateOnly);
+          endOfDay.setUTCDate(endOfDay.getUTCDate() + 1); // Next day (exclusive)
+          endOfDay.setUTCHours(0, 0, 0, 0);
+          
+          // First, check if any appointments exist for this patient/doctor/date (for debugging)
+          const allAppointmentsForDate = await tx.appointment.findMany({
+            where: {
+              patientId: visit!.patientId,
+              doctorId: doctorId,
+              date: {
+                gte: startOfDay,
+                lt: endOfDay,
+              },
+            },
+            select: {
+              appointmentId: true,
+              status: true,
+              date: true,
+            },
+          });
+          
+          console.log(`[create-clinical-doc] All appointments for patient ${visit!.patientId}, doctor ${doctorId}, date range ${startOfDay.toISOString()} to ${endOfDay.toISOString()}:`, allAppointmentsForDate);
+          
+          // Now find only those that need to be completed
+          const matchingAppointments = allAppointmentsForDate.filter(
+            (appt) => appt.status !== 'Completed' && appt.status !== 'Cancelled'
+          );
+
+          // Update all matching appointments to "Completed"
+          if (matchingAppointments.length > 0) {
+            console.log(`[create-clinical-doc] Found ${matchingAppointments.length} matching appointment(s) to complete:`, matchingAppointments.map(a => ({ status: a.status, date: a.date })));
+            
+            const updatedAppointments = await Promise.all(
+              matchingAppointments.map(async (appt) => {
+                const updated = await tx.appointment.update({
+                  where: { appointmentId: appt.appointmentId },
+                  data: {
+                    status: 'Completed',
+                    cancelReason: null,
+                  },
+                  select: {
+                    appointmentId: true,
+                    status: true,
+                    date: true,
+                    patientId: true,
+                    doctorId: true,
+                  },
+                });
+                return updated;
+              })
+            );
+            
+            // Verify the updates were successful
+            const verifyUpdates = await Promise.all(
+              updatedAppointments.map(async (appt) => {
+                const verified = await tx.appointment.findUnique({
+                  where: { appointmentId: appt.appointmentId },
+                  select: { appointmentId: true, status: true },
+                });
+                return verified;
+              })
+            );
+            
+            results.appointmentsCompleted = updatedAppointments.length;
+            results.appointmentIds = updatedAppointments.map((a) => a.appointmentId);
+            console.log(`[create-clinical-doc] Successfully updated ${updatedAppointments.length} appointment(s) to Completed status. Verification:`, verifyUpdates.map(v => ({ status: v?.status })));
+          } else {
+            results.appointmentsCompleted = 0;
+            console.log(`[create-clinical-doc] No matching appointments found to complete. Search params:`, {
+              patientId: visit!.patientId,
+              doctorId: doctorId,
+              dateRange: {
+                from: startOfDay.toISOString(),
+                to: endOfDay.toISOString(),
+              },
+              appointmentDateOnly: appointmentDateOnly.toISOString(),
+            });
+          }
+        } else {
+          results.appointmentsCompleted = 0;
+        }
+
+        return { results, isNewVisit };
+      });
+
+      // Notify Atenxion agent after transaction commits (external API calls outside transaction)
+      try {
+        const { recordAtenxionTransaction } = await import("../services/atenxion.js");
+        await recordAtenxionTransaction(doctorId);
+        if (transactionResult.isNewVisit) {
+          console.log("Atenxion transaction recorded for visit creation:", transactionResult.results.visitId);
+        }
+        if (transactionResult.results.observationCreated) {
+          console.log("Atenxion transaction recorded for observation creation:", transactionResult.results.observation?.obsId);
+        }
+        if (transactionResult.results.prescriptionsCount > 0) {
+          console.log("Atenxion transaction recorded for prescription creation:", transactionResult.results.prescription?.prescriptionId);
+        }
+      } catch (error) {
+        console.warn("Failed to record Atenxion transaction:", error);
+        // Don't fail the request if Atenxion notification fails
+      }
+
+      res.status(201).json(transactionResult.results);
+    } catch (error) {
+      console.error("Doctor Agent Create Clinical Doc Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create clinical documentation",
         msg: "Failed",
       });
     }

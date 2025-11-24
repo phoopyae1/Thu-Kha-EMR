@@ -378,3 +378,25 @@ export async function createMedicationOrder(
     body: JSON.stringify(body),
   }) as Promise<MedicationOrderResponse>;
 }
+
+export async function deleteMedicationOrder(token: string, orderId: string) {
+  const response = await fetch(`/api/patient-portal/orders/${orderId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+  
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || response.statusText);
+  }
+  
+  // 204 No Content - successful deletion, no body to parse
+  if (response.status === 204) {
+    return;
+  }
+  
+  // If there's content, parse it
+  return response.json();
+}

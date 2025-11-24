@@ -23,7 +23,7 @@ export interface VisitFormSubmitValues {
   department: string;
   reason?: string;
   diagnoses: string[];
-  medications: Array<{ drugName: string; dosage?: string }>;
+  medications: Array<{ drugName: string; dosage?: string; frequency?: string; duration?: string }>;
   labs: Array<{ testName: string; resultValue?: number; unit?: string }>;
   observation?: VisitFormObservationValues;
 }

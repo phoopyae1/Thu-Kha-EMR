@@ -4,7 +4,7 @@ import { PrismaClient, type AppointmentStatus } from '@prisma/client';
 import { z } from 'zod';
 
 import { validate } from '../../middleware/validate.js';
-import { requireAuth, requireRole, type AuthRequest } from '../auth/index.js';
+import { requireAuth, requireRole, requirePatientAuth, type AuthRequest } from '../auth/index.js';
 import { toDateOnly } from '../../utils/time.js';
 import { medicationOrderSelect } from '../../services/medicationOrderService.js';
 import {
@@ -1187,11 +1187,16 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
   res.json(formatted);
 });
 
-router.get('/prescriptions/:patientId', async (req: Request, res: Response) => {
+router.get('/prescriptions/:patientId', requirePatientAuth, async (req: AuthRequest, res: Response) => {
   const { patientId } = req.params;
 
   if (!patientId) {
     return res.status(400).json({ error: 'Patient ID is required' });
+  }
+
+  // Ensure patient can only access their own prescriptions
+  if (req.user?.patientId && req.user.patientId !== patientId) {
+    return res.status(403).json({ error: 'Forbidden: You can only access your own prescriptions' });
   }
 
   const prescriptions = await prisma.prescription.findMany({
@@ -1267,10 +1272,16 @@ router.get('/prescriptions/:patientId', async (req: Request, res: Response) => {
 
 router.post(
   '/orders',
+  requirePatientAuth,
   validate({ body: medicationOrderCreateSchema }),
-  async (req: Request, res: Response) => {
+  async (req: AuthRequest, res: Response) => {
     const payload = req.body as z.infer<typeof medicationOrderCreateSchema>;
     const { patientId, prescriptionId } = payload;
+    const user = req.user;
+
+    if (!user || user.patientId !== patientId) {
+      return res.status(403).json({ error: 'Forbidden: You can only create medication orders for yourself' });
+    }
 
     const patient = await prisma.patient.findUnique({
       where: { patientId },
@@ -1348,13 +1359,18 @@ router.post(
   },
 );
 
-router.get('/orders/:patientId', async (req: Request, res: Response) => {
+router.get('/orders/:patientId', requirePatientAuth, async (req: AuthRequest, res: Response) => {
   const parsed = medicationOrderPatientParams.safeParse(req.params);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Patient ID is required' });
   }
 
   const { patientId } = parsed.data;
+  const user = req.user;
+
+  if (!user || user.patientId !== patientId) {
+    return res.status(403).json({ error: 'Forbidden: You can only view your own medication orders' });
+  }
 
   const patient = await prisma.patient.findUnique({
     where: { patientId },
@@ -1375,13 +1391,80 @@ router.get('/orders/:patientId', async (req: Request, res: Response) => {
   res.json(orders);
 });
 
-router.get('/medications/:patientId', async (req: Request, res: Response) => {
+const medicationOrderDeleteParams = z.object({
+  orderId: z.string().uuid(),
+});
+
+router.delete('/orders/:orderId', requirePatientAuth, async (req: AuthRequest, res: Response) => {
+  const parsed = medicationOrderDeleteParams.safeParse(req.params);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Order ID is required' });
+  }
+
+  const { orderId } = parsed.data;
+  const user = req.user;
+
+  if (!user || !user.patientId) {
+    return res.status(403).json({ error: 'Forbidden: Authentication required' });
+  }
+
+  // Find the medication order and verify it belongs to the patient
+  const order = await prisma.medicationOrder.findUnique({
+    where: { orderId },
+    select: { orderId: true, patientId: true, status: true },
+  });
+
+  if (!order) {
+    return res.status(404).json({ error: 'Medication order not found' });
+  }
+
+  if (order.patientId !== user.patientId) {
+    return res.status(403).json({ error: 'Forbidden: You can only delete your own medication orders' });
+  }
+
+  // Only allow deletion of pending orders
+  if (order.status !== 'PENDING') {
+    return res.status(400).json({ 
+      error: 'Only pending medication orders can be deleted',
+      currentStatus: order.status,
+    });
+  }
+
+  try {
+    await prisma.medicationOrder.delete({
+      where: { orderId },
+    });
+
+    // Notify Atenxion agent about medication order deletion
+    try {
+      const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+      await recordAtenxionTransaction(user.patientId);
+      console.log('Atenxion transaction recorded for medication order deletion:', orderId);
+    } catch (error) {
+      console.warn('Failed to record Atenxion transaction for medication order deletion:', error);
+      // Don't fail the request if Atenxion notification fails
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error('Failed to delete medication order:', error);
+    res.status(500).json({ error: 'Failed to delete medication order' });
+  }
+});
+
+router.get('/medications/:patientId', requirePatientAuth, async (req: AuthRequest, res: Response) => {
   const { patientId } = req.params;
+  const user = req.user;
 
   if (!patientId) {
     return res.status(400).json({ error: 'Patient ID is required' });
   }
 
+  if (!user || user.patientId !== patientId) {
+    return res.status(403).json({ error: 'Forbidden: You can only view your own medications' });
+  }
+
+  // Get medications from Medication table with visit observations and vitals
   const medications = await prisma.medication.findMany({
     where: { visit: { patientId } },
     orderBy: { createdAt: 'desc' },
@@ -1397,25 +1480,143 @@ router.get('/medications/:patientId', async (req: Request, res: Response) => {
           visitId: true,
           visitDate: true,
           department: true,
+          reason: true,
           doctor: {
             select: { name: true },
+          },
+          observations: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              obsId: true,
+              noteText: true,
+              bpSystolic: true,
+              bpDiastolic: true,
+              heartRate: true,
+              temperatureC: true,
+              spo2: true,
+              bmi: true,
+              createdAt: true,
+            },
           },
         },
       },
     },
   });
 
-  const formatted = medications.map((medication) => ({
-    ...medication,
+  // Get medications from Prescription items with visit observations
+  const prescriptions = await prisma.prescription.findMany({
+    where: { patientId },
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    select: {
+      prescriptionId: true,
+      createdAt: true,
+      visit: {
+        select: {
+          visitId: true,
+          visitDate: true,
+          department: true,
+          reason: true,
+          doctor: {
+            select: { name: true },
+          },
+          observations: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              obsId: true,
+              noteText: true,
+              bpSystolic: true,
+              bpDiastolic: true,
+              heartRate: true,
+              temperatureC: true,
+              spo2: true,
+              bmi: true,
+              createdAt: true,
+            },
+          },
+        },
+      },
+      items: {
+        select: {
+          itemId: true,
+          dose: true,
+          route: true,
+          frequency: true,
+          durationDays: true,
+          drug: {
+            select: {
+              name: true,
+              strength: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // Format medications from Medication table
+  const formattedMedications = medications.map((medication) => ({
+    medId: medication.medId,
+    drugName: medication.drugName,
+    dosage: medication.dosage,
+    instructions: medication.instructions,
+    createdAt: medication.createdAt,
     visit: medication.visit
       ? {
-          ...medication.visit,
+          visitId: medication.visit.visitId,
           visitDate: medication.visit.visitDate,
+          department: medication.visit.department,
+          reason: medication.visit.reason,
+          doctor: medication.visit.doctor,
+          observation: medication.visit.observations?.[0] || null,
         }
       : null,
   }));
 
-  res.json(formatted);
+  // Format medications from Prescription items
+  const formattedPrescriptionMedications = prescriptions.flatMap((prescription) =>
+    prescription.items.map((item) => {
+      const drugName = item.drug
+        ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
+        : 'Medication';
+      const dosageParts = [item.dose, item.route, item.frequency]
+        .filter((part) => part && String(part).trim().length > 0)
+        .join(' ');
+      const instructions = [
+        dosageParts,
+        item.durationDays ? `${item.durationDays} days` : null,
+      ]
+        .filter(Boolean)
+        .join(' • ');
+
+      return {
+        medId: `prescription-${prescription.prescriptionId}-${item.itemId}`, // Synthetic ID
+        drugName: drugName,
+        dosage: item.dose || null,
+        instructions: instructions || null,
+        createdAt: prescription.createdAt,
+        visit: prescription.visit
+          ? {
+              visitId: prescription.visit.visitId,
+              visitDate: prescription.visit.visitDate,
+              department: prescription.visit.department,
+              reason: prescription.visit.reason,
+              doctor: prescription.visit.doctor,
+              observation: prescription.visit.observations?.[0] || null,
+            }
+          : null,
+      };
+    })
+  );
+
+  // Combine and sort by creation date
+  const allMedications = [...formattedMedications, ...formattedPrescriptionMedications].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  res.json(allMedications.slice(0, 50)); // Limit to 50 total
 });
 
 // Comprehensive endpoint that returns ALL patient data in one call

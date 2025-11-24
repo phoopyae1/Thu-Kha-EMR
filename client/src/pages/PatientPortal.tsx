@@ -35,6 +35,7 @@ import {
   fetchPrescriptions,
   fetchMedicationOrders,
   createMedicationOrder,
+  deleteMedicationOrder,
   loginPatient,
   registerPatientPortalAccount,
   type IntegrationEmbed,
@@ -575,7 +576,7 @@ export default function PatientPortal() {
   const [prescriptions, setPrescriptions] = useState<any[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
   const [todaysAppointment, setTodaysAppointment] = useState<any | null>(null);
-  const [reminderDismissed, setReminderDismissed] = useState(false);
+  const [reminderDismissed, setReminderDismissed] = useState<Record<string, boolean>>({});
 
   const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>(defaultAppointmentForm);
   const [appointmentStatus, setAppointmentStatus] = useState<'idle' | 'loading' | 'success'>('idle');
@@ -1283,7 +1284,6 @@ export default function PatientPortal() {
 
       if (appointmentToday) {
         setTodaysAppointment(appointmentToday);
-        setReminderDismissed(false);
       } else {
         setTodaysAppointment(null);
       }
@@ -1292,7 +1292,7 @@ export default function PatientPortal() {
     } catch (error) {
       setPortalLoading(false);
       setTodaysAppointment(null);
-      setReminderDismissed(false);
+      setReminderDismissed({});
       setMedicationOrders([]);
       let message = t('Unable to load patient data.');
       if (error instanceof Error) {
@@ -1329,7 +1329,32 @@ export default function PatientPortal() {
     setAppointmentError(null);
     setAppointmentStatus('loading');
 
+    // Validate required fields
+    if (!appointmentForm.doctorId || appointmentForm.doctorId.trim() === '') {
+      setAppointmentError(t('Please select a doctor.'));
+      setAppointmentStatus('idle');
+      return;
+    }
+
+    if (!appointmentForm.date) {
+      setAppointmentError(t('Please select a date.'));
+      setAppointmentStatus('idle');
+      return;
+    }
+
+    if (!appointmentForm.time) {
+      setAppointmentError(t('Please select a time.'));
+      setAppointmentStatus('idle');
+      return;
+    }
+
     const selectedDoctor = specialists.find((item) => item.doctorId === appointmentForm.doctorId);
+    if (!selectedDoctor) {
+      setAppointmentError(t('Selected doctor not found. Please try again.'));
+      setAppointmentStatus('idle');
+      return;
+    }
+
     const [hour, minute] = appointmentForm.time.split(':');
     const startTimeMin = Number(hour) * 60 + Number(minute || '0');
 
@@ -1421,8 +1446,8 @@ export default function PatientPortal() {
     setAppointmentForm(defaultAppointmentForm);
     setAppointmentStatus('idle');
     setReceiptInvoice(null);
-    setTodaysAppointment(null);
-    setReminderDismissed(false);
+      setTodaysAppointment(null);
+      setReminderDismissed({});
   };
 
   const invoiceSummary = profile?.invoiceSummary;
@@ -1496,7 +1521,67 @@ export default function PatientPortal() {
 
   const latestLab = labs[0] ?? null;
   const latestRadiology = radiologyReports[0] ?? null;
-  const showAppointmentReminder = todaysAppointment && !reminderDismissed;
+  
+  // Check if patient has already been seen today (has a visit for today's appointment)
+  const hasBeenSeenToday = useMemo(() => {
+    if (!todaysAppointment || !todaysAppointment.doctor?.doctorId) return false;
+    
+    const appointmentDate = new Date(todaysAppointment.date);
+    if (Number.isNaN(appointmentDate.getTime())) return false;
+    
+    const appointmentDateKey = `${appointmentDate.getFullYear()}-${String(appointmentDate.getMonth() + 1).padStart(2, '0')}-${String(appointmentDate.getDate()).padStart(2, '0')}`;
+    const appointmentDoctorId = todaysAppointment.doctor.doctorId;
+    
+    // Check if there's a visit for today with the same doctor
+    return recentVisits.some((visit: any) => {
+      if (!visit.visitDate || !visit.doctor?.doctorId) return false;
+      
+      const visitDate = new Date(visit.visitDate);
+      if (Number.isNaN(visitDate.getTime())) return false;
+      
+      const visitDateKey = `${visitDate.getFullYear()}-${String(visitDate.getMonth() + 1).padStart(2, '0')}-${String(visitDate.getDate()).padStart(2, '0')}`;
+      
+      return visitDateKey === appointmentDateKey && visit.doctor.doctorId === appointmentDoctorId;
+    });
+  }, [todaysAppointment, recentVisits]);
+  
+  // Track previous appointment ID to detect new appointments
+  const previousAppointmentIdRef = useRef<string | null>(null);
+  
+  // Reset dismissed state when a new appointment appears
+  useEffect(() => {
+    if (todaysAppointment) {
+      const currentAppointmentId = todaysAppointment.appointmentId;
+      const previousAppointmentId = previousAppointmentIdRef.current;
+      
+      // If this is a new appointment (different ID), reset dismissed state
+      if (previousAppointmentId !== currentAppointmentId) {
+        setReminderDismissed((prev) => {
+          const next = { ...prev };
+          // Remove dismissed state for the new appointment so reminder shows
+          delete next[currentAppointmentId];
+          return next;
+        });
+        previousAppointmentIdRef.current = currentAppointmentId;
+      }
+    } else {
+      previousAppointmentIdRef.current = null;
+    }
+  }, [todaysAppointment?.appointmentId]);
+  
+  // Check if appointment is completed or cancelled - if so, don't show reminder
+  const isAppointmentCompleted = useMemo(() => {
+    if (!todaysAppointment) return false;
+    const status = todaysAppointment.status;
+    return status === 'Completed' || status === 'Cancelled';
+  }, [todaysAppointment]);
+  
+  // Check if current appointment is dismissed
+  const isCurrentAppointmentDismissed = todaysAppointment 
+    ? reminderDismissed[todaysAppointment.appointmentId] || false
+    : false;
+  
+  const showAppointmentReminder = todaysAppointment && !isCurrentAppointmentDismissed && !hasBeenSeenToday && !isAppointmentCompleted;
   const reminderDoctorName = todaysAppointment?.doctor?.name?.trim() || t('your care team');
   const reminderLocation =
     todaysAppointment?.location?.trim() || todaysAppointment?.department?.trim() || t('the clinic');
@@ -1542,6 +1627,13 @@ export default function PatientPortal() {
             prescriptions={prescriptions}
             orders={medicationOrders}
             onOrderMedication={handleMedicationOrder}
+            session={session}
+            onRefreshOrders={async () => {
+              if (session) {
+                const orders = await fetchMedicationOrders(session.token, session.patientId);
+                setMedicationOrders(orders);
+              }
+            }}
           />
         );
       case 'labs':
@@ -1713,7 +1805,14 @@ export default function PatientPortal() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setReminderDismissed(true)}
+                    onClick={() => {
+                      if (todaysAppointment?.appointmentId) {
+                        setReminderDismissed((prev) => ({
+                          ...prev,
+                          [todaysAppointment.appointmentId]: true,
+                        }));
+                      }
+                    }}
                     className="inline-flex items-center justify-center rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-700 transition hover:border-amber-300 hover:bg-amber-100"
                   >
                     {t('Dismiss reminder')}
@@ -2308,11 +2407,12 @@ function AppointmentsSection({
                   value={appointmentForm.doctorId}
                   onChange={onAppointmentChange}
                   className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-                required
-              >
-                {specialists.map((doctor: any) => (
-                  <option key={doctor.doctorId} value={doctor.doctorId}>
-                    {doctor.name} • {doctor.department}
+                  required
+                >
+                  <option value="">{t('Select a doctor...')}</option>
+                  {specialists.map((doctor: any) => (
+                    <option key={doctor.doctorId} value={doctor.doctorId}>
+                      {doctor.name} • {doctor.department}
                     </option>
                   ))}
                 </select>
@@ -2442,7 +2542,7 @@ const MEDICATION_ORDER_PROGRESS_MAP: Record<MedicationOrderStatus, number | null
   CANCELLED: null,
 };
 
-function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, orders, onOrderMedication }: any) {
+function MedicationsSection({ t, latestImmunization, immunizations, medications, prescriptions, orders, onOrderMedication, session, onRefreshOrders }: any) {
   const medicationOrdersList = Array.isArray(orders) ? orders : [];
   const orderStatusLabels: Record<string, string> = {
     PENDING: t('Pending approval'),
@@ -2452,6 +2552,43 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
     SHIPPED: t('Shipped'),
     DELIVERED: t('Delivered'),
     CANCELLED: t('Cancelled'),
+  };
+
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null);
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!session || !window.confirm(t('Are you sure you want to delete this medication order?'))) {
+      return;
+    }
+
+    setDeletingOrderId(orderId);
+    try {
+      await deleteMedicationOrder(session.token, orderId);
+      if (onRefreshOrders) {
+        await onRefreshOrders();
+      }
+    } catch (error) {
+      console.error('Failed to delete medication order:', error);
+      let errorMessage = t('Failed to delete medication order. Please try again.');
+      if (error instanceof Error) {
+        try {
+          const parsed = JSON.parse(error.message);
+          if (parsed?.error) {
+            errorMessage = parsed.error;
+          } else if (parsed?.message) {
+            errorMessage = parsed.message;
+          }
+        } catch {
+          // If parsing fails, use the error message directly
+          if (error.message) {
+            errorMessage = error.message;
+          }
+        }
+      }
+      alert(errorMessage);
+    } finally {
+      setDeletingOrderId(null);
+    }
   };
 
   const [expandedMedications, setExpandedMedications] = useState<Record<string, boolean>>({});
@@ -2725,7 +2862,21 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
                       ) : null}
                     </div>
                   ) : null}
-                  <MedicationOrderProgress status={order.status as MedicationOrderStatus} t={t} />
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <div className="flex-1 min-w-0">
+                      <MedicationOrderProgress status={order.status as MedicationOrderStatus} t={t} />
+                    </div>
+                    {order.status === 'PENDING' && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteOrder(order.orderId)}
+                        disabled={deletingOrderId === order.orderId}
+                        className="ml-auto shrink-0 inline-flex items-center justify-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:border-red-300 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deletingOrderId === order.orderId ? t('Deleting...') : t('Delete')}
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}
@@ -2751,36 +2902,131 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
               const visitDate = medication.visit?.visitDate
                 ? new Date(medication.visit.visitDate).toLocaleDateString()
                 : null;
+              const observation = medication.visit?.observation;
 
               return (
-                <li key={medication.medId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="space-y-1 text-xs text-slate-500">
-                      <div className="text-sm font-semibold text-slate-900">{medication.drugName}</div>
-                      {medication.dosage ? <div className="text-sm text-slate-600">{medication.dosage}</div> : null}
-                      {visitDate ? <div>{t('Visit date: {date}', { date: visitDate })}</div> : null}
-                    </div>
-                    {medication.visit ? (
-                      <div className="text-right text-xs text-slate-500">
-                        {visitDoctor ? <div>{t('Ordered by {name}', { name: visitDoctor })}</div> : null}
-                        <div>{medication.visit.department}</div>
+                <li key={medication.medId} className="rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                  <div className="space-y-3">
+                    {/* Header: Drug Name */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <h4 className="text-base font-semibold text-slate-900">{medication.drugName}</h4>
+                        {medication.dosage ? (
+                          <p className="mt-1 text-sm text-slate-600">{medication.dosage}</p>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                  {medication.dosage || medication.instructions ? (
-                    <div className="mt-3 space-y-1 text-xs">
-                      {medication.dosage ? (
-                        <div className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Dosage:</span> {medication.dosage}
+                      <button
+                        type="button"
+                        onClick={() => toggleMedicationDetails(medication.medId)}
+                        className="shrink-0 inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                      >
+                        {isExpanded ? t('Hide details') : t('View details')}
+                      </button>
+                    </div>
+
+                    {/* Basic Details - Always Visible */}
+                    <div className="grid gap-2 text-xs border-t border-slate-100 pt-3">
+                      {visitDate ? (
+                        <div className="flex items-start gap-3">
+                          <span className="font-semibold text-slate-700 min-w-[110px]">{t('Visit date:')}</span>
+                          <span className="text-slate-600 flex-1">{visitDate}</span>
                         </div>
                       ) : null}
+                      
+                      {visitDoctor ? (
+                        <div className="flex items-start gap-3">
+                          <span className="font-semibold text-slate-700 min-w-[110px]">{t('Ordered by:')}</span>
+                          <span className="text-slate-600 flex-1">{visitDoctor}</span>
+                        </div>
+                      ) : null}
+                      
+                      {medication.visit?.department ? (
+                        <div className="flex items-start gap-3">
+                          <span className="font-semibold text-slate-700 min-w-[110px]">{t('Department:')}</span>
+                          <span className="text-slate-600 flex-1">{medication.visit.department}</span>
+                        </div>
+                      ) : null}
+                      
                       {medication.instructions ? (
-                        <div className="text-slate-600">
-                          <span className="font-semibold text-slate-700">Instructions:</span> {medication.instructions}
+                        <div className="flex items-start gap-3">
+                          <span className="font-semibold text-slate-700 min-w-[110px]">{t('Instructions:')}</span>
+                          <span className="text-slate-600 flex-1">{medication.instructions}</span>
                         </div>
                       ) : null}
                     </div>
-                  ) : null}
+
+                    {/* Expanded Details - Vitals, BMI, Observation Notes */}
+                    {isExpanded && (
+                      <div className="space-y-3 border-t border-slate-200 pt-3">
+                        {/* Visit Reason */}
+                        {medication.visit?.reason ? (
+                          <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 mb-1">
+                              {t('Visit Reason')}
+                            </p>
+                            <p className="text-xs text-slate-700">{medication.visit.reason}</p>
+                          </div>
+                        ) : null}
+
+                        {/* Vitals and BMI */}
+                        {observation && (
+                          <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 mb-2">
+                              {t('Vitals & Measurements')}
+                            </p>
+                            <div className="grid gap-2 text-xs">
+                              {observation.bpSystolic && observation.bpDiastolic ? (
+                                <div className="flex items-start gap-3">
+                                  <span className="font-semibold text-slate-700 min-w-[110px]">{t('Blood Pressure:')}</span>
+                                  <span className="text-slate-600 flex-1">
+                                    {observation.bpSystolic}/{observation.bpDiastolic} mmHg
+                                  </span>
+                                </div>
+                              ) : null}
+                              
+                              {observation.heartRate ? (
+                                <div className="flex items-start gap-3">
+                                  <span className="font-semibold text-slate-700 min-w-[110px]">{t('Heart Rate:')}</span>
+                                  <span className="text-slate-600 flex-1">{observation.heartRate} bpm</span>
+                                </div>
+                              ) : null}
+                              
+                              {observation.temperatureC ? (
+                                <div className="flex items-start gap-3">
+                                  <span className="font-semibold text-slate-700 min-w-[110px]">{t('Temperature:')}</span>
+                                  <span className="text-slate-600 flex-1">{observation.temperatureC}°C</span>
+                                </div>
+                              ) : null}
+                              
+                              {observation.spo2 ? (
+                                <div className="flex items-start gap-3">
+                                  <span className="font-semibold text-slate-700 min-w-[110px]">{t('SpO₂:')}</span>
+                                  <span className="text-slate-600 flex-1">{observation.spo2}%</span>
+                                </div>
+                              ) : null}
+                              
+                              {observation.bmi ? (
+                                <div className="flex items-start gap-3">
+                                  <span className="font-semibold text-slate-700 min-w-[110px]">{t('BMI:')}</span>
+                                  <span className="text-slate-600 flex-1">{observation.bmi}</span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Observation Notes */}
+                        {observation?.noteText ? (
+                          <div className="rounded-lg border border-amber-100 bg-amber-50/50 p-3">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                              {t('Clinical Notes')}
+                            </p>
+                            <p className="text-xs text-slate-700">{observation.noteText}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 </li>
               );
             })}
@@ -2836,8 +3082,8 @@ function MedicationOrderProgress({
   }
 
   return (
-    <div className="mt-4">
-      <div className="flex items-center">
+    <div className="mt-4 w-full px-2 py-2">
+      <div className="flex items-center w-full">
         {steps.map((step, index) => {
           const isLast = index === steps.length - 1;
           const isCompleted = currentStage > index;
@@ -2856,13 +3102,13 @@ function MedicationOrderProgress({
             <div key={step.key} className={`flex items-center ${isLast ? '' : 'flex-1'}`}>
               <div className={circleClass}>{isCompleted ? <CheckIcon className="h-3 w-3" /> : index + 1}</div>
               {!isLast ? (
-                <div className={`mx-2 h-0.5 flex-1 ${currentStage > index ? 'bg-emerald-500' : 'bg-slate-200'}`} />
+                <div className={`mx-3 h-0.5 flex-1 ${currentStage > index ? 'bg-emerald-500' : 'bg-slate-200'}`} />
               ) : null}
             </div>
           );
         })}
       </div>
-      <div className="mt-2 flex justify-between text-[11px] font-semibold uppercase tracking-wide">
+      <div className="mt-2 flex justify-between w-full px-1 text-[11px] font-semibold uppercase tracking-wide">
         {steps.map((step, index) => (
           <span key={step.key} className={currentStage >= index ? 'text-emerald-600' : 'text-slate-400'}>
             {step.label}

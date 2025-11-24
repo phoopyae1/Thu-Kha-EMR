@@ -3,13 +3,13 @@ import { z } from 'zod';
 export const CreateVitalsSchema = z.object({
   visitId: z.string().uuid(),
   patientId: z.string().uuid(),
-  systolic: z.number().int().min(40).max(300).nullable().optional(),
-  diastolic: z.number().int().min(20).max(200).nullable().optional(),
-  heartRate: z.number().int().min(20).max(250).nullable().optional(),
-  temperature: z.number().min(30).max(45).nullable().optional(),
-  spo2: z.number().int().min(50).max(100).nullable().optional(),
-  heightCm: z.number().positive().max(250).nullable().optional(),
-  weightKg: z.number().positive().max(400).nullable().optional(),
+  systolic: z.number().int().min(40).max(300).nullish(),
+  diastolic: z.number().int().min(20).max(200).nullish(),
+  heartRate: z.number().int().min(20).max(250).nullish(),
+  temperature: z.number().min(30).max(45).nullish(),
+  spo2: z.number().int().min(50).max(100).nullish(),
+  heightCm: z.number().positive().max(250).nullish(),
+  weightKg: z.number().positive().max(400).nullish(),
   notes: z.string().max(500).optional(),
 });
 
