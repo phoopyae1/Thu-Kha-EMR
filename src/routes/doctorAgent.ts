@@ -1,9 +1,17 @@
 import { Router, type Response, type NextFunction } from "express";
 import { requireAuth, requireRole, type AuthRequest } from "../modules/auth/index.js";
 import { PrismaClient } from "@prisma/client";
+import { CreateLabOrderSchema } from "../validation/clinical.js";
+import * as labService from "../services/labService.js";
+import { z } from "zod";
 
 const prisma = new PrismaClient();
 const router = Router();
+
+// Validation schema for medication agent
+const MedicationAgentSchema = z.object({
+  doctorId: z.string().uuid(),
+});
 
 // Patient Record Agent API - Returns patient record with visit information, BMI, SpO2, etc.
 router.post(
@@ -456,6 +464,302 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to fetch clinical documentation",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Create Lab Order API - Allows doctors to create lab orders
+router.post(
+  "/lab-order",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Get doctorId from authenticated user
+      const doctorId = user.doctorId;
+      if (!doctorId) {
+        return res.status(403).json({
+          error: "User is not linked to a doctor profile",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = CreateLabOrderSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const payload = validationResult.data;
+
+      // Verify visit exists and belongs to the doctor
+      const visit = await prisma.visit.findUnique({
+        where: { visitId: payload.visitId },
+        select: { visitId: true, patientId: true, doctorId: true },
+      });
+
+      if (!visit) {
+        return res.status(404).json({
+          error: "Visit not found",
+          msg: "Failed",
+        });
+      }
+
+      if (visit.doctorId !== doctorId) {
+        return res.status(403).json({
+          error: "Visit does not belong to this doctor",
+          msg: "Failed",
+        });
+      }
+
+      // Verify patientId matches visit
+      if (visit.patientId !== payload.patientId) {
+        return res.status(400).json({
+          error: "Patient ID does not match the visit",
+          msg: "Failed",
+        });
+      }
+
+      // Create lab order using the lab service
+      const labOrder = await labService.createLabOrder(doctorId, payload);
+
+      res.status(201).json({
+        labOrderId: labOrder.labOrderId,
+        visitId: labOrder.visitId,
+        patientId: labOrder.patientId,
+        doctorId: labOrder.doctorId,
+        status: labOrder.status,
+        priority: labOrder.priority,
+        notes: labOrder.notes,
+        createdAt: labOrder.createdAt,
+        items: labOrder.items.map((item) => ({
+          labOrderItemId: item.labOrderItemId,
+          testCode: item.testCode,
+          testName: item.testName,
+          status: item.status,
+          specimen: item.specimen,
+          notes: item.notes,
+        })),
+        msg: "Success",
+      });
+    } catch (error) {
+      console.error("Doctor Agent Create Lab Order Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create lab order",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Medication Agent API - Returns medications/prescriptions given by the doctor to patients
+router.post(
+  "/medication",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = MedicationAgentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { doctorId } = validationResult.data;
+
+      // Get doctor info
+      const doctor = await prisma.doctor.findUnique({
+        where: { doctorId },
+        select: { doctorId: true, name: true, department: true },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({
+          error: "Doctor not found",
+          msg: "Failed",
+        });
+      }
+
+      // Get all prescriptions for this doctor with related data
+      const prescriptions = await prisma.prescription.findMany({
+        where: { doctorId },
+        include: {
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+              dob: true,
+              gender: true,
+            },
+          },
+          visit: {
+            select: {
+              visitId: true,
+              visitDate: true,
+              department: true,
+            },
+          },
+          items: {
+            include: {
+              drug: {
+                select: {
+                  drugId: true,
+                  name: true,
+                  genericName: true,
+                  form: true,
+                  strength: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Helper function to calculate age
+      const calculateAge = (dob: Date): number => {
+        const today = new Date();
+        let age = today.getFullYear() - dob.getFullYear();
+        const monthDiff = today.getMonth() - dob.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+          age--;
+        }
+        return age;
+      };
+
+      // Build flat response structure
+      const result: any = {
+        // Doctor Information
+        doctorId: doctor.doctorId,
+        doctorName: doctor.name,
+        doctorDepartment: doctor.department,
+
+        // Summary counts
+        totalPrescriptions: prescriptions.length,
+        totalMedications: prescriptions.reduce((sum, rx) => sum + rx.items.length, 0),
+
+        status: "Success",
+      };
+
+      // Flatten prescriptions and their items
+      let medicationIndex = 0;
+      prescriptions.forEach((prescription, rxIndex) => {
+        const patient = prescription.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        prescription.items.forEach((item) => {
+          medicationIndex++;
+          const prefix = `medication${medicationIndex}`;
+
+          // Prescription info
+          result[`${prefix}PrescriptionId`] = prescription.prescriptionId;
+          result[`${prefix}PrescriptionStatus`] = prescription.status;
+          result[`${prefix}PrescriptionNotes`] = prescription.notes || "No notes";
+          result[`${prefix}PrescriptionCreatedAt`] = prescription.createdAt.toISOString().split("T")[0];
+          result[`${prefix}PrescriptionCreatedTime`] = prescription.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00";
+
+          // Patient info
+          result[`${prefix}PatientId`] = prescription.patientId;
+          result[`${prefix}PatientName`] = patient?.name || "Unknown";
+          result[`${prefix}PatientRecord`] = patient ? `${patient.name} (${prescription.patientId}) - Age: ${age}` : "Unknown";
+          result[`${prefix}PatientAge`] = age;
+          result[`${prefix}PatientGender`] = patient?.gender || "Unknown";
+
+          // Visit info
+          result[`${prefix}VisitId`] = prescription.visitId;
+          result[`${prefix}VisitDate`] = prescription.visit?.visitDate
+            ? new Date(prescription.visit.visitDate).toISOString().split("T")[0]
+            : "Not available";
+          result[`${prefix}Department`] = prescription.visit?.department || "Not specified";
+
+          // Drug/Medication info
+          result[`${prefix}DrugId`] = item.drugId;
+          result[`${prefix}DrugName`] = item.drug.name;
+          result[`${prefix}GenericName`] = item.drug.genericName || "Not specified";
+          result[`${prefix}DrugForm`] = item.drug.form;
+          result[`${prefix}DrugStrength`] = item.drug.strength;
+          result[`${prefix}MedicationName`] = `${item.drug.name} ${item.drug.strength}`.trim();
+          result[`${prefix}MedicationFullName`] = `${item.drug.name} ${item.drug.strength} (${item.drug.form})`.trim();
+
+          // Prescription item details
+          result[`${prefix}ItemId`] = item.itemId;
+          result[`${prefix}Dose`] = item.dose;
+          result[`${prefix}Route`] = item.route;
+          result[`${prefix}Frequency`] = item.frequency;
+          result[`${prefix}DurationDays`] = item.durationDays;
+          result[`${prefix}QuantityPrescribed`] = item.quantityPrescribed;
+          result[`${prefix}IsPRN`] = item.prn ? "Yes" : "No";
+          result[`${prefix}AllowGeneric`] = item.allowGeneric ? "Yes" : "No";
+          result[`${prefix}ItemNotes`] = item.notes || "No notes";
+
+          // Combined medication instruction
+          result[`${prefix}Instruction`] = `${item.dose} ${item.route}, ${item.frequency}${item.prn ? " (PRN)" : ""} for ${item.durationDays} day(s)`;
+        });
+      });
+
+      // Add latest medication info (most recent prescription item)
+      if (prescriptions.length > 0 && prescriptions[0].items.length > 0) {
+        const latestPrescription = prescriptions[0];
+        const latestItem = latestPrescription.items[0];
+        const patient = latestPrescription.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        result.latestPrescriptionId = latestPrescription.prescriptionId;
+        result.latestPatientId = latestPrescription.patientId;
+        result.latestPatientName = patient?.name || "Unknown";
+        result.latestPatientRecord = patient ? `${patient.name} (${latestPrescription.patientId}) - Age: ${age}` : "Unknown";
+        result.latestPatientAge = age;
+        result.latestVisitId = latestPrescription.visitId;
+        result.latestVisitDate = latestPrescription.visit?.visitDate
+          ? new Date(latestPrescription.visit.visitDate).toISOString().split("T")[0]
+          : "Not available";
+        result.latestDrugName = latestItem.drug.name;
+        result.latestMedicationName = `${latestItem.drug.name} ${latestItem.drug.strength}`.trim();
+        result.latestDose = latestItem.dose;
+        result.latestRoute = latestItem.route;
+        result.latestFrequency = latestItem.frequency;
+        result.latestInstruction = `${latestItem.dose} ${latestItem.route}, ${latestItem.frequency}${latestItem.prn ? " (PRN)" : ""} for ${latestItem.durationDays} day(s)`;
+        result.latestPrescriptionStatus = latestPrescription.status;
+        result.latestPrescriptionCreatedAt = latestPrescription.createdAt.toISOString().split("T")[0];
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Doctor Agent Medication Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch medication records",
         msg: "Failed",
       });
     }

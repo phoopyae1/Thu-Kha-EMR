@@ -2642,137 +2642,7 @@ function MedicationsSection({ t, latestImmunization, immunizations, medications,
         </form>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">{t('Prescriptions')}</h3>
-          <PharmacyIcon className="h-5 w-5 text-blue-600" />
-        </div>
-        <p className="mt-2 text-sm text-slate-500">
-          {t('Select a prescription to review details and share with our pharmacy.')}
-        </p>
-        {prescriptions.length === 0 ? (
-          <p className="mt-4 text-sm text-slate-500">{t('No prescriptions have been issued yet.')}</p>
-        ) : (
-          <ul className="mt-4 space-y-4 text-sm text-slate-600">
-            {prescriptions.map((prescription: any) => {
-              const statusLabel = formatStatus(prescription.status, prescriptionStatusLabels);
-              const lastDispense = prescription.dispenses?.[0] ?? null;
-              const dispenseMessage = lastDispense
-                ? lastDispense.dispensedAt
-                  ? t('Dispensed {date}', {
-                      date: new Date(lastDispense.dispensedAt).toLocaleDateString(),
-                    })
-                  : t('Fulfilment status: {status}', {
-                      status: formatStatus(lastDispense.status, dispenseStatusLabels),
-                    })
-                : t('Not yet dispensed');
-
-              const visitSummary = prescription.visit
-                ? t('Linked visit {date}', {
-                    date: new Date(prescription.visit.visitDate).toLocaleDateString(),
-                  })
-                : null;
-
-              const rxCode = prescription.prescriptionId.slice(0, 8).toUpperCase();
-              const isExpanded = Boolean(expandedPrescriptions[prescription.prescriptionId]);
-
-              return (
-                <li key={prescription.prescriptionId} className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1 text-xs text-slate-500">
-                      <div className="uppercase tracking-wide text-slate-400">{t('Rx #{id}', { id: rxCode })}</div>
-                      <div className="text-sm font-semibold text-slate-900">
-                        {t('Status: {status}', { status: statusLabel })}
-                      </div>
-                      <div>{t('Prescribed {date}', { date: new Date(prescription.createdAt).toLocaleDateString() })}</div>
-                      {visitSummary ? (
-                        <div>
-                          {visitSummary}
-                          {prescription.visit?.department ? ` • ${prescription.visit.department}` : ''}
-                        </div>
-                      ) : null}
-                    </div>
-                    <div className="text-right text-xs text-slate-500">
-                      {prescription.doctor?.name ? (
-                        <div>{t('Ordered by {name}', { name: prescription.doctor.name })}</div>
-                      ) : null}
-                      {prescription.doctor?.department ? <div>{prescription.doctor.department}</div> : null}
-                      <div>{dispenseMessage}</div>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    {/* Only show order button if prescription status is PENDING and not already dispensed */}
-                    {prescription.status === 'PENDING' && !lastDispense ? (
-                      <button
-                        type="button"
-                        onClick={() => onOrderMedication?.(prescription)}
-                        className="inline-flex items-center justify-center gap-2 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 transition hover:border-blue-300 hover:bg-blue-50"
-                      >
-                        <PharmacyIcon className="h-4 w-4" />
-                        {t('Request pharmacy order')}
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => togglePrescriptionDetails(prescription.prescriptionId)}
-                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
-                    >
-                      {isExpanded ? t('Hide details') : t('View details')}
-                    </button>
-                  </div>
-                  {isExpanded && prescription.notes ? (
-                    <p className="mt-2 text-xs text-slate-500">{prescription.notes}</p>
-                  ) : null}
-                  {isExpanded && prescription.items && prescription.items.length > 0 ? (
-                    <div className="mt-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        {t('Items ordered')}
-                      </p>
-                      <ul className="mt-2 space-y-2 text-xs text-slate-600">
-                        {prescription.items.map((item: any) => {
-                          const drugName = item.drug
-                            ? [item.drug.name, item.drug.strength].filter(Boolean).join(' ')
-                            : t('Prescription item');
-                          const instructionParts = [item.dose, item.route, item.frequency]
-                            .filter((part) => part && String(part).trim().length > 0)
-                            .join(' • ');
-                          const supplyParts = [
-                            t('Duration: {days} days', { days: item.durationDays }),
-                            t('Quantity prescribed: {quantity}', { quantity: item.quantityPrescribed }),
-                          ];
-                          if (item.prn) {
-                            supplyParts.push(t('As needed'));
-                          }
-
-                          return (
-                            <li
-                              key={item.itemId}
-                              className="rounded-2xl border border-slate-200 bg-white/70 px-3 py-2"
-                            >
-                              <div className="font-semibold text-slate-900">{drugName}</div>
-                              {instructionParts ? (
-                                <div className="mt-1 text-[11px] uppercase tracking-wide text-slate-500">
-                                  {instructionParts}
-                                </div>
-                              ) : null}
-                              <div className="mt-1 text-[11px] text-slate-500">
-                                {supplyParts.join(' • ')}
-                              </div>
-                              {item.notes ? (
-                                <div className="mt-1 text-[11px] text-slate-500">{item.notes}</div>
-                              ) : null}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </div>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+ 
 
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
@@ -3149,10 +3019,10 @@ function BillingSection({ t, invoiceSummary, payments, formatCurrency, setReceip
               <div className="text-xs uppercase tracking-wide text-slate-500">{t('Outstanding')}</div>
               <div className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(invoiceSummary.outstanding)}</div>
             </div>
-            <div>
-              <div className="text-xs uppercase tracking-wide text-slate-500">{t('Total paid')}</div>
-              <div className="mt-1 text-base font-semibold text-emerald-600">{formatCurrency(invoiceSummary.paidTotal)}</div>
-            </div>
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{t('Total paid')}</div>
+                <div className="mt-1 text-base font-bold text-emerald-600">{formatCurrency(invoiceSummary.paidTotal)}</div>
+              </div>
             <div>
               <div className="text-xs uppercase tracking-wide text-slate-500">{t('Lifetime value')}</div>
               <div className="mt-1 text-base font-semibold text-slate-900">{formatCurrency(invoiceSummary.lifetimeValue)}</div>
@@ -3169,14 +3039,21 @@ function BillingSection({ t, invoiceSummary, payments, formatCurrency, setReceip
                 <li key={invoice.invoiceId ?? invoice.invoiceNo} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
+
+                      <div className="text-xs text-slate-500">{t('Balance due')}</div>
+                      <div className="mt-1 font-semibold text-slate-900">{formatCurrency(invoice.amountDue ?? 0)}</div>
+                      <div className="mt-2 text-xs font-bold text-slate-500">
+                        {t('Total paid')}
+                      </div>
+                      <div className="mt-1 font-semibold text-slate-900">
+                        {formatCurrency(invoice.amountPaid ?? 0)}
+                      </div>
+                    </div>
+                    <div className="text-right">
                       <div className="font-semibold text-slate-900">{invoice.invoiceNo ?? invoice.invoiceId}</div>
                       <div className="text-xs text-slate-500">
                         {t('Issued {date}', { date: new Date(invoice.createdAt).toLocaleDateString() })}
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-semibold text-slate-900">{formatCurrency(invoice.amountDue ?? 0)}</div>
-                      <div className="text-xs text-slate-500">{t('Balance due')}</div>
                     </div>
                   </div>
                   {invoicePayments.length > 0 ? (
@@ -3193,10 +3070,7 @@ function BillingSection({ t, invoiceSummary, payments, formatCurrency, setReceip
                   ) : (
                     <p className="mt-3 text-xs text-slate-500">{t('No payments applied yet.')}</p>
                   )}
-                  <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs text-slate-500">
-                      {t('Total paid')}: {formatCurrency(invoice.amountPaid ?? 0)}
-                    </div>
+                  <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => setReceiptInvoice(invoice)}
