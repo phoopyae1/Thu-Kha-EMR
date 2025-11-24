@@ -911,5 +911,234 @@ router.post(
   }
 );
 
+// Doctor Appointments Queue API - Returns upcoming appointments and today's queue
+router.post(
+  "/appointments-queue",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body for doctorId
+      const validationResult = MedicationAgentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { doctorId } = validationResult.data;
+
+      // Get doctor info
+      const doctor = await prisma.doctor.findUnique({
+        where: { doctorId },
+        select: { doctorId: true, name: true, department: true },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({
+          error: "Doctor not found",
+          msg: "Failed",
+        });
+      }
+
+      // Get today's date at midnight UTC
+      const now = new Date();
+      const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      
+      // Get today's appointments (queue)
+      const todayAppointments = await prisma.appointment.findMany({
+        where: {
+          doctorId,
+          date: todayUTC,
+          status: { in: ['Scheduled', 'CheckedIn', 'InProgress'] },
+        },
+        include: {
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+              dob: true,
+              gender: true,
+              contact: true,
+            },
+          },
+        },
+        orderBy: [
+          { startTimeMin: 'asc' },
+        ],
+      });
+
+      // Get upcoming appointments (next 30 days, excluding today)
+      const thirtyDaysFromNow = new Date(todayUTC);
+      thirtyDaysFromNow.setUTCDate(thirtyDaysFromNow.getUTCDate() + 30);
+      
+      const upcomingAppointments = await prisma.appointment.findMany({
+        where: {
+          doctorId,
+          date: {
+            gt: todayUTC,
+            lt: thirtyDaysFromNow,
+          },
+          status: { in: ['Scheduled', 'CheckedIn', 'InProgress'] },
+        },
+        include: {
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+              dob: true,
+              gender: true,
+              contact: true,
+            },
+          },
+        },
+        orderBy: [
+          { date: 'asc' },
+          { startTimeMin: 'asc' },
+        ],
+      });
+
+      // Helper function to calculate age
+      const calculateAge = (dob: Date): number => {
+        const today = new Date();
+        let age = today.getFullYear() - dob.getFullYear();
+        const monthDiff = today.getMonth() - dob.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+          age--;
+        }
+        return age;
+      };
+
+      // Helper function to format time from minutes
+      const formatTime = (minutes: number): string => {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+      };
+
+      // Build flat response structure
+      const result: any = {
+        status: "Success",
+        doctorId: doctor.doctorId,
+        doctorName: doctor.name,
+        doctorDepartment: doctor.department,
+        todayDate: todayUTC.toISOString().split("T")[0],
+        
+        // Today's queue summary
+        todayQueueTotal: todayAppointments.length,
+        todayQueueScheduled: todayAppointments.filter(a => a.status === 'Scheduled').length,
+        todayQueueCheckedIn: todayAppointments.filter(a => a.status === 'CheckedIn').length,
+        todayQueueInProgress: todayAppointments.filter(a => a.status === 'InProgress').length,
+        
+        // Upcoming appointments summary
+        upcomingAppointmentsTotal: upcomingAppointments.length,
+      };
+
+      // Add today's queue appointments
+      todayAppointments.forEach((appointment, index) => {
+        const prefix = `todayQueue${index + 1}`;
+        const patient = appointment.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        result[`${prefix}AppointmentId`] = appointment.appointmentId;
+        result[`${prefix}PatientId`] = appointment.patientId;
+        result[`${prefix}PatientName`] = patient?.name || "Unknown";
+        result[`${prefix}PatientRecord`] = patient ? `${patient.name} (${appointment.patientId}) - Age: ${age}` : "Unknown";
+        result[`${prefix}PatientAge`] = age;
+        result[`${prefix}PatientGender`] = patient?.gender || "Unknown";
+        result[`${prefix}PatientContact`] = patient?.contact || "Not provided";
+        result[`${prefix}Date`] = appointment.date.toISOString().split("T")[0];
+        result[`${prefix}StartTime`] = formatTime(appointment.startTimeMin);
+        result[`${prefix}EndTime`] = formatTime(appointment.endTimeMin);
+        result[`${prefix}StartTimeMin`] = appointment.startTimeMin;
+        result[`${prefix}EndTimeMin`] = appointment.endTimeMin;
+        result[`${prefix}Status`] = appointment.status;
+        result[`${prefix}Reason`] = appointment.reason || "Not specified";
+        result[`${prefix}Location`] = appointment.location || "Not specified";
+        result[`${prefix}Department`] = appointment.department;
+      });
+
+      // Add upcoming appointments
+      upcomingAppointments.forEach((appointment, index) => {
+        const prefix = `upcoming${index + 1}`;
+        const patient = appointment.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        result[`${prefix}AppointmentId`] = appointment.appointmentId;
+        result[`${prefix}PatientId`] = appointment.patientId;
+        result[`${prefix}PatientName`] = patient?.name || "Unknown";
+        result[`${prefix}PatientRecord`] = patient ? `${patient.name} (${appointment.patientId}) - Age: ${age}` : "Unknown";
+        result[`${prefix}PatientAge`] = age;
+        result[`${prefix}PatientGender`] = patient?.gender || "Unknown";
+        result[`${prefix}PatientContact`] = patient?.contact || "Not provided";
+        result[`${prefix}Date`] = appointment.date.toISOString().split("T")[0];
+        result[`${prefix}StartTime`] = formatTime(appointment.startTimeMin);
+        result[`${prefix}EndTime`] = formatTime(appointment.endTimeMin);
+        result[`${prefix}StartTimeMin`] = appointment.startTimeMin;
+        result[`${prefix}EndTimeMin`] = appointment.endTimeMin;
+        result[`${prefix}Status`] = appointment.status;
+        result[`${prefix}Reason`] = appointment.reason || "Not specified";
+        result[`${prefix}Location`] = appointment.location || "Not specified";
+        result[`${prefix}Department`] = appointment.department;
+      });
+
+      // Add latest/next appointment info
+      if (todayAppointments.length > 0) {
+        const nextToday = todayAppointments[0];
+        const patient = nextToday.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        result.nextTodayAppointmentId = nextToday.appointmentId;
+        result.nextTodayPatientId = nextToday.patientId;
+        result.nextTodayPatientName = patient?.name || "Unknown";
+        result.nextTodayPatientRecord = patient ? `${patient.name} (${nextToday.patientId}) - Age: ${age}` : "Unknown";
+        result.nextTodayPatientAge = age;
+        result.nextTodayStartTime = formatTime(nextToday.startTimeMin);
+        result.nextTodayEndTime = formatTime(nextToday.endTimeMin);
+        result.nextTodayStatus = nextToday.status;
+        result.nextTodayReason = nextToday.reason || "Not specified";
+      }
+
+      if (upcomingAppointments.length > 0) {
+        const nextUpcoming = upcomingAppointments[0];
+        const patient = nextUpcoming.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+
+        result.nextUpcomingAppointmentId = nextUpcoming.appointmentId;
+        result.nextUpcomingPatientId = nextUpcoming.patientId;
+        result.nextUpcomingPatientName = patient?.name || "Unknown";
+        result.nextUpcomingPatientRecord = patient ? `${patient.name} (${nextUpcoming.patientId}) - Age: ${age}` : "Unknown";
+        result.nextUpcomingPatientAge = age;
+        result.nextUpcomingDate = nextUpcoming.date.toISOString().split("T")[0];
+        result.nextUpcomingStartTime = formatTime(nextUpcoming.startTimeMin);
+        result.nextUpcomingEndTime = formatTime(nextUpcoming.endTimeMin);
+        result.nextUpcomingStatus = nextUpcoming.status;
+        result.nextUpcomingReason = nextUpcoming.reason || "Not specified";
+      }
+
+      res.json(result);
+    } catch (error) {
+      console.error("Doctor Agent Appointments Queue Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch appointments queue",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
 export default router;
 
