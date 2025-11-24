@@ -44,6 +44,15 @@ export async function createLabOrder(
     include: { items: true },
   });
 
+  // Notify Atenxion agent about lab order creation
+  try {
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
+    await recordAtenxionTransaction(doctorId);
+    console.log('Atenxion transaction recorded for lab order creation:', order.labOrderId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for lab order creation:', error);
+  }
+
   return order;
 }
 

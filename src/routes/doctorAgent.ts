@@ -28,14 +28,17 @@ router.post(
         });
       }
 
-      // Get doctorId from authenticated user
-      const doctorId = user.doctorId;
-      if (!doctorId) {
-        return res.status(403).json({
-          error: "User is not linked to a doctor profile",
+      // Validate request body for doctorId
+      const validationResult = MedicationAgentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
           msg: "Failed",
         });
       }
+
+      const { doctorId } = validationResult.data;
 
       // Get doctor info
       const doctor = await prisma.doctor.findUnique({
@@ -300,14 +303,17 @@ router.post(
         });
       }
 
-      // Get doctorId from authenticated user
-      const doctorId = user.doctorId;
-      if (!doctorId) {
-        return res.status(403).json({
-          error: "User is not linked to a doctor profile",
+      // Validate request body for doctorId
+      const validationResult = MedicationAgentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
           msg: "Failed",
         });
       }
+
+      const { doctorId } = validationResult.data;
 
       // Get doctor info
       const doctor = await prisma.doctor.findUnique({

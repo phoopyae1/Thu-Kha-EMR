@@ -66,6 +66,16 @@ router.post('/visits/:id/observations', requireAuth, requireRole('Doctor'), asyn
     });
     
     await logDataChange(req.user!.userId, 'observation', obs.obsId, undefined, obs);
+    
+    // Notify Atenxion agent about observation creation
+    try {
+      const { recordAtenxionTransaction } = await import('../../services/atenxion.js');
+      await recordAtenxionTransaction(visit.doctorId);
+      console.log('Atenxion transaction recorded for observation creation:', obs.obsId);
+    } catch (error) {
+      console.warn('Failed to record Atenxion transaction for observation creation:', error);
+    }
+    
     res.status(201).json(obs);
   } catch (error) {
     console.error('Error creating observation:', error);

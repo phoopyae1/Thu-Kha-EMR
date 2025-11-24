@@ -40,8 +40,10 @@ export default function Login() {
         navigate(from.pathname, { replace: true });
       } else {
         // Default redirect to user's dashboard
+        // Use doctorId for doctors, userId for other roles
+        const adminId = user.role === 'Doctor' && user.doctorId ? user.doctorId : user.userId;
         console.log('[Login] Redirecting to default dashboard');
-        navigate(`/admin/${user.userId}`, { replace: true });
+        navigate(`/admin/${adminId}`, { replace: true });
       }
     }
   }, [user, accessToken, navigate, location.state, location.pathname, hasAttemptedLogin]);

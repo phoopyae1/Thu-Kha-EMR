@@ -7,7 +7,13 @@ import type {
 const prisma = new PrismaClient();
 
 export async function addProblem(userId: string, payload: CreateProblemInput): Promise<Problem> {
-  return prisma.problem.create({
+  // Get doctorId from user
+  const user = await prisma.user.findUnique({
+    where: { userId },
+    select: { doctorId: true },
+  });
+
+  const problem = await prisma.problem.create({
     data: {
       patientId: payload.patientId,
       codeSystem: payload.codeSystem ?? null,
@@ -19,6 +25,17 @@ export async function addProblem(userId: string, payload: CreateProblemInput): P
       createdBy: userId,
     },
   });
+
+  // Notify Atenxion agent about problem creation
+  try {
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
+    await recordAtenxionTransaction(user?.doctorId || userId);
+    console.log('Atenxion transaction recorded for problem creation:', problem.problemId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for problem creation:', error);
+  }
+
+  return problem;
 }
 
 export async function listProblems(

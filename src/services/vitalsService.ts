@@ -38,6 +38,12 @@ function serializeVitals(vitals: Vitals): VitalsResponse {
 export async function createVitals(userId: string, payload: CreateVitalsInput): Promise<VitalsResponse> {
   const bmi = calculateBmi(payload.weightKg ?? null, payload.heightCm ?? null);
 
+  // Get doctorId from visit
+  const visit = await prisma.visit.findUnique({
+    where: { visitId: payload.visitId },
+    select: { doctorId: true },
+  });
+
   const vitals = await prisma.vitals.create({
     data: {
       visitId: payload.visitId,
@@ -54,6 +60,15 @@ export async function createVitals(userId: string, payload: CreateVitalsInput): 
       notes: payload.notes ?? null,
     },
   });
+
+  // Notify Atenxion agent about vitals creation
+  try {
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
+    await recordAtenxionTransaction(visit?.doctorId || userId);
+    console.log('Atenxion transaction recorded for vitals creation:', vitals.vitalsId);
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for vitals creation:', error);
+  }
 
   return serializeVitals(vitals);
 }
