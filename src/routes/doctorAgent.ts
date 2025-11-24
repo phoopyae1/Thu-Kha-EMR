@@ -772,5 +772,144 @@ router.post(
   }
 );
 
+// Doctor Profile API - Returns doctor profile information and statistics
+router.post(
+  "/doctor-profile",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body for doctorId
+      const validationResult = MedicationAgentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { doctorId } = validationResult.data;
+
+      // Get doctor info with user account if linked
+      const doctor = await prisma.doctor.findUnique({
+        where: { doctorId },
+        include: {
+          user: {
+            select: {
+              userId: true,
+              email: true,
+              role: true,
+              status: true,
+              createdAt: true,
+            },
+          },
+        },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({
+          error: "Doctor not found",
+          msg: "Failed",
+        });
+      }
+
+      // Get statistics
+      const [totalPatients, totalVisits, totalAppointments, totalPrescriptions, totalObservations] = await Promise.all([
+        prisma.visit.findMany({
+          where: { doctorId },
+          select: { patientId: true },
+          distinct: ['patientId'],
+        }).then(visits => visits.length),
+        prisma.visit.count({ where: { doctorId } }),
+        prisma.appointment.count({ where: { doctorId } }),
+        prisma.prescription.count({ where: { doctorId } }),
+        prisma.observation.count({ where: { doctorId } }),
+      ]);
+
+      // Get availability info
+      const availabilities = await prisma.doctorAvailability.findMany({
+        where: { doctorId },
+        orderBy: { dayOfWeek: 'asc' },
+      });
+
+      // Get recent appointments count (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const recentAppointments = await prisma.appointment.count({
+        where: {
+          doctorId,
+          date: { gte: thirtyDaysAgo },
+        },
+      });
+
+      // Build flat response structure
+      const result: any = {
+        status: "Success",
+        doctorId: doctor.doctorId,
+        doctorName: doctor.name,
+        doctorDepartment: doctor.department,
+        doctorCreatedAt: doctor.createdAt.toISOString().split("T")[0],
+        doctorCreatedTime: doctor.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
+        
+        // User account info (if linked)
+        hasUserAccount: !!doctor.user,
+        userId: doctor.user?.userId || null,
+        userEmail: doctor.user?.email || null,
+        userRole: doctor.user?.role || null,
+        userStatus: doctor.user?.status || null,
+        userCreatedAt: doctor.user?.createdAt ? doctor.user.createdAt.toISOString().split("T")[0] : null,
+
+        // Statistics
+        totalPatients,
+        totalVisits,
+        totalAppointments,
+        totalPrescriptions,
+        totalObservations,
+        recentAppointmentsLast30Days: recentAppointments,
+
+        // Availability
+        totalAvailabilitySlots: availabilities.length,
+      };
+
+      // Add availability details
+      availabilities.forEach((avail, index) => {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const prefix = `availability${index + 1}`;
+        const hours = Math.floor(avail.startMin / 60);
+        const minutes = avail.startMin % 60;
+        const endHours = Math.floor(avail.endMin / 60);
+        const endMinutes = avail.endMin % 60;
+        
+        result[`${prefix}DayOfWeek`] = avail.dayOfWeek;
+        result[`${prefix}DayName`] = dayNames[avail.dayOfWeek];
+        result[`${prefix}StartTime`] = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+        result[`${prefix}EndTime`] = `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+        result[`${prefix}StartMin`] = avail.startMin;
+        result[`${prefix}EndMin`] = avail.endMin;
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Doctor Agent Profile Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch doctor profile",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
 export default router;
 
