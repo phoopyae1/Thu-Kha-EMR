@@ -678,15 +678,63 @@ router.post(
         status: "Success",
       };
 
-      // Flatten prescriptions and their items
-      let medicationIndex = 0;
-      prescriptions.forEach((prescription, rxIndex) => {
-        const patient = prescription.patient;
-        const age = patient ? calculateAge(patient.dob) : null;
+      // Add unique patient names summary
+      const uniquePatients = new Set<string>();
+      prescriptions.forEach((rx) => {
+        if (rx.patient?.name) {
+          uniquePatients.add(rx.patient.name);
+        }
+      });
+      result.uniquePatientNames = Array.from(uniquePatients).join(", ");
+      result.uniquePatientCount = uniquePatients.size;
 
-        prescription.items.forEach((item) => {
-          medicationIndex++;
-          const prefix = `medication${medicationIndex}`;
+      // Group prescriptions by patient name (case-insensitive), fallback to patientId if name is missing
+      const patientMap = new Map<string, Array<{ prescription: any; item: any; patientId: string }>>();
+      
+      prescriptions.forEach((prescription) => {
+        const patientName = prescription.patient?.name;
+        const patientId = prescription.patientId;
+        
+        // Use patient name if available, otherwise use patientId as the key
+        const groupKey = patientName 
+          ? patientName.toLowerCase().trim() 
+          : `patient_${patientId}`;
+        
+        if (!patientMap.has(groupKey)) {
+          patientMap.set(groupKey, []);
+        }
+        prescription.items.forEach((item: any) => {
+          patientMap.get(groupKey)!.push({ prescription, item, patientId });
+        });
+      });
+
+      // Flatten by patient name, then by medication
+      let patientIndex = 0;
+      patientMap.forEach((medications, normalizedName) => {
+        patientIndex++;
+        const patientPrefix = `patient${patientIndex}`;
+        const firstPrescription = medications[0].prescription;
+        const patient = firstPrescription.patient;
+        const age = patient ? calculateAge(patient.dob) : null;
+        
+        // Get all unique patient IDs for this patient name (in case there are duplicates)
+        const uniquePatientIds = [...new Set(medications.map(m => m.patientId))];
+        const primaryPatientId = uniquePatientIds[0]; // Use first patient ID as primary
+
+        // Patient info (once per patient name)
+        result[`${patientPrefix}PatientId`] = primaryPatientId;
+        result[`${patientPrefix}PatientName`] = patient?.name || "Unknown";
+        result[`${patientPrefix}PatientRecord`] = patient ? `${patient.name} (${primaryPatientId}) - Age: ${age}` : "Unknown";
+        result[`${patientPrefix}PatientAge`] = age;
+        result[`${patientPrefix}PatientGender`] = patient?.gender || "Unknown";
+        result[`${patientPrefix}TotalMedications`] = medications.length;
+
+        // Medications for this patient
+        medications.forEach((med, medIndex) => {
+          const medicationIndex = medIndex + 1;
+          const prefix = `${patientPrefix}Medicine${medicationIndex}`;
+          const prescription = med.prescription;
+          const item = med.item;
 
           // Prescription info
           result[`${prefix}PrescriptionId`] = prescription.prescriptionId;
@@ -694,13 +742,6 @@ router.post(
           result[`${prefix}PrescriptionNotes`] = prescription.notes || "No notes";
           result[`${prefix}PrescriptionCreatedAt`] = prescription.createdAt.toISOString().split("T")[0];
           result[`${prefix}PrescriptionCreatedTime`] = prescription.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00";
-
-          // Patient info
-          result[`${prefix}PatientId`] = prescription.patientId;
-          result[`${prefix}PatientName`] = patient?.name || "Unknown";
-          result[`${prefix}PatientRecord`] = patient ? `${patient.name} (${prescription.patientId}) - Age: ${age}` : "Unknown";
-          result[`${prefix}PatientAge`] = age;
-          result[`${prefix}PatientGender`] = patient?.gender || "Unknown";
 
           // Visit info
           result[`${prefix}VisitId`] = prescription.visitId;
@@ -733,6 +774,8 @@ router.post(
           result[`${prefix}Instruction`] = `${item.dose} ${item.route}, ${item.frequency}${item.prn ? " (PRN)" : ""} for ${item.durationDays} day(s)`;
         });
       });
+
+      result.totalPatients = patientIndex;
 
       // Add latest medication info (most recent prescription item)
       if (prescriptions.length > 0 && prescriptions[0].items.length > 0) {

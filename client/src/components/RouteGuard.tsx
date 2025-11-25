@@ -101,24 +101,28 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
         
         console.log('[RouteGuard] Extracted URL:', url, 'isScript:', isScript);
 
-        // Add userId parameter if user is logged in and postLogin is true
+        // Add userId parameter (using doctorId if available) if user is logged in and postLogin is true
         const postLogin = true; // You can make this configurable if needed
-        if (user?.userId && postLogin) {
+        // Use doctorId as userId if available, otherwise fall back to user.userId
+        const userIdToUse = user?.doctorId || user?.userId;
+        
+        if (userIdToUse && postLogin) {
+          console.log('[RouteGuard] Adding userId parameter:', userIdToUse, user?.doctorId ? '(using doctorId)' : '(using user.userId)');
           try {
             // Use URL constructor if it's a valid absolute URL
             if (url.startsWith('http://') || url.startsWith('https://')) {
               const urlObj = new URL(url);
-              urlObj.searchParams.set('userId', user.userId);
+              urlObj.searchParams.set('userId', userIdToUse);
               url = urlObj.toString();
             } else {
               // For relative URLs or invalid URLs, append manually
               const separator = url.includes('?') ? '&' : '?';
-              url = `${url}${separator}userId=${user.userId}`;
+              url = `${url}${separator}userId=${userIdToUse}`;
             }
           } catch (error) {
             // If URL parsing fails, append userId as query parameter manually
             const separator = url.includes('?') ? '&' : '?';
-            url = `${url}${separator}userId=${user.userId}`;
+            url = `${url}${separator}userId=${userIdToUse}`;
           }
         }
 

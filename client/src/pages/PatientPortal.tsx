@@ -1456,7 +1456,63 @@ export default function PatientPortal() {
   const recentVisits = profile?.recentVisits ?? [];
   const latestImmunization = profile?.latestImmunization ?? null;
   const patientDetails = profile?.patient;
-  const nextAppointment = upcomingAppointments[0] ?? null;
+  
+  // Find the nearest appointment (closest to current date/time)
+  const nextAppointment = useMemo(() => {
+    if (upcomingAppointments.length === 0) return null;
+    
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const nowTime = now.getTime();
+    
+    // Filter and sort appointments to find the nearest one
+    const sortedAppointments = upcomingAppointments
+      .map((appt: any) => {
+        const appointmentDate = new Date(appt.date);
+        if (Number.isNaN(appointmentDate.getTime())) return null;
+        
+        // Get appointment date only (without time)
+        const apptDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
+        
+        // Create a full datetime by combining date with startTimeMin
+        const appointmentDateTime = new Date(appointmentDate);
+        if (appt.startTimeMin != null) {
+          const hours = Math.floor(appt.startTimeMin / 60);
+          const minutes = appt.startTimeMin % 60;
+          appointmentDateTime.setHours(hours, minutes, 0, 0);
+        } else {
+          appointmentDateTime.setHours(0, 0, 0, 0);
+        }
+        
+        // Calculate time difference
+        const timeDiff = appointmentDateTime.getTime() - nowTime;
+        
+        // Check if appointment is today or in the future
+        const isTodayOrFuture = apptDateOnly.getTime() >= today.getTime();
+        
+        return {
+          ...appt,
+          appointmentDateTime,
+          timeDiff,
+          isToday: apptDateOnly.getTime() === today.getTime(),
+          dateOnly: apptDateOnly,
+        };
+      })
+      .filter((appt: any) => {
+        // Include appointments from today onwards (even if time has passed today)
+        return appt !== null && appt.dateOnly.getTime() >= today.getTime();
+      })
+      .sort((a: any, b: any) => {
+        // Sort by: today's appointments first, then by time difference
+        if (a.isToday && !b.isToday) return -1;
+        if (!a.isToday && b.isToday) return 1;
+        // If both are today or both are future, sort by time difference
+        return a.timeDiff - b.timeDiff;
+      });
+    
+    return sortedAppointments.length > 0 ? sortedAppointments[0] : null;
+  }, [upcomingAppointments]);
+  
   const lastVisit = recentVisits[0] ?? null;
   const patientAge = calculateAge(patientDetails?.dob ?? null);
   const genderLabel =
@@ -1606,6 +1662,7 @@ export default function PatientPortal() {
             portalLoading={portalLoading}
             upcomingAppointments={upcomingAppointments}
             pastAppointments={pastAppointments}
+            nextAppointment={nextAppointment}
             appointmentForm={appointmentForm}
             appointmentStatus={appointmentStatus}
             appointmentError={appointmentError}
@@ -2314,10 +2371,20 @@ function TimelineSection({ t, nextAppointment, lastVisit, recentVisits, formatMi
               >
                 <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">{t('Next appointment')}</div>
                 <div className="mt-2 text-base font-semibold text-blue-900">
-                  {new Date(nextAppointment.date).toLocaleDateString()} • {nextAppointment.doctor?.name ?? ''}
+                  {nextAppointment.appointmentDateTime 
+                    ? nextAppointment.appointmentDateTime.toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })
+                    : new Date(nextAppointment.date).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })} • {nextAppointment.doctor?.name ?? ''}
                 </div>
                 <p className="mt-1 text-xs text-blue-700">
-                  {(nextAppointment.department as string | undefined) ?? t('Department pending')} • {formatMinutes(nextAppointment.startTimeMin)}
+                  {(nextAppointment.department as string | undefined) ?? t('Department pending')} • {nextAppointment.startTimeMin != null ? formatMinutes(nextAppointment.startTimeMin) : t('Time pending')}
                 </p>
               </div>
             ) : (
@@ -2371,6 +2438,7 @@ function AppointmentsSection({
   portalLoading,
   upcomingAppointments,
   pastAppointments,
+  nextAppointment,
   appointmentForm,
   appointmentStatus,
   appointmentError,
@@ -2499,7 +2567,7 @@ function AppointmentsSection({
 
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">{t("Today's queue")}</h3>
+          <h3 className="text-lg font-semibold text-slate-900">{t("Queues")}</h3>
           <CalendarIcon className="h-5 w-5 text-blue-600" />
             </div>
         <p className="mt-2 text-sm text-slate-500">{t('Upcoming visits linked to your portal account.')}</p>
@@ -2507,24 +2575,29 @@ function AppointmentsSection({
           <p className="mt-4 text-sm text-slate-500">{t('No upcoming appointments scheduled.')}</p>
         ) : (
           <ul className="mt-4 space-y-3">
-            {upcomingAppointments.slice(0, 5).map((item: any, index: number) => (
-              <li
-                key={item.appointmentId}
-                onClick={() => onAppointmentClick?.(item)}
-                className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
-                  index === 0 ? 'border-blue-200 bg-blue-50 hover:bg-blue-100' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                }`}
-              >
-                <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
-                  <span>{new Date(item.date).toLocaleDateString()}</span>
-                  <span>{formatMinutes(item.startTimeMin)}</span>
-          </div>
-                <div className="mt-1 text-sm text-slate-600">{item.doctor?.name ?? t('Provider pending')}</div>
-                <div className="text-xs text-slate-500">
-                  {(item.department as string | undefined) ?? t('Department pending')} • {item.location ?? t('Clinic visit')}
-              </div>
-              </li>
-            ))}
+            {upcomingAppointments.slice(0, 5).map((item: any, index: number) => {
+              // Check if this is the nearest appointment
+              const isNearest = nextAppointment && item.appointmentId === nextAppointment.appointmentId;
+              
+              return (
+                <li
+                  key={item.appointmentId}
+                  onClick={() => onAppointmentClick?.(item)}
+                  className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
+                    isNearest ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-200' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
+                    <span>{new Date(item.date).toLocaleDateString()}</span>
+                    <span>{formatMinutes(item.startTimeMin)}</span>
+                  </div>
+                  <div className="mt-1 text-sm text-slate-600">{item.doctor?.name ?? t('Provider pending')}</div>
+                  <div className="text-xs text-slate-500">
+                    {(item.department as string | undefined) ?? t('Department pending')} • {item.location ?? t('Clinic visit')}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
