@@ -2580,22 +2580,22 @@ function AppointmentsSection({
               const isNearest = nextAppointment && item.appointmentId === nextAppointment.appointmentId;
               
               return (
-                <li
-                  key={item.appointmentId}
-                  onClick={() => onAppointmentClick?.(item)}
-                  className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
+              <li
+                key={item.appointmentId}
+                onClick={() => onAppointmentClick?.(item)}
+                className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
                     isNearest ? 'border-blue-200 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-200' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
-                    <span>{new Date(item.date).toLocaleDateString()}</span>
-                    <span>{formatMinutes(item.startTimeMin)}</span>
-                  </div>
-                  <div className="mt-1 text-sm text-slate-600">{item.doctor?.name ?? t('Provider pending')}</div>
-                  <div className="text-xs text-slate-500">
-                    {(item.department as string | undefined) ?? t('Department pending')} • {item.location ?? t('Clinic visit')}
-                  </div>
-                </li>
+                }`}
+              >
+                <div className="flex items-center justify-between text-sm font-semibold text-slate-900">
+                  <span>{new Date(item.date).toLocaleDateString()}</span>
+                  <span>{formatMinutes(item.startTimeMin)}</span>
+          </div>
+                <div className="mt-1 text-sm text-slate-600">{item.doctor?.name ?? t('Provider pending')}</div>
+                <div className="text-xs text-slate-500">
+                  {(item.department as string | undefined) ?? t('Department pending')} • {item.location ?? t('Clinic visit')}
+              </div>
+              </li>
               );
             })}
           </ul>

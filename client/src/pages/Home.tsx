@@ -1534,9 +1534,9 @@ function DoctorQueueDashboard() {
     try {
       // Transform form data to API format
       const apiPayload: any = {
-        patientId: selected.patientId,
-        visitDate: values.visitDate,
-        doctorId: values.doctorId,
+          patientId: selected.patientId,
+          visitDate: values.visitDate,
+          doctorId: values.doctorId,
       };
 
       // Use existing visitId if available
@@ -1579,7 +1579,7 @@ function DoctorQueueDashboard() {
               const durationStr = m.duration?.trim() || '';
               const daysMatch = durationStr.match(/(\d+)/);
               durationDays = daysMatch ? parseInt(daysMatch[1], 10) : 0;
-            }
+        }
 
             return {
               drugName: m.drugName.trim(),

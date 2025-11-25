@@ -716,7 +716,7 @@ router.post(
         const firstPrescription = medications[0].prescription;
         const patient = firstPrescription.patient;
         const age = patient ? calculateAge(patient.dob) : null;
-        
+
         // Get all unique patient IDs for this patient name (in case there are duplicates)
         const uniquePatientIds = [...new Set(medications.map(m => m.patientId))];
         const primaryPatientId = uniquePatientIds[0]; // Use first patient ID as primary

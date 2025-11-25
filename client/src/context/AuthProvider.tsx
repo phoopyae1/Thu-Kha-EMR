@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAccessToken, setAccessToken, subscribeAccessToken } from '../api/http';
 import { login as apiLogin, type LoginResponse, type Role } from '../api/client';
-import { loginAtenxionUser, logoutAtenxionUser, type AtenxionCredentials } from '../api/atenxion';
+import { loginAtenxionUser, logoutAtenxionUser, loginAtenxionDoctor, logoutAtenxionDoctor, type AtenxionCredentials, type AtenxionDoctorCredentials } from '../api/atenxion';
 import { fetchAdminIntegrationEmbed } from '../api/patientPortal';
 
 interface User {
@@ -53,32 +53,42 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser(loggedInUser);
 
     // Call Atenxion login for doctors
-    if (loggedInUser.role === 'Doctor') {
+    if (loggedInUser.role === 'Doctor' && loggedInUser.doctorId) {
       try {
         // Get admin integration embed to extract agentId if available
+        // Follow the same pattern as patients - try agentchainId first, then agentId
         const adminEmbed = await fetchAdminIntegrationEmbed();
         let agentId: string | undefined;
         
-        // Try to extract agentId from iframeCode if it's a script tag
         if (adminEmbed?.iframeCode) {
-          const agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+          // Try agentchainId first (like patients do)
+          let agentIdMatch = adminEmbed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
           if (agentIdMatch) {
             agentId = agentIdMatch[1];
+            console.log('[AuthProvider] Extracted agentId from agentchainId:', agentId);
+          } else {
+            // Fallback to agentId pattern
+            agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+            if (agentIdMatch) {
+              agentId = agentIdMatch[1];
+              console.log('[AuthProvider] Extracted agentId from embed:', agentId);
+            } else {
+              console.warn('[AuthProvider] Could not extract agentId from embed iframeCode');
+            }
           }
         }
 
-        const credentials: AtenxionCredentials = {
-          userId: loggedInUser.userId,
-          patientId: loggedInUser.userId, // For doctors, use userId as patientId
-          patientName: loggedInUser.email,
-          agentId,
+        const doctorCredentials: AtenxionDoctorCredentials = {
+          doctorId: loggedInUser.doctorId,
+          agentId:agentId,
+          userId: loggedInUser.doctorId,
         };
         
-        setCurrentUserCredentials(credentials);
-        await loginAtenxionUser(credentials, undefined, true); // true = useAdminIntegration
-        console.log('[AuthProvider] Atenxion login successful for doctor');
+        setCurrentUserCredentials(doctorCredentials as any); // Store for logout
+        await loginAtenxionDoctor(doctorCredentials);
+        console.log('[AuthProvider] Atenxion doctor login successful');
       } catch (error) {
-        console.error('[AuthProvider] Atenxion login failed for doctor:', error);
+        console.error('[AuthProvider] Atenxion doctor login failed:', error);
         // Don't block login if Atenxion login fails
       }
     }
@@ -86,12 +96,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const logout = async () => {
     // Call Atenxion logout for doctors before clearing session
-    if (user?.role === 'Doctor' && currentUserCredentials) {
+    if (user?.role === 'Doctor' && currentUserCredentials && user.doctorId) {
       try {
-        await logoutAtenxionUser(currentUserCredentials, undefined, true); // true = useAdminIntegration
-        console.log('[AuthProvider] Atenxion logout successful for doctor');
+        const doctorCredentials: AtenxionDoctorCredentials = {
+          doctorId: user.doctorId,
+          userId: user.doctorId,
+          agentId: (currentUserCredentials as any).agentId,
+        };
+        await logoutAtenxionDoctor(doctorCredentials);
+        console.log('[AuthProvider] Atenxion doctor logout successful');
       } catch (error) {
-        console.error('[AuthProvider] Atenxion logout failed for doctor:', error);
+        console.error('[AuthProvider] Atenxion doctor logout failed:', error);
         // Continue with logout even if Atenxion logout fails
       }
     }
