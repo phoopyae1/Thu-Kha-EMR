@@ -631,24 +631,22 @@ function PaymentReceiptModal({
                 {invoice.status ?? t("Issued")}
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">{t("Total amount")}</span>
-              <span className="font-semibold text-slate-900">
-                {formatCurrency(amountDue)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">{t("Amount paid")}</span>
-              <span className="font-semibold text-emerald-600">
-                {formatCurrency(amountPaid)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-500">{t("Balance due")}</span>
-              <span className="font-semibold text-rose-600">
-                {formatCurrency(balanceDue)}
-              </span>
-            </div>
+            {amountPaid > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">{t("Amount paid")}</span>
+                <span className="font-semibold text-emerald-600">
+                  {formatCurrency(amountPaid)}
+                </span>
+              </div>
+            )}
+            {balanceDue > 0 && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-500">{t("Balance due")}</span>
+                <span className="font-semibold text-rose-600">
+                  {formatCurrency(balanceDue)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Always show fee breakdown section if invoice has items or lineItems */}
@@ -669,63 +667,22 @@ function PaymentReceiptModal({
                             <p className="font-medium text-slate-900">
                               {item.description}
                             </p>
-                            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
-                              {item.quantity > 1 && (
-                                <span>
-                                  {t("Qty: {quantity}", {
-                                    quantity: item.quantity,
-                                  })}
-                                </span>
-                              )}
-                              {item.unitPrice && (
-                                <span>
-                                  {t("Unit Price: {price}", {
-                                    price: formatCurrency(
-                                      typeof item.unitPrice === "number"
-                                        ? item.unitPrice
-                                        : Number(item.unitPrice)
-                                    ),
-                                  })}
-                                </span>
-                              )}
-                              {item.sourceType && (
-                                <span className="capitalize">
-                                  {item.sourceType
-                                    .toLowerCase()
-                                    .replace("_", " ")}
-                                </span>
-                              )}
-                            </div>
                           </div>
                           <div className="text-right">
-                            {item.discountAmt &&
-                              Number(item.discountAmt) > 0 && (
-                                <div className="text-xs text-slate-500 line-through">
-                                  {formatCurrency(
-                                    Number(item.unitPrice) *
-                                      (item.quantity || 1)
-                                  )}
-                                </div>
-                              )}
-                            <div className="text-sm font-semibold text-slate-900">
-                              {formatCurrency(
-                                typeof item.lineTotal === "number"
+                            {(() => {
+                              // Handle all zero cases: null, undefined, empty string, string "0", number 0
+                              if (item.lineTotal == null || item.lineTotal === "" || item.lineTotal === "0" || item.lineTotal === 0) return null;
+                              const lineTotal = typeof item.lineTotal === "number" 
                                   ? item.lineTotal
-                                  : Number(item.lineTotal ?? 0)
-                              )}
+                                : Number(item.lineTotal);
+                              // Only render if it's a valid number greater than 0
+                              if (isNaN(lineTotal) || lineTotal <= 0) return null;
+                              return (
+                                <div className="text-sm font-semibold text-slate-900">
+                                  {formatCurrency(lineTotal)}
                             </div>
-                            {item.discountAmt &&
-                              Number(item.discountAmt) > 0 && (
-                                <div className="text-xs text-emerald-600">
-                                  {t("Discount: {amount}", {
-                                    amount: formatCurrency(
-                                      typeof item.discountAmt === "number"
-                                        ? item.discountAmt
-                                        : Number(item.discountAmt ?? 0)
-                                    ),
-                                  })}
-                                </div>
-                              )}
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -749,9 +706,16 @@ function PaymentReceiptModal({
                             </p>
                           ) : null}
                         </div>
+                        {(() => {
+                          if (item.amount == null || item.amount === "" || item.amount === "0") return null;
+                          const amount = typeof item.amount === "number" ? item.amount : Number(item.amount);
+                          if (isNaN(amount) || amount <= 0) return null;
+                          return (
                         <div className="text-right text-sm font-semibold text-slate-900">
-                          {formatCurrency(item.amount ?? 0)}
+                              {formatCurrency(amount)}
                         </div>
+                          );
+                        })()}
                       </div>
                     ))}
               </div>
@@ -3336,7 +3300,6 @@ function AppointmentsSection({
               // Sort appointments by nearest first (same logic as nextAppointment)
               const now = new Date();
               const nowTime = now.getTime();
-              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
               const sortedAppointments = upcomingAppointments
                 .map((appt: any) => {
@@ -3355,43 +3318,31 @@ function AppointmentsSection({
 
                   // Calculate time difference
                   const timeDiff = appointmentDateTime.getTime() - nowTime;
-                  
-                  // Check if appointment date is today or in the future
-                  const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
-                  const isTodayOrFuture = appointmentDateOnly.getTime() >= today.getTime();
 
                   return {
                     ...appt,
                     appointmentDateTime,
                     timeDiff,
-                    isTodayOrFuture,
                   };
                 })
                 .filter(
                   (appt: any): appt is NonNullable<typeof appt> => appt !== null
                 )
                 .filter((appt: any) => {
-                  // Include appointments that are today or in the future
-                  // Show all appointments from today onwards, even if time has passed today
-                  if (!appt.isTodayOrFuture) return false;
-                  
-                  // Check if appointment date is today
-                  const appointmentDateOnly = new Date(appt.appointmentDateTime.getFullYear(), appt.appointmentDateTime.getMonth(), appt.appointmentDateTime.getDate());
-                  const isToday = appointmentDateOnly.getTime() === today.getTime();
-                  
-                  // If it's today, show it regardless of time
-                  // If it's future, only show if time hasn't passed (timeDiff > 0)
-                  return isToday || appt.timeDiff > 0;
+                  // Only include appointments that haven't passed (timeDiff > 0)
+                  return appt.timeDiff > 0;
                 })
                 .sort((a: any, b: any) => {
                   // Sort by time difference (ascending) to get nearest first
                   return a.timeDiff - b.timeDiff;
                 })
-                .slice(0, 5); // Show top 5 nearest appointments
+                .slice(0, 5); // Take top 5
 
               return sortedAppointments.map((item: any, index: number) => {
-                // The first appointment (index 0) is the nearest one since we sorted by timeDiff ascending
-                const isNearest = index === 0;
+                // Check if this is the nearest appointment
+                const isNearest =
+                  nextAppointment &&
+                  item.appointmentId === nextAppointment.appointmentId;
 
                 return (
                   <li
@@ -3399,7 +3350,7 @@ function AppointmentsSection({
                     onClick={() => onAppointmentClick?.(item)}
                     className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
                       isNearest
-                        ? "border-blue-500 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-500 shadow-md"
+                        ? "border-blue-200 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-200"
                         : "border-slate-200 bg-slate-50 hover:bg-slate-100"
                     }`}
                   >
@@ -4526,65 +4477,22 @@ function BillingSection({
                                   <p className="font-medium text-slate-900 text-xs">
                                     {item.description}
                                   </p>
-                                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-                                    {item.quantity > 1 && (
-                                      <span>
-                                        {t("Qty: {qty}", {
-                                          qty: item.quantity,
-                                        })}
-                                      </span>
-                                    )}
-                                    {item.unitPrice && (
-                                      <span>
-                                        {t("Unit: {price}", {
-                                          price: formatCurrency(
-                                            typeof item.unitPrice === "number"
-                                              ? item.unitPrice
-                                              : Number(item.unitPrice)
-                                          ),
-                                        })}
-                                      </span>
-                                    )}
-                                    {item.sourceType && (
-                                      <span className="capitalize">
-                                        {item.sourceType
-                                          .toLowerCase()
-                                          .replace("_", " ")}
-                                      </span>
-                                    )}
-                                  </div>
                                 </div>
                                 <div className="text-right">
-                                  {item.discountAmt &&
-                                    Number(item.discountAmt) > 0 && (
-                                      <div className="text-xs text-slate-400 line-through">
-                                        {formatCurrency(
-                                          (typeof item.unitPrice === "number"
-                                            ? item.unitPrice
-                                            : Number(item.unitPrice)) *
-                                            (item.quantity || 1)
-                                        )}
-                                      </div>
-                                    )}
-                                  <div className="text-xs font-semibold text-slate-900">
-                                    {formatCurrency(
-                                      typeof item.lineTotal === "number"
+                                  {(() => {
+                                    // Handle all zero cases: null, undefined, empty string, string "0", number 0
+                                    if (item.lineTotal == null || item.lineTotal === "" || item.lineTotal === "0" || item.lineTotal === 0) return null;
+                                    const lineTotal = typeof item.lineTotal === "number" 
                                         ? item.lineTotal
-                                        : Number(item.lineTotal ?? 0)
-                                    )}
+                                      : Number(item.lineTotal);
+                                    // Only render if it's a valid number greater than 0
+                                    if (isNaN(lineTotal) || lineTotal <= 0) return null;
+                                    return (
+                                      <div className="text-xs font-semibold text-slate-900">
+                                        {formatCurrency(lineTotal)}
                                   </div>
-                                  {item.discountAmt &&
-                                    Number(item.discountAmt) > 0 && (
-                                      <div className="text-xs text-emerald-600">
-                                        {t("Disc: {amt}", {
-                                          amt: formatCurrency(
-                                            typeof item.discountAmt === "number"
-                                              ? item.discountAmt
-                                              : Number(item.discountAmt ?? 0)
-                                          ),
-                                        })}
-                                      </div>
-                                    )}
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>

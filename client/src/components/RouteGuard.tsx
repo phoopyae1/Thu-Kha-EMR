@@ -261,8 +261,8 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
           style={{
             bottom: 0,
             right: 0,
-            // width: 'min(420px, 90vw)',
-            height: 'min(620px, 90vh)',
+            width: 'min(400px, 90vw)',
+            height: '80%',
             position: 'fixed',
           }}
           frameBorder="0"

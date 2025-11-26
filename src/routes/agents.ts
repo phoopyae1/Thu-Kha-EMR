@@ -574,19 +574,19 @@ router.post(
       
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
+
       // Calculate current time in minutes from midnight
       const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
       // Fetch all appointments from today onwards (we'll filter by time in code)
       const allAppointments = await prisma.appointment.findMany({
-        where: {
-          patientId,
-          date: { gte: today },
-        },
-        include: {
-          doctor: true,
-        },
+          where: {
+            patientId,
+            date: { gte: today },
+          },
+          include: {
+            doctor: true,
+          },
         orderBy: [
           { date: "asc" },
           { startTimeMin: "asc" },
@@ -595,14 +595,14 @@ router.post(
 
       // Fetch past appointments (before today)
       const pastAppointments = await prisma.appointment.findMany({
-        where: {
-          patientId,
-          date: { lt: today },
-        },
-        include: {
-          doctor: true,
-        },
-        orderBy: { date: "desc" },
+          where: {
+            patientId,
+            date: { lt: today },
+          },
+          include: {
+            doctor: true,
+          },
+          orderBy: { date: "desc" },
       });
 
       // Filter upcoming appointments: future dates OR today with time after now
@@ -1929,77 +1929,77 @@ router.post(
       
       try {
         labResultsRaw = await prisma.$queryRaw<
-          Array<{
-            labResultId: string;
-            labOrderId: string;
-            labOrderItemId: string;
-            testCode: string;
-            testName: string;
-            resultValue: string | null;
-            resultValueNum: number | null;
-            unit: string | null;
-            referenceLow: number | string | null;
-            referenceHigh: number | string | null;
-            abnormalFlag: string | null;
-            resultedAt: Date;
-            notes: string | null;
-            orderStatus: string;
-            visitDate: Date;
+        Array<{
+          labResultId: string;
+          labOrderId: string;
+          labOrderItemId: string;
+          testCode: string;
+          testName: string;
+          resultValue: string | null;
+          resultValueNum: number | null;
+          unit: string | null;
+          referenceLow: number | string | null;
+          referenceHigh: number | string | null;
+          abnormalFlag: string | null;
+          resultedAt: Date;
+          notes: string | null;
+          orderStatus: string;
+          visitDate: Date;
             doctorId: string | null;
             doctorName: string | null;
             department: string | null;
-          }>
+        }>
         >(Prisma.sql`
           SELECT 
-            lr."labResultId",
-            lr."labOrderId",
-            lr."labOrderItemId",
-            loi."testCode",
-            loi."testName",
-            lr."resultValue",
-            lr."resultValueNum",
-            lr."unit",
-            lr."referenceLow"::text as "referenceLow",
-            lr."referenceHigh"::text as "referenceHigh",
-            lr."abnormalFlag",
-            lr."resultedAt",
-            lr."notes",
-            lo.status as "orderStatus",
-            v."visitDate",
+          lr."labResultId",
+          lr."labOrderId",
+          lr."labOrderItemId",
+          loi."testCode",
+          loi."testName",
+          lr."resultValue",
+          lr."resultValueNum",
+          lr."unit",
+          lr."referenceLow"::text as "referenceLow",
+          lr."referenceHigh"::text as "referenceHigh",
+          lr."abnormalFlag",
+          lr."resultedAt",
+          lr."notes",
+          lo.status as "orderStatus",
+          v."visitDate",
             lo."doctorId"::text as "doctorId",
             '' as "doctorName",
-            v.department
-          FROM "LabResult" lr
-          JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
-          JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
-          JOIN "Visit" v ON lo."visitId" = v."visitId"
+          v.department
+        FROM "LabResult" lr
+        JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
+        JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+        JOIN "Visit" v ON lo."visitId" = v."visitId"
           WHERE lr."patientId" = ${validPatientId}::uuid
             AND lo."patientId" = ${validPatientId}::uuid
             AND v."patientId" = ${validPatientId}::uuid
-            AND loi.status = 'RESULTED'
-            AND lo.status != 'CANCELLED'
-            ${
-              startDate
-                ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
-                    startDate as string
-                  )}`
-                : Prisma.empty
-            }
-            ${
-              endDate
-                ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
-                : Prisma.empty
-            }
-            ${
+          AND loi.status = 'RESULTED'
+          AND lo.status != 'CANCELLED'
+          ${
+            startDate
+              ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+          ${
               testCode && testCode.trim() !== ''
                 ? Prisma.sql`AND loi."testCode" ILIKE ${`%${testCode.trim()}%`}`
-                : Prisma.empty
-            }
-            ${
+              : Prisma.empty
+          }
+          ${
               testName && testName.trim() !== ''
                 ? Prisma.sql`AND loi."testName" ILIKE ${`%${testName.trim()}%`}`
-                : Prisma.empty
-            }
+              : Prisma.empty
+          }
           ORDER BY lr."resultedAt" DESC, lr."labResultId"
         `);
       } catch (error) {
@@ -2099,7 +2099,7 @@ router.post(
           console.error(`[Agents] Error fetching doctors:`, err);
         }
       }
-      
+
       const labResults: LabResultWithRelations[] = labResultsRaw.map((r) => {
         // Convert referenceLow and referenceHigh to strings, handling Decimal types from Prisma
         const refLow = r.referenceLow !== null && r.referenceLow !== undefined 
@@ -2143,7 +2143,7 @@ router.post(
       });
       
       console.log(`[Agents] Transformed lab results: ${labResults.length} for patient ${validPatientId}`);
-      
+
       // Skip legacy results - only use proper lab order workflow results
       const legacyLabResults: LabResultWithRelations[] = [];
 
@@ -2657,31 +2657,31 @@ router.post(
             : null;
           
           return {
-            labResultId: labResult.labResultId,
-            testName: labResult.LabOrderItem.testName,
-            testCode: labResult.LabOrderItem.testCode,
-            resultValue: labResult.resultValue,
-            resultValueNum: labResult.resultValueNum
-              ? Number(labResult.resultValueNum.toString()).toFixed(3)
-              : null,
-            unit: labResult.unit,
-            abnormalFlag: labResult.abnormalFlag,
-            resultedAt: labResult.resultedAt.toISOString(),
-            date: formatDate(labResult.resultedAt),
+          labResultId: labResult.labResultId,
+          testName: labResult.LabOrderItem.testName,
+          testCode: labResult.LabOrderItem.testCode,
+          resultValue: labResult.resultValue,
+          resultValueNum: labResult.resultValueNum
+            ? Number(labResult.resultValueNum.toString()).toFixed(3)
+            : null,
+          unit: labResult.unit,
+          abnormalFlag: labResult.abnormalFlag,
+          resultedAt: labResult.resultedAt.toISOString(),
+          date: formatDate(labResult.resultedAt),
             resultDate: dateStr,
             resultTime: timeStr,
             referenceLow: refLow,
             referenceHigh: refHigh,
             referenceRange: referenceRange,
             status: labResult.abnormalFlag ? `Flagged: ${labResult.abnormalFlag}` : 'Normal',
-            notes: labResult.notes,
-            orderStatus: labResult.LabOrder.status,
-            visitDate: formatDate(labResult.LabOrder.Visit.visitDate),
-            doctorName: labResult.LabOrder.Visit.doctor.name,
-            orderDoctor: labResult.LabOrder.Visit.doctor.name,
-            orderDoctorName: labResult.LabOrder.Visit.doctor.name,
-            doctorId: labResult.LabOrder.Visit.doctor.doctorId,
-            department: labResult.LabOrder.Visit.doctor.department,
+          notes: labResult.notes,
+          orderStatus: labResult.LabOrder.status,
+          visitDate: formatDate(labResult.LabOrder.Visit.visitDate),
+          doctorName: labResult.LabOrder.Visit.doctor.name,
+          orderDoctor: labResult.LabOrder.Visit.doctor.name,
+          orderDoctorName: labResult.LabOrder.Visit.doctor.name,
+          doctorId: labResult.LabOrder.Visit.doctor.doctorId,
+          department: labResult.LabOrder.Visit.doctor.department,
           };
         }),
       };
