@@ -632,20 +632,20 @@ function PaymentReceiptModal({
               </span>
             </div>
             {amountPaid > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">{t("Amount paid")}</span>
-                <span className="font-semibold text-emerald-600">
-                  {formatCurrency(amountPaid)}
-                </span>
-              </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">{t("Amount paid")}</span>
+              <span className="font-semibold text-emerald-600">
+                {formatCurrency(amountPaid)}
+              </span>
+            </div>
             )}
             {balanceDue > 0 && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-slate-500">{t("Balance due")}</span>
-                <span className="font-semibold text-rose-600">
-                  {formatCurrency(balanceDue)}
-                </span>
-              </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-slate-500">{t("Balance due")}</span>
+              <span className="font-semibold text-rose-600">
+                {formatCurrency(balanceDue)}
+              </span>
+            </div>
             )}
           </div>
 

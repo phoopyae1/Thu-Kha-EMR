@@ -5,7 +5,7 @@ import { CreateLabOrderSchema } from "../validation/clinical.js";
 import * as labService from "../services/labService.js";
 import { createPrescription } from "../services/pharmacyService.js";
 import { z } from "zod";
-import { toDateOnly } from "../utils/time.js";
+import { toDateOnly, toMinutes } from "../utils/time.js";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -1187,23 +1187,24 @@ router.post(
 
 // Validation schema for clinical documentation creation
 const CreateClinicalDocSchema = z.object({
-  // Either visitId (for existing visit) OR visit creation fields
+  // visitId is optional - if not provided, will create new visit with patientId, visitDate, and doctorId
   visitId: z.string().uuid().optional(),
-  // Visit creation fields (required if visitId is not provided)
+  // Visit creation fields (required if visitId is not provided and you want to create clinical docs)
   patientId: z.string().uuid().optional(),
   visitDate: z.coerce.date().optional(),
-  doctorId: z.string().uuid().optional(), // Optional: if provided, must match authenticated doctor
+  doctorId: z.string().uuid().optional(), // Required if visitId is not provided
+  startTime: z.union([z.string(), z.number().int().min(0).max(1439)]).optional(), // Time as string (HH:MM) or minutes from midnight
   // Clinical documentation fields
   diagnoses: z.array(z.object({
     diagnosis: z.string().min(1),
   })).optional(),
   prescriptions: z.array(z.object({
     drugName: z.string().min(1), // Accept drugName instead of drugId
-    dose: z.string().min(1),
-    route: z.string().min(1),
-    frequency: z.string().min(1),
-    durationDays: z.number().int().positive().max(365),
-    quantityPrescribed: z.number().int().positive().max(1000).optional(),
+    dose: z.string().optional().default(""),
+    route: z.string().optional().default("Oral"),
+    frequency: z.string().optional().default("OD"),
+    durationDays: z.number().int().positive().max(365).optional().default(1),
+    quantityPrescribed: z.number().int().positive().max(1000).optional().default(1),
     prn: z.boolean().optional().default(false),
     allowGeneric: z.boolean().optional().default(true),
     notes: z.string().max(300).optional(),
@@ -1224,15 +1225,35 @@ const CreateClinicalDocSchema = z.object({
   }).optional(),
 }).refine(
   (data) => {
-    // Either visitId must be provided, OR all visit creation fields must be provided
+    // If visitId is provided, we're good
     if (data.visitId) {
-      return true; // visitId provided, no need for visit creation fields
+      return true;
     }
-    // If no visitId, patientId and visitDate are required
-    return !!(data.patientId && data.visitDate);
+    // If no visitId but we have clinical docs to save, we need patientId, visitDate, and doctorId to create a visit
+    const hasClinicalDocs = 
+      (data.diagnoses && data.diagnoses.length > 0) ||
+      (data.prescriptions && data.prescriptions.length > 0) ||
+      (data.labResults && data.labResults.length > 0) ||
+      (data.observationNote && (
+        data.observationNote.noteText?.trim() ||
+        data.observationNote.bpSystolic !== undefined ||
+        data.observationNote.bpDiastolic !== undefined ||
+        data.observationNote.heartRate !== undefined ||
+        data.observationNote.temperatureC !== undefined ||
+        data.observationNote.spo2 !== undefined ||
+        data.observationNote.bmi !== undefined
+      ));
+    
+    // If there's no visitId and no clinical docs, that's fine (empty request)
+    if (!hasClinicalDocs) {
+      return true;
+    }
+    
+    // If there are clinical docs but no visitId, we need patientId, visitDate, and doctorId
+    return !!(data.patientId && data.visitDate && data.doctorId);
   },
   {
-    message: "Either visitId must be provided, or all visit creation fields (patientId, visitDate) must be provided.",
+    message: "If visitId is not provided and you want to save clinical documentation, patientId, visitDate, and doctorId are required to create a visit.",
   }
 );
 
@@ -1300,32 +1321,111 @@ router.post(
         } else {
           // Create new visit if visitId is not provided
           // Verify patient exists
+          if (!payload.patientId) {
+            throw new Error("Patient ID is required when creating a new visit");
+          }
+          
           const patient = await tx.patient.findUnique({
-            where: { patientId: payload.patientId! },
-            select: { patientId: true },
+            where: { patientId: payload.patientId },
+            select: { patientId: true, name: true },
           });
 
           if (!patient) {
             throw new Error("Patient not found");
           }
 
+          // Use doctorId from request body if provided, otherwise use authenticated doctor's ID
+          const visitDoctorId = payload.doctorId || doctorId;
+          
           // Get doctor's department from database
           const doctor = await tx.doctor.findUnique({
-            where: { doctorId: doctorId },
-            select: { department: true },
+            where: { doctorId: visitDoctorId },
+            select: { department: true, name: true },
           });
 
           if (!doctor) {
             throw new Error("Doctor not found");
           }
 
-          // Create the visit using authenticated doctor's ID
+          // Check if doctor has an appointment with this patient for the given date
+          if (!payload.visitDate) {
+            throw new Error("Visit date is required when creating a new visit");
+          }
+
+          const visitDate = payload.visitDate instanceof Date 
+            ? payload.visitDate 
+            : new Date(payload.visitDate);
+          const appointmentDateOnly = toDateOnly(visitDate.toISOString().slice(0, 10));
+          
+          // Parse startTime if provided (for more precise appointment matching)
+          let startTimeMin: number | null = null;
+          if (payload.startTime !== undefined) {
+            if (typeof payload.startTime === 'string') {
+              try {
+                startTimeMin = toMinutes(payload.startTime);
+              } catch (error) {
+                console.warn(`[create-clinical-doc] Invalid startTime format: ${payload.startTime}`);
+              }
+            } else if (typeof payload.startTime === 'number') {
+              startTimeMin = payload.startTime;
+            }
+          }
+
+          // Build where clause for appointment check
+          const startOfDay = new Date(appointmentDateOnly);
+          startOfDay.setUTCHours(0, 0, 0, 0);
+          const endOfDay = new Date(appointmentDateOnly);
+          endOfDay.setUTCDate(endOfDay.getUTCDate() + 1); // Next day (exclusive)
+          endOfDay.setUTCHours(0, 0, 0, 0);
+
+          const appointmentWhere: any = {
+            patientId: payload.patientId,
+            doctorId: visitDoctorId,
+            date: {
+              gte: startOfDay,
+              lt: endOfDay,
+            },
+            status: {
+              not: 'Cancelled', // Only check non-cancelled appointments
+            },
+          };
+
+          // If startTime is provided, match appointments with that specific start time
+          if (startTimeMin !== null) {
+            appointmentWhere.startTimeMin = startTimeMin;
+          }
+
+          // Check if appointment exists
+          const existingAppointment = await tx.appointment.findFirst({
+            where: appointmentWhere,
+            select: {
+              appointmentId: true,
+              status: true,
+              startTimeMin: true,
+            },
+          });
+
+          if (!existingAppointment) {
+            const patientName = patient.name || "the patient";
+            const doctorName = doctor.name || "the doctor";
+            const dateStr = appointmentDateOnly.toISOString().slice(0, 10);
+            const timeStr = startTimeMin !== null 
+              ? ` at ${Math.floor(startTimeMin / 60)}:${String(startTimeMin % 60).padStart(2, '0')}` 
+              : "";
+            
+            throw new Error(
+              `No appointment found between ${doctorName} and ${patientName} on ${dateStr}${timeStr}. ` +
+              `Please ensure the doctor has a scheduled appointment with this patient before creating clinical documentation.`
+            );
+          }
+
+          // Create the visit using the specified doctorId (from request or authenticated)
           // Department is fetched from doctor profile, reason is set to null
           const newVisit = await tx.visit.create({
             data: {
-              patientId: payload.patientId!,
+              patientId: payload.patientId,
               visitDate: payload.visitDate!,
-              doctorId: doctorId,
+              doctorId: visitDoctorId,
               department: doctor.department,
               reason: null,
             },
@@ -1396,10 +1496,10 @@ router.post(
                 const drug = drugs[0];
                 return {
                   drugId: drug.drugId,
-                  dose: rx.dose,
-                  route: rx.route,
-                  frequency: rx.frequency,
-                  durationDays: rx.durationDays,
+                  dose: rx.dose || "",
+                  route: rx.route || "Oral",
+                  frequency: rx.frequency || "OD",
+                  durationDays: rx.durationDays || 1,
                   quantityPrescribed: rx.quantityPrescribed || 1,
                   prn: rx.prn || false,
                   allowGeneric: rx.allowGeneric !== undefined ? rx.allowGeneric : true,
@@ -1442,11 +1542,11 @@ router.post(
                 items: {
                   create: prescriptionItems.map((item) => ({
                     drugId: item.drugId,
-                    dose: item.dose,
-                    route: item.route,
-                    frequency: item.frequency,
-                    durationDays: item.durationDays,
-                    quantityPrescribed: item.quantityPrescribed,
+                    dose: item.dose || "",
+                    route: item.route || "Oral",
+                    frequency: item.frequency || "OD",
+                    durationDays: item.durationDays || 1,
+                    quantityPrescribed: item.quantityPrescribed || 1,
                     prn: Boolean(item.prn),
                     allowGeneric: item.allowGeneric ?? true,
                     notes: item.notes ?? null,
@@ -1607,24 +1707,47 @@ router.post(
           endOfDay.setUTCDate(endOfDay.getUTCDate() + 1); // Next day (exclusive)
           endOfDay.setUTCHours(0, 0, 0, 0);
           
-          // First, check if any appointments exist for this patient/doctor/date (for debugging)
-          const allAppointmentsForDate = await tx.appointment.findMany({
-            where: {
+          // Parse startTime if provided (for more precise appointment matching)
+          let startTimeMin: number | null = null;
+          if (payload.startTime !== undefined) {
+            if (typeof payload.startTime === 'string') {
+              try {
+                startTimeMin = toMinutes(payload.startTime);
+              } catch (error) {
+                console.warn(`[create-clinical-doc] Invalid startTime format: ${payload.startTime}`);
+              }
+            } else if (typeof payload.startTime === 'number') {
+              startTimeMin = payload.startTime;
+            }
+          }
+          
+          // Build where clause for appointment matching
+          const appointmentWhere: any = {
               patientId: visit!.patientId,
-              doctorId: doctorId,
+            doctorId: visit!.doctorId,
               date: {
                 gte: startOfDay,
                 lt: endOfDay,
               },
-            },
+          };
+          
+          // If startTime is provided, match appointments with that specific start time
+          if (startTimeMin !== null) {
+            appointmentWhere.startTimeMin = startTimeMin;
+          }
+          
+          // First, check if any appointments exist for this patient/doctor/date (for debugging)
+          const allAppointmentsForDate = await tx.appointment.findMany({
+            where: appointmentWhere,
             select: {
               appointmentId: true,
               status: true,
               date: true,
+              startTimeMin: true,
             },
           });
           
-          console.log(`[create-clinical-doc] All appointments for patient ${visit!.patientId}, doctor ${doctorId}, date range ${startOfDay.toISOString()} to ${endOfDay.toISOString()}:`, allAppointmentsForDate);
+          console.log(`[create-clinical-doc] All appointments for patient ${visit!.patientId}, doctor ${visit!.doctorId}, date range ${startOfDay.toISOString()} to ${endOfDay.toISOString()}${startTimeMin !== null ? `, startTimeMin: ${startTimeMin}` : ''}:`, allAppointmentsForDate);
           
           // Now find only those that need to be completed
           const matchingAppointments = allAppointmentsForDate.filter(
