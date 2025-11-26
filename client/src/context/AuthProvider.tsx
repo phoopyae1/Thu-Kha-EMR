@@ -89,7 +89,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log('[AuthProvider] Atenxion doctor login successful');
       } catch (error) {
         console.error('[AuthProvider] Atenxion doctor login failed:', error);
-        // Don't block login if Atenxion login fails
       }
     }
   };

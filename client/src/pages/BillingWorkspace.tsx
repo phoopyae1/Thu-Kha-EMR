@@ -80,6 +80,10 @@ function InvoiceStatusBadge({ status }: { status: string }) {
 
 export default function BillingWorkspace() {
   const { user } = useAuth();
+  
+  // Debug: Log user role to console
+  console.log('BillingWorkspace - User role:', user?.role);
+  console.log('BillingWorkspace - canEditInvoices:', user ? ['Cashier', 'ITAdmin', 'Doctor'].includes(user.role) : false);
   const { adminId } = useParams<{ adminId: string }>();
   const withAdminPath = (path: string) => (adminId ? `/admin/${adminId}${path}` : path);
   const [visitIdInput, setVisitIdInput] = useState('');
@@ -105,6 +109,12 @@ export default function BillingWorkspace() {
   const [selectedInvoiceForVoid, setSelectedInvoiceForVoid] = useState<InvoiceSummary | null>(null);
   const [voidError, setVoidError] = useState<string | null>(null);
   const [voidLoading, setVoidLoading] = useState(false);
+  const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [selectedInvoiceForEdit, setSelectedInvoiceForEdit] = useState<InvoiceSummary | null>(null);
+  const [editDraft, setEditDraft] = useState({ discount: '', tax: '' });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [invoiceDetails, setInvoiceDetails] = useState<any>(null);
   const [pharmacyPrescriptionId, setPharmacyPrescriptionId] = useState('');
   const [pharmacyStatus, setPharmacyStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [patientQuery, setPatientQuery] = useState('');
@@ -120,6 +130,7 @@ export default function BillingWorkspace() {
   const canTriggerVoid = canCollectPayments;
   const canCreateInvoices = user ? ['Cashier', 'ITAdmin', 'Doctor'].includes(user.role) : false;
   const canRepostPharmacy = user ? ['Pharmacist', 'ITAdmin'].includes(user.role) : false;
+  const canEditInvoices = user ? ['Cashier', 'ITAdmin', 'Doctor'].includes(user.role) : false;
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedPatientQuery(patientQuery.trim()), 300);
@@ -215,7 +226,7 @@ export default function BillingWorkspace() {
     };
   }, [debouncedPatientQuery]);
 
-  const lookupCurrency = useMemo(() => visitInvoice?.currency ?? 'SGD', [visitInvoice]);
+  const lookupCurrency = 'SGD';
 
   async function performVisitLookup(visitId: string) {
     setLookupLoading(true);
@@ -324,6 +335,107 @@ export default function BillingWorkspace() {
     setVoidReason('');
     setVoidError(null);
     setVoidLoading(false);
+  }
+
+  async function openEditModal(invoice: InvoiceSummary) {
+    setSelectedInvoiceForEdit(invoice);
+    setEditError(null);
+    setEditLoading(true);
+    try {
+      const details = await fetchJSON(`/billing/invoices/${invoice.invoiceId}`);
+      setInvoiceDetails(details);
+      // Ensure values are strings and handle null/undefined
+      const discountValue = details.discountAmt != null ? String(details.discountAmt) : '0';
+      const taxValue = details.taxAmt != null ? String(details.taxAmt) : '0';
+      setEditDraft({
+        discount: discountValue,
+        tax: taxValue,
+      });
+      console.log('Edit modal opened with values:', { discount: discountValue, tax: taxValue, details });
+      setEditModalOpen(true);
+    } catch (error) {
+      console.error('Error loading invoice details:', error);
+      setEditError('Unable to load invoice details.');
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function handleSubmitEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedInvoiceForEdit) return;
+    setEditError(null);
+    setEditLoading(true);
+    
+    // Validate and prepare values
+    const discountValue = editDraft.discount.trim() || '0';
+    const taxValue = editDraft.tax.trim() || '0';
+    
+    // Validate numeric values
+    const discountNum = Number.parseFloat(discountValue);
+    const taxNum = Number.parseFloat(taxValue);
+    
+    if (Number.isNaN(discountNum) || discountNum < 0) {
+      setEditError('Discount must be a valid non-negative number.');
+      setEditLoading(false);
+      return;
+    }
+    
+    if (Number.isNaN(taxNum) || taxNum < 0) {
+      setEditError('Tax must be a valid non-negative number.');
+      setEditLoading(false);
+      return;
+    }
+    
+    try {
+      const requestBody = {
+        invoiceDiscountAmt: discountValue,
+        invoiceTaxAmt: taxValue,
+      };
+      
+      console.log('Submitting edit with values:', { 
+        invoiceId: selectedInvoiceForEdit.invoiceId,
+        requestBody
+      });
+      
+      const response = await fetchJSON(`/billing/invoices/${selectedInvoiceForEdit.invoiceId}/items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+      
+      console.log('Edit response:', response);
+      
+      // Verify the update was successful
+      if (!response || (response as any).updated === null) {
+        throw new Error('Update failed - no changes were applied');
+      }
+      
+      // Close modal first
+      setEditModalOpen(false);
+      setSelectedInvoiceForEdit(null);
+      setInvoiceDetails(null);
+      setEditDraft({ discount: '', tax: '' });
+      setEditError(null);
+      
+      // Refresh the invoice list to show updated values
+      await refreshInvoiceList();
+      
+      // Also refresh lookup invoice if it's the same one
+      if (visitInvoice?.invoiceId === selectedInvoiceForEdit.invoiceId) {
+        await refreshLookupInvoice();
+      }
+      
+      // Show success message
+      console.log('Invoice amounts updated successfully');
+    } catch (error: any) {
+      console.error('Error updating invoice:', error);
+      const errorMessage = error?.message || error?.response?.data?.error || error?.response?.data?.message || 'Unable to update invoice amounts. Please try again.';
+      setEditError(errorMessage);
+      // Don't close modal on error so user can see the error and retry
+    } finally {
+      setEditLoading(false);
+    }
   }
 
   async function handleVoidInvoice(event: FormEvent<HTMLFormElement>) {
@@ -791,10 +903,10 @@ export default function BillingWorkspace() {
                       <InvoiceStatusBadge status={invoice.status} />
                     </td>
                     <td className="px-4 py-2 text-right text-gray-700">
-                      {formatMoney(invoice.grandTotal, invoice.currency ?? 'SGD')}
+                      {formatMoney(invoice.grandTotal, 'SGD')}
                     </td>
                     <td className="px-4 py-2 text-right font-semibold text-gray-900">
-                      {formatMoney(invoice.amountDue, invoice.currency ?? 'SGD')}
+                      {formatMoney(invoice.amountDue, 'SGD')}
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex justify-end gap-2">
@@ -832,12 +944,99 @@ export default function BillingWorkspace() {
         )}
       </section>
 
+      {isEditModalOpen && selectedInvoiceForEdit && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-900/40 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">Edit Invoice Amounts</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Invoice {selectedInvoiceForEdit.invoiceNo}
+            </p>
+            {editLoading && !invoiceDetails ? (
+              <div className="mt-4 text-center text-sm text-gray-500">Loading invoice details...</div>
+            ) : (
+              <form className="mt-4 space-y-4" onSubmit={handleSubmitEdit}>
+                {invoiceDetails && (
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Subtotal:</span>
+                      <span className="font-medium text-gray-900">{formatMoney(invoiceDetails.subTotal, 'SGD')}</span>
+                    </div>
+                  </div>
+                )}
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Discount</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editDraft.discount}
+                    onChange={(event) => {
+                      const newValue = event.target.value;
+                      console.log('Discount changed to:', newValue);
+                      setEditDraft((state) => ({ ...state, discount: newValue }));
+                    }}
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    required
+                    disabled={editLoading}
+                    placeholder="0.00"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Tax</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editDraft.tax}
+                    onChange={(event) => {
+                      const newValue = event.target.value;
+                      console.log('Tax changed to:', newValue);
+                      setEditDraft((state) => ({ ...state, tax: newValue }));
+                    }}
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    required
+                    disabled={editLoading}
+                    placeholder="0.00"
+                  />
+                </label>
+                {editError && (
+                  <div className="rounded bg-red-50 p-3 text-sm text-red-600">{editError}</div>
+                )}
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditModalOpen(false);
+                      setSelectedInvoiceForEdit(null);
+                      setInvoiceDetails(null);
+                      setEditDraft({ discount: '', tax: '' });
+                      setEditError(null);
+                    }}
+                    className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    disabled={editLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    disabled={editLoading}
+                  >
+                    {editLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
       {isPaymentModalOpen && selectedInvoiceForPayment && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-900/40 px-4">
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Record payment</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, selectedInvoiceForPayment.currency ?? 'SGD')}
+              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, 'SGD')}
             </p>
             <form className="mt-4 space-y-4" onSubmit={handleSubmitPayment}>
               <label className="flex flex-col gap-1 text-sm">

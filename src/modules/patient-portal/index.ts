@@ -1044,10 +1044,21 @@ router.get('/labs/:patientId', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Patient ID is required' });
   }
 
+  // Fetch all lab results for the patient, filtering out cancelled orders
+  // Note: If a LabResult exists, the LabOrderItem should be RESULTED, but we filter explicitly
   const labResults = await prisma.labResult.findMany({
-    where: { patientId },
+    where: { 
+      patientId,
+      LabOrder: {
+        status: { 
+          not: 'CANCELLED',
+        },
+      },
+      LabOrderItem: {
+        status: 'RESULTED',
+      },
+    },
     orderBy: { resultedAt: 'desc' },
-    take: 50,
     select: {
       labResultId: true,
       resultValue: true,
@@ -1073,6 +1084,8 @@ router.get('/labs/:patientId', async (req: Request, res: Response) => {
       },
     },
   });
+
+  console.log(`[Patient Portal] Fetched ${labResults.length} lab results for patient ${patientId}`);
 
   const formatted = labResults.map((result) => ({
     ...result,
@@ -1158,7 +1171,24 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
       grandTotal: true,
       amountPaid: true,
       amountDue: true,
+      subTotal: true,
+      discountAmt: true,
+      taxAmt: true,
       createdAt: true,
+      updatedAt: true,
+      items: {
+        select: {
+          itemId: true,
+          description: true,
+          quantity: true,
+          unitPrice: true,
+          lineTotal: true,
+          discountAmt: true,
+          taxAmt: true,
+          sourceType: true,
+          sourceRefId: true,
+        },
+      },
       payments: {
         orderBy: { paidAt: 'desc' },
         select: {
@@ -1170,6 +1200,13 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
           note: true,
         },
       },
+      Visit: {
+        select: {
+          visitId: true,
+          visitDate: true,
+          department: true,
+        },
+      },
     },
   });
 
@@ -1178,6 +1215,17 @@ router.get('/payments/:patientId', async (req: Request, res: Response) => {
     grandTotal: Number(invoice.grandTotal),
     amountPaid: Number(invoice.amountPaid),
     amountDue: Number(invoice.amountDue),
+    subTotal: Number(invoice.subTotal),
+    discountAmt: Number(invoice.discountAmt),
+    taxAmt: Number(invoice.taxAmt),
+    items: invoice.items.map((item) => ({
+      ...item,
+      quantity: item.quantity,
+      unitPrice: Number(item.unitPrice),
+      lineTotal: Number(item.lineTotal),
+      discountAmt: Number(item.discountAmt),
+      taxAmt: Number(item.taxAmt),
+    })),
     payments: invoice.payments.map((payment) => ({
       ...payment,
       amount: Number(payment.amount),

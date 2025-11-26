@@ -83,6 +83,19 @@ export default function VisitBilling() {
     note: '',
   });
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<'discount' | 'tax' | 'grandTotal' | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [editingItem, setEditingItem] = useState<InvoiceItem | null>(null);
+  const [itemEditDraft, setItemEditDraft] = useState({
+    description: '',
+    quantity: '1',
+    unitPrice: '',
+    discount: '0',
+    tax: '0',
+  });
+  const [isUpdatingItem, setIsUpdatingItem] = useState(false);
+  const [itemUpdateError, setItemUpdateError] = useState<string | null>(null);
   const hasDue = useMemo(() => {
     if (!invoice) return false;
     const due = Number.parseFloat(invoice.amountDue);
@@ -171,6 +184,126 @@ export default function VisitBilling() {
     } catch (err) {
       console.error(err);
       window.alert('Unable to update invoice totals.');
+    }
+  }
+
+  async function handleUpdateAmount(field: 'discount' | 'tax', value: string) {
+    if (!invoice) return;
+    setIsSaving(true);
+    try {
+      const updateData: { invoiceDiscountAmt?: string; invoiceTaxAmt?: string } = {};
+      if (field === 'discount') {
+        updateData.invoiceDiscountAmt = value;
+      } else if (field === 'tax') {
+        updateData.invoiceTaxAmt = value;
+      }
+      
+      await fetchJSON(`/billing/invoices/${invoice.invoiceId}/items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updateData),
+      });
+      await refreshInvoice();
+      setEditingField(null);
+      setEditValue('');
+    } catch (err) {
+      console.error(err);
+      window.alert('Unable to update invoice amount.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  function startEditing(field: 'discount' | 'tax' | 'grandTotal', currentValue: string) {
+    setEditingField(field);
+    // Remove currency formatting and extract numeric value
+    const numericValue = currentValue.replace(/[^0-9.-]/g, '');
+    setEditValue(numericValue);
+  }
+
+  function cancelEditing() {
+    setEditingField(null);
+    setEditValue('');
+  }
+
+  function startEditingItem(item: InvoiceItem) {
+    setEditingItem(item);
+    setItemEditDraft({
+      description: item.description,
+      quantity: String(item.quantity),
+      unitPrice: item.unitPrice,
+      discount: item.discountAmt,
+      tax: item.taxAmt,
+    });
+    setItemUpdateError(null);
+  }
+
+  function cancelEditingItem() {
+    setEditingItem(null);
+    setItemEditDraft({
+      description: '',
+      quantity: '1',
+      unitPrice: '',
+      discount: '0',
+      tax: '0',
+    });
+    setItemUpdateError(null);
+  }
+
+  async function handleUpdateItem(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!invoice || !editingItem) return;
+
+    const description = itemEditDraft.description.trim();
+    const quantity = Number.parseInt(itemEditDraft.quantity, 10);
+    const unitPrice = itemEditDraft.unitPrice.trim();
+    const discount = itemEditDraft.discount.trim();
+    const tax = itemEditDraft.tax.trim();
+
+    if (!description) {
+      setItemUpdateError('Description is required.');
+      return;
+    }
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      setItemUpdateError('Quantity must be a positive whole number.');
+      return;
+    }
+
+    if (!unitPrice) {
+      setItemUpdateError('Unit price is required.');
+      return;
+    }
+
+    setItemUpdateError(null);
+    setIsUpdatingItem(true);
+
+    try {
+      await fetchJSON(`/billing/invoices/${invoice.invoiceId}/items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          update: [
+            {
+              itemId: editingItem.itemId,
+              patch: {
+                description,
+                quantity,
+                unitPrice,
+                discountAmt: discount,
+                taxAmt: tax,
+              },
+            },
+          ],
+        }),
+      });
+      await refreshInvoice();
+      cancelEditingItem();
+    } catch (err) {
+      console.error(err);
+      setItemUpdateError('Unable to update invoice item.');
+    } finally {
+      setIsUpdatingItem(false);
     }
   }
 
@@ -435,12 +568,13 @@ export default function VisitBilling() {
                     <th className="px-4 py-2 text-right font-medium text-gray-600">Discount</th>
                     <th className="px-4 py-2 text-right font-medium text-gray-600">Tax</th>
                     <th className="px-4 py-2 text-right font-medium text-gray-600">Line Total</th>
+                    <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {invoice.items.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-6 text-center text-gray-500">
+                      <td colSpan={7} className="px-4 py-6 text-center text-gray-500">
                         No items on this invoice yet.
                       </td>
                     </tr>
@@ -453,6 +587,15 @@ export default function VisitBilling() {
                         <td className="px-4 py-2 text-right text-gray-700">{formatMoney(item.discountAmt)}</td>
                         <td className="px-4 py-2 text-right text-gray-700">{formatMoney(item.taxAmt)}</td>
                         <td className="px-4 py-2 text-right font-medium text-gray-900">{formatMoney(item.lineTotal)}</td>
+                        <td className="px-4 py-2 text-right">
+                          <button
+                            type="button"
+                            onClick={() => startEditingItem(item)}
+                            className="rounded-full border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-100"
+                          >
+                            Update
+                          </button>
+                        </td>
                       </tr>
                     ))
                   )}
@@ -536,13 +679,99 @@ export default function VisitBilling() {
                 <dt>Subtotal</dt>
                 <dd className="font-medium text-gray-900">{formatMoney(invoice.subTotal)}</dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <dt>Discount</dt>
-                <dd>{formatMoney(invoice.discountAmt)}</dd>
+                <dd className="flex items-center gap-2">
+                  {editingField === 'discount' ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        autoFocus
+                        disabled={isSaving}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateAmount('discount', editValue)}
+                        disabled={isSaving}
+                        className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={isSaving}
+                        className="rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span>{formatMoney(invoice.discountAmt)}</span>
+                      <button
+                        type="button"
+                        onClick={() => startEditing('discount', invoice.discountAmt)}
+                        className="ml-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-blue-50"
+                        title="Edit discount"
+                      >
+                        ✏️
+                      </button>
+                    </>
+                  )}
+                </dd>
               </div>
-              <div className="flex justify-between">
+              <div className="flex items-center justify-between gap-2">
                 <dt>Tax</dt>
-                <dd>{formatMoney(invoice.taxAmt)}</dd>
+                <dd className="flex items-center gap-2">
+                  {editingField === 'tax' ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editValue}
+                        onChange={(e) => setEditValue(e.target.value)}
+                        className="w-24 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        autoFocus
+                        disabled={isSaving}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateAmount('tax', editValue)}
+                        disabled={isSaving}
+                        className="rounded bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {isSaving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEditing}
+                        disabled={isSaving}
+                        className="rounded bg-gray-200 px-2 py-1 text-xs font-medium text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span>{formatMoney(invoice.taxAmt)}</span>
+                      <button
+                        type="button"
+                        onClick={() => startEditing('tax', invoice.taxAmt)}
+                        className="ml-1 rounded px-1.5 py-0.5 text-xs text-blue-600 hover:bg-blue-50"
+                        title="Edit tax"
+                      >
+                        ✏️
+                      </button>
+                    </>
+                  )}
+                </dd>
               </div>
               <div className="flex justify-between">
                 <dt>Grand Total</dt>
@@ -560,6 +789,101 @@ export default function VisitBilling() {
           </section>
         </aside>
       </div>
+
+      {editingItem && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-900/40 px-4">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900">Update Invoice Item</h3>
+            <p className="mt-1 text-sm text-gray-500">Edit item details</p>
+            <form className="mt-4 space-y-4" onSubmit={handleUpdateItem}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="font-medium text-gray-700">Description</span>
+                  <input
+                    type="text"
+                    value={itemEditDraft.description}
+                    onChange={(event) =>
+                      setItemEditDraft((state) => ({ ...state, description: event.target.value }))
+                    }
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Quantity</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={itemEditDraft.quantity}
+                    onChange={(event) =>
+                      setItemEditDraft((state) => ({ ...state, quantity: event.target.value }))
+                    }
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Unit Price (SGD)</span>
+                  <input
+                    type="text"
+                    value={itemEditDraft.unitPrice}
+                    onChange={(event) =>
+                      setItemEditDraft((state) => ({ ...state, unitPrice: event.target.value }))
+                    }
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="0.00"
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Discount</span>
+                  <input
+                    type="text"
+                    value={itemEditDraft.discount}
+                    onChange={(event) =>
+                      setItemEditDraft((state) => ({ ...state, discount: event.target.value }))
+                    }
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="0.00"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium text-gray-700">Tax</span>
+                  <input
+                    type="text"
+                    value={itemEditDraft.tax}
+                    onChange={(event) =>
+                      setItemEditDraft((state) => ({ ...state, tax: event.target.value }))
+                    }
+                    className="rounded border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                    placeholder="0.00"
+                  />
+                </label>
+              </div>
+              {itemUpdateError && (
+                <div className="rounded bg-red-50 p-3 text-sm text-red-600">{itemUpdateError}</div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={cancelEditingItem}
+                  className="rounded border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  disabled={isUpdatingItem}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  disabled={isUpdatingItem}
+                >
+                  {isUpdatingItem ? 'Updating...' : 'Update Item'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isPaymentOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-gray-900/40 px-4">

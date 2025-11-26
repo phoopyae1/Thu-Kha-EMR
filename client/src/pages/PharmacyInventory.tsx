@@ -328,11 +328,11 @@ export default function PharmacyInventory() {
   const scanWarnings = invoiceResult?.warnings ?? [];
 
   function formatCurrency(amount: number) {
-    const currency = invoiceMetadata?.currency ?? 'USD';
+    const currency = invoiceMetadata?.currency ?? 'SGD';
     try {
       return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
     } catch {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(amount);
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'SGD' }).format(amount);
     }
   }
 

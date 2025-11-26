@@ -1,5 +1,5 @@
 import { Router, type Response, type NextFunction } from "express";
-import { requirePatientAuth, requireAuth, type AuthRequest } from "../modules/auth/index.js";
+import { requirePatientAuth, requireAuth, requireRole, type AuthRequest } from "../modules/auth/index.js";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { assertCreatable } from "../services/appointmentService.js";
@@ -574,29 +574,74 @@ router.post(
       
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Calculate current time in minutes from midnight
+      const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
-      const [upcoming, past] = await Promise.all([
-        prisma.appointment.findMany({
-          where: {
-            patientId,
-            date: { gte: today },
-          },
-          include: {
-            doctor: true,
-          },
-          orderBy: { date: "asc" },
-        }),
-        prisma.appointment.findMany({
-          where: {
-            patientId,
-            date: { lt: today },
-          },
-          include: {
-            doctor: true,
-          },
-          orderBy: { date: "desc" },
-        }),
-      ]);
+      // Fetch all appointments from today onwards (we'll filter by time in code)
+      const allAppointments = await prisma.appointment.findMany({
+        where: {
+          patientId,
+          date: { gte: today },
+        },
+        include: {
+          doctor: true,
+        },
+        orderBy: [
+          { date: "asc" },
+          { startTimeMin: "asc" },
+        ],
+      });
+
+      // Fetch past appointments (before today)
+      const pastAppointments = await prisma.appointment.findMany({
+        where: {
+          patientId,
+          date: { lt: today },
+        },
+        include: {
+          doctor: true,
+        },
+        orderBy: { date: "desc" },
+      });
+
+      // Filter upcoming appointments: future dates OR today with time after now
+      const upcoming = allAppointments.filter((apt) => {
+        const appointmentDate = new Date(apt.date);
+        const isToday = appointmentDate.getTime() === today.getTime();
+        
+        if (isToday) {
+          // For today's appointments, check if time is after current time
+          return apt.startTimeMin > currentTimeMinutes;
+        } else {
+          // Future dates are always upcoming
+          return true;
+        }
+      });
+
+      // Past appointments include: appointments before today OR today's appointments that have passed
+      const pastToday = allAppointments.filter((apt) => {
+        const appointmentDate = new Date(apt.date);
+        const isToday = appointmentDate.getTime() === today.getTime();
+        
+        if (isToday) {
+          // For today's appointments, check if time is before or equal to current time
+          return apt.startTimeMin <= currentTimeMinutes;
+        } else {
+          // Future dates are not past
+          return false;
+        }
+      });
+
+      // Combine past appointments
+      const past = [...pastAppointments, ...pastToday].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        if (dateA !== dateB) {
+          return dateB - dateA; // Descending order for dates
+        }
+        return b.startTimeMin - a.startTimeMin; // Descending order for times
+      });
 
       // Flatten all appointments to top level
       const result: any = {
@@ -1372,6 +1417,204 @@ router.post(
         take: 5,
       });
 
+      // DETAILED BREAKDOWNS - Get spending by item source type
+      const spendingBySourceType = await prisma.$queryRaw<
+        Array<{
+          sourceType: string;
+          totalSpent: number;
+          itemCount: number;
+        }>
+      >`
+        SELECT 
+          ii."sourceType",
+          COALESCE(SUM(ii."lineTotal"), 0) as "totalSpent",
+          COUNT(ii."itemId") as "itemCount"
+        FROM "InvoiceItem" ii
+        JOIN "Invoice" i ON ii."invoiceId" = i."invoiceId"
+        WHERE i."patientId" = ${patientId}::uuid
+          AND i.status != 'VOID'
+          ${
+            startDate
+              ? Prisma.sql`AND i."createdAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY ii."sourceType"
+        ORDER BY "totalSpent" DESC
+      `;
+
+      // Get spending by payment method
+      const spendingByPaymentMethod = await prisma.$queryRaw<
+        Array<{
+          method: string;
+          totalPaid: number;
+          paymentCount: number;
+        }>
+      >`
+        SELECT 
+          p.method,
+          COALESCE(SUM(p.amount), 0) as "totalPaid",
+          COUNT(p."paymentId") as "paymentCount"
+        FROM "Payment" p
+        JOIN "Invoice" i ON p."invoiceId" = i."invoiceId"
+        WHERE i."patientId" = ${patientId}::uuid
+          ${
+            startDate
+              ? Prisma.sql`AND p."paidAt" >= ${new Date(startDate as string)}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND p."paidAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY p.method
+        ORDER BY "totalPaid" DESC
+      `;
+
+      // Get breakdown by invoice status
+      const breakdownByStatus = await prisma.$queryRaw<
+        Array<{
+          status: string;
+          count: number;
+          totalAmount: number;
+        }>
+      >`
+        SELECT 
+          i.status,
+          COUNT(i."invoiceId") as "count",
+          COALESCE(SUM(i."grandTotal"), 0) as "totalAmount"
+        FROM "Invoice" i
+        WHERE i."patientId" = ${patientId}::uuid
+          ${
+            startDate
+              ? Prisma.sql`AND i."createdAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY i.status
+        ORDER BY "totalAmount" DESC
+      `;
+
+      // Get monthly spending breakdown
+      const monthlyBreakdown = await prisma.$queryRaw<
+        Array<{
+          year: number;
+          month: number;
+          monthName: string;
+          totalSpent: number;
+          totalPaid: number;
+          invoiceCount: number;
+        }>
+      >`
+        SELECT 
+          EXTRACT(YEAR FROM i."createdAt")::integer as "year",
+          EXTRACT(MONTH FROM i."createdAt")::integer as "month",
+          TO_CHAR(i."createdAt", 'YYYY-MM') as "monthName",
+          COALESCE(SUM(i."grandTotal"), 0) as "totalSpent",
+          COALESCE(SUM(i."amountPaid"), 0) as "totalPaid",
+          COUNT(DISTINCT i."invoiceId") as "invoiceCount"
+        FROM "Invoice" i
+        WHERE i."patientId" = ${patientId}::uuid
+          AND i.status != 'VOID'
+          ${
+            startDate
+              ? Prisma.sql`AND i."createdAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY EXTRACT(YEAR FROM i."createdAt"), EXTRACT(MONTH FROM i."createdAt"), TO_CHAR(i."createdAt", 'YYYY-MM')
+        ORDER BY "year" DESC, "month" DESC
+        LIMIT 12
+      `;
+
+      // Get top invoice items by spending
+      const topItems = await prisma.$queryRaw<
+        Array<{
+          description: string;
+          sourceType: string;
+          totalSpent: number;
+          totalQuantity: number;
+          avgUnitPrice: number;
+        }>
+      >`
+        SELECT 
+          ii.description,
+          ii."sourceType",
+          COALESCE(SUM(ii."lineTotal"), 0) as "totalSpent",
+          SUM(ii.quantity)::integer as "totalQuantity",
+          COALESCE(AVG(ii."unitPrice"), 0) as "avgUnitPrice"
+        FROM "InvoiceItem" ii
+        JOIN "Invoice" i ON ii."invoiceId" = i."invoiceId"
+        WHERE i."patientId" = ${patientId}::uuid
+          AND i.status != 'VOID'
+          ${
+            startDate
+              ? Prisma.sql`AND i."createdAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND i."createdAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY ii.description, ii."sourceType"
+        ORDER BY "totalSpent" DESC
+        LIMIT 10
+      `;
+
+      // Get all payments with invoice details
+      const allPayments = await prisma.payment.findMany({
+        where: { 
+          Invoice: {
+            patientId: patientId,
+            ...(startDate || endDate
+              ? {
+                  createdAt: {
+                    ...(startDate ? { gte: new Date(startDate as string) } : {}),
+                    ...(endDate ? { lte: new Date(endDate as string) } : {}),
+                  },
+                }
+              : {}),
+          },
+        },
+        select: {
+          paymentId: true,
+          amount: true,
+          paidAt: true,
+          method: true,
+          referenceNo: true,
+          note: true,
+          Invoice: {
+            select: {
+              invoiceNo: true,
+              grandTotal: true,
+            },
+          },
+        },
+        orderBy: { paidAt: "desc" },
+      });
+
       // Calculate totals
       const totalSpent = Number(overallSummary._sum.grandTotal || 0);
       const totalPaid = Number(overallSummary._sum.amountPaid || 0);
@@ -1468,6 +1711,144 @@ router.post(
         result[`${prefix}Doctor`] = invoice.Visit.doctor.name;
         result[`${prefix}Date`] = invoice.createdAt.toISOString().split("T")[0];
       });
+
+      // DETAILED BREAKDOWN - Source Type Spending (flat format)
+      result.sourceTypeCount = spendingBySourceType.length;
+      spendingBySourceType.forEach((source, index) => {
+        const prefix = `sourceType${index + 1}`;
+        result[`${prefix}Type`] = source.sourceType;
+        result[`${prefix}Spent`] = source.totalSpent.toFixed(2);
+        result[`${prefix}SpentFormatted`] = formatCurrency(source.totalSpent);
+        result[`${prefix}ItemCount`] = Number(source.itemCount);
+      });
+
+      // Payment Method Breakdown (flat format)
+      result.paymentMethodCount = spendingByPaymentMethod.length;
+      spendingByPaymentMethod.forEach((method, index) => {
+        const prefix = `paymentMethod${index + 1}`;
+        result[`${prefix}Method`] = method.method;
+        result[`${prefix}Total`] = method.totalPaid.toFixed(2);
+        result[`${prefix}TotalFormatted`] = formatCurrency(method.totalPaid);
+        result[`${prefix}Count`] = Number(method.paymentCount);
+      });
+
+      // Status Breakdown (flat format)
+      result.statusBreakdownCount = breakdownByStatus.length;
+      breakdownByStatus.forEach((status, index) => {
+        const prefix = `status${index + 1}`;
+        result[`${prefix}Status`] = status.status;
+        result[`${prefix}Count`] = Number(status.count);
+        result[`${prefix}Total`] = status.totalAmount.toFixed(2);
+        result[`${prefix}TotalFormatted`] = formatCurrency(status.totalAmount);
+      });
+
+      // Monthly Breakdown (flat format)
+      result.monthlyBreakdownCount = monthlyBreakdown.length;
+      monthlyBreakdown.forEach((month, index) => {
+        const prefix = `month${index + 1}`;
+        result[`${prefix}Year`] = Number(month.year);
+        result[`${prefix}Month`] = Number(month.month);
+        result[`${prefix}MonthName`] = month.monthName;
+        result[`${prefix}Spent`] = month.totalSpent.toFixed(2);
+        result[`${prefix}SpentFormatted`] = formatCurrency(month.totalSpent);
+        result[`${prefix}Paid`] = month.totalPaid.toFixed(2);
+        result[`${prefix}PaidFormatted`] = formatCurrency(month.totalPaid);
+        result[`${prefix}InvoiceCount`] = Number(month.invoiceCount);
+      });
+
+      // Top Items Breakdown (flat format)
+      result.topItemsCount = topItems.length;
+      topItems.forEach((item, index) => {
+        const prefix = `topItem${index + 1}`;
+        result[`${prefix}Description`] = item.description;
+        result[`${prefix}SourceType`] = item.sourceType;
+        result[`${prefix}TotalSpent`] = item.totalSpent.toFixed(2);
+        result[`${prefix}TotalSpentFormatted`] = formatCurrency(item.totalSpent);
+        result[`${prefix}Quantity`] = Number(item.totalQuantity);
+        result[`${prefix}AvgUnitPrice`] = item.avgUnitPrice.toFixed(2);
+        result[`${prefix}AvgUnitPriceFormatted`] = formatCurrency(item.avgUnitPrice);
+      });
+
+      // All Payments Breakdown (flat format)
+      result.allPaymentsCount = allPayments.length;
+      allPayments.slice(0, 20).forEach((payment, index) => {
+        const prefix = `payment${index + 1}`;
+        result[`${prefix}Amount`] = Number(payment.amount).toFixed(2);
+        result[`${prefix}AmountFormatted`] = formatCurrency(Number(payment.amount));
+        result[`${prefix}Method`] = payment.method;
+        result[`${prefix}Date`] = payment.paidAt.toISOString().split("T")[0];
+        result[`${prefix}InvoiceNo`] = payment.Invoice.invoiceNo;
+        result[`${prefix}ReferenceNo`] = payment.referenceNo || null;
+        result[`${prefix}Note`] = payment.note || null;
+      });
+
+      // NESTED DETAILED BREAKDOWN (for structured access)
+      result.detailBreakdown = {
+        bySourceType: spendingBySourceType.map((source) => ({
+          sourceType: source.sourceType,
+          totalSpent: source.totalSpent.toFixed(2),
+          totalSpentFormatted: formatCurrency(source.totalSpent),
+          itemCount: Number(source.itemCount),
+        })),
+        byPaymentMethod: spendingByPaymentMethod.map((method) => ({
+          method: method.method,
+          totalPaid: method.totalPaid.toFixed(2),
+          totalPaidFormatted: formatCurrency(method.totalPaid),
+          paymentCount: Number(method.paymentCount),
+        })),
+        byStatus: breakdownByStatus.map((status) => ({
+          status: status.status,
+          count: Number(status.count),
+          totalAmount: status.totalAmount.toFixed(2),
+          totalAmountFormatted: formatCurrency(status.totalAmount),
+        })),
+        byMonth: monthlyBreakdown.map((month) => ({
+          year: Number(month.year),
+          month: Number(month.month),
+          monthName: month.monthName,
+          totalSpent: month.totalSpent.toFixed(2),
+          totalSpentFormatted: formatCurrency(month.totalSpent),
+          totalPaid: month.totalPaid.toFixed(2),
+          totalPaidFormatted: formatCurrency(month.totalPaid),
+          invoiceCount: Number(month.invoiceCount),
+        })),
+        topItems: topItems.map((item) => ({
+          description: item.description,
+          sourceType: item.sourceType,
+          totalSpent: item.totalSpent.toFixed(2),
+          totalSpentFormatted: formatCurrency(item.totalSpent),
+          totalQuantity: Number(item.totalQuantity),
+          avgUnitPrice: item.avgUnitPrice.toFixed(2),
+          avgUnitPriceFormatted: formatCurrency(item.avgUnitPrice),
+        })),
+        allPayments: allPayments.map((payment) => ({
+          amount: Number(payment.amount).toFixed(2),
+          amountFormatted: formatCurrency(Number(payment.amount)),
+          method: payment.method,
+          paidAt: payment.paidAt.toISOString(),
+          date: payment.paidAt.toISOString().split("T")[0],
+          invoiceNo: payment.Invoice.invoiceNo,
+          referenceNo: payment.referenceNo,
+          note: payment.note,
+        })),
+        allInvoices: recentInvoices.map((invoice) => ({
+          invoiceId: invoice.invoiceId,
+          invoiceNo: invoice.invoiceNo,
+          status: invoice.status,
+          grandTotal: Number(invoice.grandTotal).toFixed(2),
+          grandTotalFormatted: formatCurrency(Number(invoice.grandTotal)),
+          amountPaid: Number(invoice.amountPaid).toFixed(2),
+          amountPaidFormatted: formatCurrency(Number(invoice.amountPaid)),
+          amountDue: Number(invoice.amountDue).toFixed(2),
+          amountDueFormatted: formatCurrency(Number(invoice.amountDue)),
+          createdAt: invoice.createdAt.toISOString(),
+          date: invoice.createdAt.toISOString().split("T")[0],
+          visitDate: invoice.Visit.visitDate.toISOString().split("T")[0],
+          department: invoice.Visit.department,
+          doctorName: invoice.Visit.doctor.name,
+          doctorId: invoice.Visit.doctor.doctorId,
+        })),
+      };
       
       res.json(result);
     } catch (error) {
@@ -1483,7 +1864,843 @@ router.post(
   }
 );
 
-// 5. Appointment Letter Agent API
+// 5. Lab Report Detail Agent API
+router.post(
+  "/lab-reports",
+  requirePatientAuth,
+  async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const { patientId, startDate, endDate, testCode, testName } = req.body;
+      
+      if (!patientId || typeof patientId !== 'string' || patientId.trim() === '') {
+        return res.status(400).json({
+          error: "Patient ID is required and must be a valid UUID",
+          msg: "Failed",
+        });
+      }
+      
+      // Validate UUID format
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(patientId.trim())) {
+        return res.status(400).json({
+          error: "Invalid patient ID format",
+          msg: "Failed",
+        });
+      }
+      
+      const validPatientId = patientId.trim();
+
+      // Validate patient exists
+      const patient = await prisma.patient.findUnique({
+        where: { patientId: validPatientId },
+        select: { patientId: true },
+      });
+
+      if (!patient) {
+        return res.status(404).json({
+          error: "Patient not found",
+          msg: "Failed",
+        });
+      }
+      
+      // Get lab results from new LabResult table (with LabOrder structure)
+      console.log(`[Agents] Query params for patient ${validPatientId}:`, { startDate, endDate, testCode, testName });
+      
+      let labResultsRaw: Array<{
+        labResultId: string;
+        labOrderId: string;
+        labOrderItemId: string;
+        testCode: string;
+        testName: string;
+        resultValue: string | null;
+        resultValueNum: number | null;
+        unit: string | null;
+        referenceLow: number | string | null;
+        referenceHigh: number | string | null;
+        abnormalFlag: string | null;
+        resultedAt: Date;
+        notes: string | null;
+        orderStatus: string;
+        visitDate: Date;
+        doctorId: string | null;
+        doctorName: string | null;
+        department: string | null;
+      }> = [];
+      
+      try {
+        labResultsRaw = await prisma.$queryRaw<
+          Array<{
+            labResultId: string;
+            labOrderId: string;
+            labOrderItemId: string;
+            testCode: string;
+            testName: string;
+            resultValue: string | null;
+            resultValueNum: number | null;
+            unit: string | null;
+            referenceLow: number | string | null;
+            referenceHigh: number | string | null;
+            abnormalFlag: string | null;
+            resultedAt: Date;
+            notes: string | null;
+            orderStatus: string;
+            visitDate: Date;
+            doctorId: string | null;
+            doctorName: string | null;
+            department: string | null;
+          }>
+        >(Prisma.sql`
+          SELECT 
+            lr."labResultId",
+            lr."labOrderId",
+            lr."labOrderItemId",
+            loi."testCode",
+            loi."testName",
+            lr."resultValue",
+            lr."resultValueNum",
+            lr."unit",
+            lr."referenceLow"::text as "referenceLow",
+            lr."referenceHigh"::text as "referenceHigh",
+            lr."abnormalFlag",
+            lr."resultedAt",
+            lr."notes",
+            lo.status as "orderStatus",
+            v."visitDate",
+            lo."doctorId"::text as "doctorId",
+            '' as "doctorName",
+            v.department
+          FROM "LabResult" lr
+          JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
+          JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+          JOIN "Visit" v ON lo."visitId" = v."visitId"
+          WHERE lr."patientId" = ${validPatientId}::uuid
+            AND lo."patientId" = ${validPatientId}::uuid
+            AND v."patientId" = ${validPatientId}::uuid
+            AND loi.status = 'RESULTED'
+            AND lo.status != 'CANCELLED'
+            ${
+              startDate
+                ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
+                    startDate as string
+                  )}`
+                : Prisma.empty
+            }
+            ${
+              endDate
+                ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
+                : Prisma.empty
+            }
+            ${
+              testCode && testCode.trim() !== ''
+                ? Prisma.sql`AND loi."testCode" ILIKE ${`%${testCode.trim()}%`}`
+                : Prisma.empty
+            }
+            ${
+              testName && testName.trim() !== ''
+                ? Prisma.sql`AND loi."testName" ILIKE ${`%${testName.trim()}%`}`
+                : Prisma.empty
+            }
+          ORDER BY lr."resultedAt" DESC, lr."labResultId"
+        `);
+      } catch (error) {
+        console.error(`[Agents] Error fetching lab results for patient ${validPatientId}:`, error);
+        if (error instanceof Error) {
+          console.error(`[Agents] Error details:`, error.message, error.stack);
+        }
+        // Continue with empty array
+      }
+      
+      console.log(`[Agents] Raw lab results fetched: ${labResultsRaw.length} for patient ${validPatientId}`);
+      
+      if (labResultsRaw.length === 0) {
+        // Try a simpler query without optional filters to debug
+        try {
+          const simpleQuery = await prisma.$queryRaw<
+            Array<{ count: bigint }>
+          >(Prisma.sql`
+            SELECT COUNT(*) as count
+            FROM "LabResult" lr
+            JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
+            JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+            JOIN "Visit" v ON lo."visitId" = v."visitId"
+            WHERE lr."patientId" = ${validPatientId}::uuid
+              AND loi.status = 'RESULTED'
+              AND lo.status != 'CANCELLED'
+          `);
+          console.log(`[Agents] Simple count query result:`, Number(simpleQuery[0]?.count || 0));
+        } catch (err) {
+          console.error(`[Agents] Simple count query error:`, err);
+        }
+      }
+
+      // Skip legacy VisitLabResult - only show results from proper lab order workflow
+      // (Doctor creates order -> Lab admin enters result)
+      const legacyLabResultsRaw: Array<{
+          labId: string;
+          visitId: string;
+          testName: string;
+          resultValue: number | null;
+          unit: string | null;
+          referenceRange: string | null;
+          testDate: Date | null;
+          visitDate: Date;
+          doctorId: string;
+          doctorName: string;
+          department: string;
+      }> = [];
+
+      // Transform raw results to structured format compatible with code below
+      type LabResultWithRelations = {
+        labResultId: string;
+        resultValue: string | null;
+        resultValueNum: { toString: () => string } | null;
+        unit: string | null;
+        referenceLow: { toString: () => string } | null;
+        referenceHigh: { toString: () => string } | null;
+        abnormalFlag: string | null;
+        resultedAt: Date;
+        notes: string | null;
+        LabOrder: {
+          labOrderId: string;
+          status: string;
+          Visit: {
+            visitDate: Date;
+            doctor: {
+              doctorId: string;
+              name: string;
+              department: string;
+            };
+          };
+        };
+        LabOrderItem: {
+          labOrderItemId: string;
+          testCode: string;
+          testName: string;
+          status: string;
+        };
+      };
+
+      console.log(`[Agents] Raw lab results fetched: ${labResultsRaw.length} for patient ${validPatientId}`);
+      
+      // Fetch doctor names in batch if we have doctorIds
+      const doctorIds = [...new Set(labResultsRaw.map(r => r.doctorId).filter(Boolean))] as string[];
+      const doctorsMap = new Map<string, { name: string; department: string }>();
+      
+      if (doctorIds.length > 0) {
+        try {
+          const doctors = await prisma.doctor.findMany({
+            where: { doctorId: { in: doctorIds } },
+            select: { doctorId: true, name: true, department: true },
+          });
+          doctors.forEach(d => {
+            doctorsMap.set(d.doctorId, { name: d.name, department: d.department });
+          });
+        } catch (err) {
+          console.error(`[Agents] Error fetching doctors:`, err);
+        }
+      }
+      
+      const labResults: LabResultWithRelations[] = labResultsRaw.map((r) => {
+        // Convert referenceLow and referenceHigh to strings, handling Decimal types from Prisma
+        const refLow = r.referenceLow !== null && r.referenceLow !== undefined 
+          ? String(r.referenceLow) 
+          : null;
+        const refHigh = r.referenceHigh !== null && r.referenceHigh !== undefined 
+          ? String(r.referenceHigh) 
+          : null;
+        
+        const doctorInfo = r.doctorId ? doctorsMap.get(r.doctorId) : null;
+        
+        return {
+        labResultId: r.labResultId,
+        resultValue: r.resultValue,
+        resultValueNum: r.resultValueNum !== null ? { toString: () => String(r.resultValueNum) } : null,
+        unit: r.unit,
+          referenceLow: refLow ? { toString: () => refLow } : null,
+          referenceHigh: refHigh ? { toString: () => refHigh } : null,
+        abnormalFlag: r.abnormalFlag,
+        resultedAt: r.resultedAt,
+        notes: r.notes,
+        LabOrder: {
+          labOrderId: r.labOrderId,
+          status: r.orderStatus,
+          Visit: {
+            visitDate: r.visitDate,
+            doctor: {
+              doctorId: r.doctorId || '',
+              name: doctorInfo?.name || 'Unknown',
+              department: doctorInfo?.department || r.department || '',
+            },
+          },
+        },
+        LabOrderItem: {
+          labOrderItemId: r.labOrderItemId,
+          testCode: r.testCode,
+            testName: r.testName,
+            status: 'RESULTED',
+          },
+        };
+      });
+      
+      console.log(`[Agents] Transformed lab results: ${labResults.length} for patient ${validPatientId}`);
+      
+      // Skip legacy results - only use proper lab order workflow results
+      const legacyLabResults: LabResultWithRelations[] = [];
+
+      // Combine both result sets, prioritizing new LabResult data
+      // Only use results from proper lab order workflow (doctor creates order -> lab admin enters result)
+      // Remove duplicates based on labResultId (for new) and labId (for legacy)
+      // Also deduplicate by test name, date, and value to ensure only one result per unique test+date+value
+      // Ensure we only keep results that belong to the requested patient
+      const seenIds = new Set<string>();
+      const seenTestDateValue = new Set<string>();
+      const uniqueResults: LabResultWithRelations[] = [];
+      
+      // First, deduplicate new lab results
+      // Sort by date descending to keep the most recent result when duplicates exist
+      const sortedLabResults = labResults.sort((a, b) => b.resultedAt.getTime() - a.resultedAt.getTime());
+      
+      for (const result of sortedLabResults) {
+        // Only deduplicate by labResultId (primary key) - each labResultId should be unique
+        // Remove the test+date+value deduplication as it may be filtering out valid results
+        if (!seenIds.has(result.labResultId)) {
+          seenIds.add(result.labResultId);
+          uniqueResults.push(result);
+        }
+      }
+      
+      console.log(`[Agents] Unique results after deduplication: ${uniqueResults.length} for patient ${validPatientId}`);
+      
+      // Skip legacy results - we only want results from the proper lab order workflow
+
+      // Get breakdown by test type (combining both new and legacy data)
+      const breakdownByTestNew = labResultsRaw.length > 0 ? await prisma.$queryRaw<
+        Array<{
+          testCode: string;
+          testName: string;
+          resultCount: number;
+          abnormalCount: number;
+          latestResult: Date;
+        }>
+      >(Prisma.sql`
+        SELECT 
+          loi."testCode",
+          loi."testName",
+          COUNT(DISTINCT lr."labResultId") as "resultCount",
+          COUNT(DISTINCT CASE WHEN lr."abnormalFlag" IS NOT NULL THEN lr."labResultId" END)::integer as "abnormalCount",
+          MAX(lr."resultedAt") as "latestResult"
+        FROM "LabResult" lr
+        JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
+        JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+        JOIN "Visit" v ON lo."visitId" = v."visitId"
+        WHERE lr."patientId" = ${validPatientId}::uuid
+          AND lo."patientId" = ${validPatientId}::uuid
+          AND v."patientId" = ${validPatientId}::uuid
+          AND loi.status = 'RESULTED'
+          AND lo.status != 'CANCELLED'
+          ${
+            startDate
+              ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+          ${
+            testCode && testCode.trim() !== ''
+              ? Prisma.sql`AND loi."testCode" ILIKE ${`%${testCode.trim()}%`}`
+              : Prisma.empty
+          }
+          ${
+            testName && testName.trim() !== ''
+              ? Prisma.sql`AND loi."testName" ILIKE ${`%${testName.trim()}%`}`
+              : Prisma.empty
+          }
+        GROUP BY loi."testCode", loi."testName"
+        ORDER BY "latestResult" DESC
+      `) : [];
+
+      // Skip legacy breakdown - only use proper lab order workflow results
+      const breakdownByTestLegacy: Array<{
+          testName: string;
+          resultCount: number;
+          latestResult: Date;
+      }> = [];
+
+      // Sort by date and use for all calculations
+      // Include all results (no limit) to ensure all lab results appear
+      const finalLabResults = uniqueResults
+        .sort((a, b) => b.resultedAt.getTime() - a.resultedAt.getTime());
+
+      // Merge breakdown by test type and add latest result values
+      const breakdownByTest = [
+        ...breakdownByTestNew.map((t) => {
+          // Find the latest result for this test type from finalLabResults
+          const latestResultForTest = finalLabResults
+            .filter((r) => r.LabOrderItem.testCode === t.testCode)
+            .sort((a, b) => b.resultedAt.getTime() - a.resultedAt.getTime())[0];
+          
+          return {
+          testCode: t.testCode,
+          testName: t.testName,
+          resultCount: Number(t.resultCount),
+          abnormalCount: Number(t.abnormalCount),
+          latestResult: t.latestResult,
+            latestResultValue: latestResultForTest?.resultValue || null,
+            latestResultValueNum: latestResultForTest?.resultValueNum
+              ? Number(latestResultForTest.resultValueNum.toString()).toFixed(3)
+              : null,
+            latestResultUnit: latestResultForTest?.unit || null,
+          };
+        }),
+        ...breakdownByTestLegacy.map((t) => ({
+          testCode: t.testName,
+          testName: t.testName,
+          resultCount: Number(t.resultCount),
+          abnormalCount: 0, // Legacy doesn't track abnormal
+          latestResult: t.latestResult,
+          latestResultValue: null,
+          latestResultValueNum: null,
+          latestResultUnit: null,
+        })),
+      ].sort((a, b) => b.latestResult.getTime() - a.latestResult.getTime());
+
+      // Get breakdown by abnormal flags (only from new LabResult)
+      const breakdownByAbnormal = await prisma.$queryRaw<
+        Array<{
+          abnormalFlag: string | null;
+          count: number;
+        }>
+      >(Prisma.sql`
+        SELECT 
+          COALESCE(lr."abnormalFlag", 'NORMAL') as "abnormalFlag",
+          COUNT(DISTINCT lr."labResultId") as "count"
+        FROM "LabResult" lr
+        JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
+        JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+        JOIN "Visit" v ON lo."visitId" = v."visitId"
+        WHERE lr."patientId" = ${validPatientId}::uuid
+          AND lo."patientId" = ${validPatientId}::uuid
+          AND v."patientId" = ${validPatientId}::uuid
+          AND loi.status = 'RESULTED'
+          AND lo.status != 'CANCELLED'
+          ${
+            startDate
+              ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY lr."abnormalFlag"
+        ORDER BY "count" DESC
+      `);
+
+      // Get monthly breakdown from new LabResult
+      const monthlyBreakdownNew = labResultsRaw.length > 0 ? await prisma.$queryRaw<
+        Array<{
+          year: number;
+          month: number;
+          monthName: string;
+          resultCount: number;
+          abnormalCount: number;
+        }>
+      >(Prisma.sql`
+        SELECT 
+          EXTRACT(YEAR FROM lr."resultedAt")::integer as "year",
+          EXTRACT(MONTH FROM lr."resultedAt")::integer as "month",
+          TO_CHAR(lr."resultedAt", 'YYYY-MM') as "monthName",
+          COUNT(DISTINCT lr."labResultId") as "resultCount",
+          COUNT(DISTINCT CASE WHEN lr."abnormalFlag" IS NOT NULL THEN lr."labResultId" END)::integer as "abnormalCount"
+        FROM "LabResult" lr
+        JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
+        JOIN "Visit" v ON lo."visitId" = v."visitId"
+        WHERE lr."patientId" = ${validPatientId}::uuid
+          AND v."patientId" = ${validPatientId}::uuid
+          ${
+            startDate
+              ? Prisma.sql`AND lr."resultedAt" >= ${new Date(
+                  startDate as string
+                )}`
+              : Prisma.empty
+          }
+          ${
+            endDate
+              ? Prisma.sql`AND lr."resultedAt" <= ${new Date(endDate as string)}`
+              : Prisma.empty
+          }
+        GROUP BY EXTRACT(YEAR FROM lr."resultedAt"), EXTRACT(MONTH FROM lr."resultedAt"), TO_CHAR(lr."resultedAt", 'YYYY-MM')
+        ORDER BY "year" DESC, "month" DESC
+        LIMIT 12
+      `) : [];
+
+      // Skip legacy monthly breakdown - only use proper lab order workflow results
+      const monthlyBreakdownLegacy: Array<{
+          year: number;
+          month: number;
+          monthName: string;
+          resultCount: number;
+      }> = [];
+
+      // Merge monthly breakdowns
+      const monthlyBreakdownMap = new Map<string, { year: number; month: number; monthName: string; resultCount: number; abnormalCount: number }>();
+      
+      monthlyBreakdownNew.forEach((m) => {
+        monthlyBreakdownMap.set(m.monthName, {
+          year: Number(m.year),
+          month: Number(m.month),
+          monthName: m.monthName,
+          resultCount: Number(m.resultCount),
+          abnormalCount: Number(m.abnormalCount),
+        });
+      });
+
+      monthlyBreakdownLegacy.forEach((m) => {
+        const existing = monthlyBreakdownMap.get(m.monthName);
+        if (existing) {
+          existing.resultCount += Number(m.resultCount);
+        } else {
+          monthlyBreakdownMap.set(m.monthName, {
+            year: Number(m.year),
+            month: Number(m.month),
+            monthName: m.monthName,
+            resultCount: Number(m.resultCount),
+            abnormalCount: 0,
+          });
+        }
+      });
+
+      const monthlyBreakdown = Array.from(monthlyBreakdownMap.values())
+        .sort((a, b) => {
+          if (a.year !== b.year) return b.year - a.year;
+          return b.month - a.month;
+        })
+        .slice(0, 12);
+
+      // Get recent abnormal results (filter for non-null abnormal flags)
+      const recentAbnormal = finalLabResults
+        .filter((result) => result.abnormalFlag !== null && result.abnormalFlag !== undefined && result.abnormalFlag !== '')
+        .slice(0, 10);
+
+      // Calculate summary statistics
+      const totalResults = finalLabResults.length;
+      const totalAbnormal = finalLabResults.filter(
+        (r) => r.abnormalFlag !== null && r.abnormalFlag !== undefined && r.abnormalFlag !== ''
+      ).length;
+      const uniqueTests = new Set(
+        finalLabResults.map((r) => r.LabOrderItem.testCode || r.LabOrderItem.testName)
+      ).size;
+      const latestResult = finalLabResults.length > 0 ? finalLabResults[0] : null;
+
+      // Date formatting helper
+      const formatDate = (date: Date): string => {
+        return date.toISOString().split("T")[0];
+      };
+
+      // FLAT RESPONSE - Numbered flat keys
+      const result: any = {
+        // Summary
+        totalResults,
+        totalAbnormal,
+        normalResults: totalResults - totalAbnormal,
+        uniqueTests,
+        
+        // Latest Result (flat fields)
+        latestResultTestName:
+          latestResult?.LabOrderItem.testName || null,
+        latestResultTestCode:
+          latestResult?.LabOrderItem.testCode || null,
+        latestResultValue: latestResult?.resultValue || null,
+        latestResultValueNum:
+          latestResult?.resultValueNum
+            ? Number(latestResult.resultValueNum.toString()).toFixed(3)
+            : null,
+        latestResultUnit: latestResult?.unit || null,
+        latestResultFlag: latestResult?.abnormalFlag || null,
+        latestResultDate: latestResult
+          ? formatDate(latestResult.resultedAt)
+          : null,
+        latestResultReferenceLow: latestResult?.referenceLow
+          ? Number(latestResult.referenceLow.toString()).toFixed(3)
+          : null,
+        latestResultReferenceHigh: latestResult?.referenceHigh
+          ? Number(latestResult.referenceHigh.toString()).toFixed(3)
+          : null,
+        latestResultReferenceRange:
+          latestResult?.referenceLow && latestResult?.referenceHigh
+            ? `${Number(latestResult.referenceLow.toString()).toFixed(3)} - ${Number(latestResult.referenceHigh.toString()).toFixed(3)}`
+            : latestResult?.referenceLow
+            ? Number(latestResult.referenceLow.toString()).toFixed(3)
+            : latestResult?.referenceHigh
+            ? Number(latestResult.referenceHigh.toString()).toFixed(3)
+          : null,
+        latestResultDoctor:
+          latestResult?.LabOrder.Visit.doctor.name || null,
+        latestResultOrderDoctor:
+          latestResult?.LabOrder.Visit.doctor.name || null,
+        latestResultOrderDoctorName:
+          latestResult?.LabOrder.Visit.doctor.name || null,
+        
+        // Breakdown counts
+        testTypeCount: breakdownByTest.length,
+        abnormalBreakdownCount: breakdownByAbnormal.length,
+        monthlyBreakdownCount: monthlyBreakdown.length,
+        recentAbnormalCount: recentAbnormal.length,
+      };
+
+      // Add numbered test type fields (testType1, testType2, etc.)
+      breakdownByTest.slice(0, 20).forEach((test, index) => {
+        const prefix = `testType${index + 1}`;
+        result[`${prefix}Code`] = test.testCode;
+        result[`${prefix}Name`] = test.testName;
+        result[`${prefix}ResultCount`] = Number(test.resultCount);
+        result[`${prefix}AbnormalCount`] = Number(test.abnormalCount);
+        result[`${prefix}LatestResultDate`] = formatDate(test.latestResult);
+        result[`${prefix}LatestResultValue`] = test.latestResultValue || null;
+        result[`${prefix}LatestResultValueNum`] = test.latestResultValueNum || null;
+        result[`${prefix}LatestResultUnit`] = test.latestResultUnit || null;
+      });
+
+      // Add numbered abnormal breakdown (abnormal1, abnormal2, etc.)
+      breakdownByAbnormal.forEach((item, index) => {
+        const prefix = `abnormal${index + 1}`;
+        result[`${prefix}Flag`] = item.abnormalFlag;
+        result[`${prefix}Count`] = Number(item.count);
+      });
+
+      // Add numbered monthly breakdown (labMonth1, labMonth2, etc.)
+      monthlyBreakdown.forEach((month, index) => {
+        const prefix = `labMonth${index + 1}`;
+        result[`${prefix}Year`] = Number(month.year);
+        result[`${prefix}Month`] = Number(month.month);
+        result[`${prefix}MonthName`] = month.monthName;
+        result[`${prefix}ResultCount`] = Number(month.resultCount);
+        result[`${prefix}AbnormalCount`] = Number(month.abnormalCount);
+      });
+
+      // Add numbered recent abnormal results (abnormalResult1, abnormalResult2, etc.)
+      recentAbnormal.slice(0, 10).forEach((resultItem, index) => {
+        const prefix = `abnormalResult${index + 1}`;
+        result[`${prefix}TestName`] = resultItem.LabOrderItem.testName;
+        result[`${prefix}TestCode`] = resultItem.LabOrderItem.testCode;
+        result[`${prefix}Value`] = resultItem.resultValue;
+        result[`${prefix}ValueNum`] = resultItem.resultValueNum
+          ? Number(resultItem.resultValueNum.toString()).toFixed(3)
+          : null;
+        result[`${prefix}Unit`] = resultItem.unit;
+        result[`${prefix}Flag`] = resultItem.abnormalFlag;
+        result[`${prefix}Date`] = formatDate(resultItem.resultedAt);
+        result[`${prefix}ReferenceLow`] = resultItem.referenceLow
+          ? Number(resultItem.referenceLow.toString()).toFixed(3)
+          : null;
+        result[`${prefix}ReferenceHigh`] = resultItem.referenceHigh
+          ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+          : null;
+        // Formatted reference range string (e.g., "233 - 44 44")
+        const abnormalRefLowStr = resultItem.referenceLow
+          ? Number(resultItem.referenceLow.toString()).toFixed(3)
+          : null;
+        const abnormalRefHighStr = resultItem.referenceHigh
+          ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+          : null;
+        result[`${prefix}ReferenceRange`] =
+          abnormalRefLowStr && abnormalRefHighStr
+            ? `${abnormalRefLowStr} - ${abnormalRefHighStr}`
+            : abnormalRefLowStr
+            ? abnormalRefLowStr
+            : abnormalRefHighStr
+            ? abnormalRefHighStr
+          : null;
+        result[`${prefix}Doctor`] =
+          resultItem.LabOrder.Visit.doctor.name;
+        result[`${prefix}OrderDoctor`] =
+          resultItem.LabOrder.Visit.doctor.name;
+        result[`${prefix}OrderDoctorName`] =
+          resultItem.LabOrder.Visit.doctor.name;
+        result[`${prefix}Department`] =
+          resultItem.LabOrder.Visit.doctor.department;
+      });
+
+      // Add numbered recent lab results (labResult1, labResult2, etc.)
+      // Show up to 100 results in numbered fields for better coverage
+      finalLabResults.slice(0, 100).forEach((labResult, index) => {
+        const prefix = `labResult${index + 1}`;
+        result[`${prefix}TestName`] = labResult.LabOrderItem.testName;
+        result[`${prefix}TestCode`] = labResult.LabOrderItem.testCode;
+        result[`${prefix}Value`] = labResult.resultValue;
+        result[`${prefix}ResultValue`] = labResult.resultValue; // Explicit result value field
+        result[`${prefix}ValueNum`] = labResult.resultValueNum
+          ? Number(labResult.resultValueNum.toString()).toFixed(3)
+          : null;
+        result[`${prefix}ResultValueNum`] = labResult.resultValueNum
+          ? Number(labResult.resultValueNum.toString()).toFixed(3)
+          : null; // Explicit numeric result value field
+        result[`${prefix}Unit`] = labResult.unit;
+        result[`${prefix}Flag`] = labResult.abnormalFlag;
+        result[`${prefix}Date`] = formatDate(labResult.resultedAt);
+        result[`${prefix}ReferenceLow`] = labResult.referenceLow
+          ? Number(labResult.referenceLow.toString()).toFixed(3)
+          : null;
+        result[`${prefix}ReferenceHigh`] = labResult.referenceHigh
+          ? Number(labResult.referenceHigh.toString()).toFixed(3)
+          : null;
+        // Formatted reference range string (e.g., "233 - 44 44")
+        const refLowStr = labResult.referenceLow
+          ? Number(labResult.referenceLow.toString()).toFixed(3)
+          : null;
+        const refHighStr = labResult.referenceHigh
+          ? Number(labResult.referenceHigh.toString()).toFixed(3)
+          : null;
+        result[`${prefix}ReferenceRange`] =
+          refLowStr && refHighStr
+            ? `${refLowStr} - ${refHighStr}`
+            : refLowStr
+            ? refLowStr
+            : refHighStr
+            ? refHighStr
+          : null;
+        result[`${prefix}Doctor`] = labResult.LabOrder.Visit.doctor.name;
+        result[`${prefix}OrderDoctor`] = labResult.LabOrder.Visit.doctor.name; // Explicit order doctor name
+        result[`${prefix}OrderDoctorName`] = labResult.LabOrder.Visit.doctor.name; // Alternative field name
+        result[`${prefix}Department`] =
+          labResult.LabOrder.Visit.doctor.department;
+        result[`${prefix}OrderStatus`] = labResult.LabOrder.status;
+        result[`${prefix}Notes`] = labResult.notes;
+      });
+
+      // NESTED DETAILED BREAKDOWN (for structured access)
+      result.detailBreakdown = {
+        byTestType: breakdownByTest.map((test) => ({
+          testCode: test.testCode,
+          testName: test.testName,
+          resultCount: Number(test.resultCount),
+          abnormalCount: Number(test.abnormalCount),
+          latestResultDate: formatDate(test.latestResult),
+        })),
+        byAbnormalFlag: breakdownByAbnormal.map((item) => ({
+          flag: item.abnormalFlag,
+          count: Number(item.count),
+        })),
+        byMonth: monthlyBreakdown.map((month) => ({
+          year: Number(month.year),
+          month: Number(month.month),
+          monthName: month.monthName,
+          resultCount: Number(month.resultCount),
+          abnormalCount: Number(month.abnormalCount),
+        })),
+        recentAbnormal: recentAbnormal.map((resultItem) => ({
+          testName: resultItem.LabOrderItem.testName,
+          testCode: resultItem.LabOrderItem.testCode,
+          resultValue: resultItem.resultValue,
+          resultValueNum: resultItem.resultValueNum
+            ? Number(resultItem.resultValueNum.toString()).toFixed(3)
+            : null,
+          unit: resultItem.unit,
+          abnormalFlag: resultItem.abnormalFlag,
+          resultedAt: resultItem.resultedAt.toISOString(),
+          date: formatDate(resultItem.resultedAt),
+          referenceLow: resultItem.referenceLow
+            ? Number(resultItem.referenceLow.toString()).toFixed(3)
+            : null,
+          referenceHigh: resultItem.referenceHigh
+            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+            : null,
+          referenceRange:
+            resultItem.referenceLow && resultItem.referenceHigh
+              ? `${Number(resultItem.referenceLow.toString()).toFixed(3)} - ${Number(resultItem.referenceHigh.toString()).toFixed(3)}`
+              : resultItem.referenceLow
+              ? Number(resultItem.referenceLow.toString()).toFixed(3)
+              : resultItem.referenceHigh
+            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+            : null,
+          doctorName: resultItem.LabOrder.Visit.doctor.name,
+          orderDoctor: resultItem.LabOrder.Visit.doctor.name,
+          orderDoctorName: resultItem.LabOrder.Visit.doctor.name,
+          department: resultItem.LabOrder.Visit.doctor.department,
+        })),
+        allResults: finalLabResults.map((labResult) => {
+          // Format date and time separately
+          const resultDate = new Date(labResult.resultedAt);
+          const dateStr = resultDate.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+          });
+          const timeStr = resultDate.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: true 
+          });
+          
+          // Format reference range with unit if available
+          const refLow = labResult.referenceLow
+            ? Number(labResult.referenceLow.toString()).toFixed(3)
+            : null;
+          const refHigh = labResult.referenceHigh
+            ? Number(labResult.referenceHigh.toString()).toFixed(3)
+            : null;
+          const unit = labResult.unit || '';
+          const referenceRange = refLow && refHigh
+            ? `${refLow} - ${refHigh}${unit ? ` ${unit}` : ''}`
+            : refLow
+            ? `${refLow}${unit ? ` ${unit}` : ''}`
+            : refHigh
+            ? `${refHigh}${unit ? ` ${unit}` : ''}`
+            : null;
+          
+          return {
+            labResultId: labResult.labResultId,
+            testName: labResult.LabOrderItem.testName,
+            testCode: labResult.LabOrderItem.testCode,
+            resultValue: labResult.resultValue,
+            resultValueNum: labResult.resultValueNum
+              ? Number(labResult.resultValueNum.toString()).toFixed(3)
+              : null,
+            unit: labResult.unit,
+            abnormalFlag: labResult.abnormalFlag,
+            resultedAt: labResult.resultedAt.toISOString(),
+            date: formatDate(labResult.resultedAt),
+            resultDate: dateStr,
+            resultTime: timeStr,
+            referenceLow: refLow,
+            referenceHigh: refHigh,
+            referenceRange: referenceRange,
+            status: labResult.abnormalFlag ? `Flagged: ${labResult.abnormalFlag}` : 'Normal',
+            notes: labResult.notes,
+            orderStatus: labResult.LabOrder.status,
+            visitDate: formatDate(labResult.LabOrder.Visit.visitDate),
+            doctorName: labResult.LabOrder.Visit.doctor.name,
+            orderDoctor: labResult.LabOrder.Visit.doctor.name,
+            orderDoctorName: labResult.LabOrder.Visit.doctor.name,
+            doctorId: labResult.LabOrder.Visit.doctor.doctorId,
+            department: labResult.LabOrder.Visit.doctor.department,
+          };
+        }),
+      };
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Lab Report Agent Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch lab report information",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// 6. Appointment Letter Agent API
 router.post(
   "/appointment-letters",
   requirePatientAuth,
