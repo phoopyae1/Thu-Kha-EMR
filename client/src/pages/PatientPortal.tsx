@@ -3336,6 +3336,7 @@ function AppointmentsSection({
               // Sort appointments by nearest first (same logic as nextAppointment)
               const now = new Date();
               const nowTime = now.getTime();
+              const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
               const sortedAppointments = upcomingAppointments
                 .map((appt: any) => {
@@ -3354,31 +3355,43 @@ function AppointmentsSection({
 
                   // Calculate time difference
                   const timeDiff = appointmentDateTime.getTime() - nowTime;
+                  
+                  // Check if appointment date is today or in the future
+                  const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate());
+                  const isTodayOrFuture = appointmentDateOnly.getTime() >= today.getTime();
 
                   return {
                     ...appt,
                     appointmentDateTime,
                     timeDiff,
+                    isTodayOrFuture,
                   };
                 })
                 .filter(
                   (appt: any): appt is NonNullable<typeof appt> => appt !== null
                 )
                 .filter((appt: any) => {
-                  // Only include appointments that haven't passed (timeDiff > 0)
-                  return appt.timeDiff > 0;
+                  // Include appointments that are today or in the future
+                  // Show all appointments from today onwards, even if time has passed today
+                  if (!appt.isTodayOrFuture) return false;
+                  
+                  // Check if appointment date is today
+                  const appointmentDateOnly = new Date(appt.appointmentDateTime.getFullYear(), appt.appointmentDateTime.getMonth(), appt.appointmentDateTime.getDate());
+                  const isToday = appointmentDateOnly.getTime() === today.getTime();
+                  
+                  // If it's today, show it regardless of time
+                  // If it's future, only show if time hasn't passed (timeDiff > 0)
+                  return isToday || appt.timeDiff > 0;
                 })
                 .sort((a: any, b: any) => {
                   // Sort by time difference (ascending) to get nearest first
                   return a.timeDiff - b.timeDiff;
                 })
-                .slice(0, 5); // Take top 5
+                .slice(0, 5); // Show top 5 nearest appointments
 
               return sortedAppointments.map((item: any, index: number) => {
-                // Check if this is the nearest appointment
-                const isNearest =
-                  nextAppointment &&
-                  item.appointmentId === nextAppointment.appointmentId;
+                // The first appointment (index 0) is the nearest one since we sorted by timeDiff ascending
+                const isNearest = index === 0;
 
                 return (
                   <li
@@ -3386,7 +3399,7 @@ function AppointmentsSection({
                     onClick={() => onAppointmentClick?.(item)}
                     className={`cursor-pointer rounded-2xl border px-4 py-3 transition hover:shadow-md ${
                       isNearest
-                        ? "border-blue-200 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-200"
+                        ? "border-blue-500 bg-blue-50 hover:bg-blue-100 ring-2 ring-blue-500 shadow-md"
                         : "border-slate-200 bg-slate-50 hover:bg-slate-100"
                     }`}
                   >
