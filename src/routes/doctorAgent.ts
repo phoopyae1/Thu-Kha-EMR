@@ -1273,6 +1273,7 @@ router.post(
       }
 
       const doctorId = user.doctorId;
+      console.log("doctorId", doctorId);
       if (!doctorId) {
         return res.status(403).json({
           error: "User is not linked to a doctor profile",
@@ -1813,8 +1814,8 @@ router.post(
 
       // Notify Atenxion agent after transaction commits (external API calls outside transaction)
       try {
-        const { recordAtenxionTransaction } = await import("../services/atenxion.js");
-        await recordAtenxionTransaction(doctorId);
+        const { recordAtenxionTransactionForDoctor } = await import("../services/atenxion.js");
+        await recordAtenxionTransactionForDoctor(doctorId);
         if (transactionResult.isNewVisit) {
           console.log("Atenxion transaction recorded for visit creation:", transactionResult.results.visitId);
         }

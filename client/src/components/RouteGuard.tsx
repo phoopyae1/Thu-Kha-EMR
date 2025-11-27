@@ -24,9 +24,9 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
 
   useEffect(() => {
     console.log('[RouteGuard] Widget useEffect triggered - widgetEnabled:', widgetEnabled, 'user:', user?.role, 'pathname:', location.pathname);
-    // Widget is only for doctors, not for admin accounts
+    // Widget is for doctors and cashiers
     console.log('[RouteGuard] Widget loading check - User role:', user?.role);
-    const shouldLoadWidget = user?.role === 'Doctor';
+    const shouldLoadWidget = user?.role === 'Doctor' || user?.role === 'Cashier';
     
     console.log('[RouteGuard] shouldLoadWidget calculated:', shouldLoadWidget);
     
@@ -47,20 +47,18 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
     const loadWidget = async () => {
       try {
         console.log('[RouteGuard] Loading widget for role:', user.role);
-        // Fetch from admin integration for doctors, patient portal integration for others
+        // Fetch from admin integration for doctors and cashiers, patient portal integration for others
         let embed = null;
-        if (user.role === 'Doctor') {
-          embed = await fetchAdminIntegrationEmbed();
-          console.log('[RouteGuard] Fetched admin embed:', embed ? 'found' : 'not found');
-          // Fallback to patient portal integration if admin integration doesn't exist
+        if (user.role === 'Doctor' || user.role === 'Cashier') {
+          embed = await fetchAdminIntegrationEmbed(user.role);
           if (!embed) {
-            console.log('[RouteGuard] Admin embed not found, trying patient portal integration as fallback');
             embed = await fetchIntegrationEmbed();
-            console.log('[RouteGuard] Fetched patient portal embed (fallback):', embed ? 'found' : 'not found');
           }
         } else {
-          embed = await fetchIntegrationEmbed();
-          console.log('[RouteGuard] Fetched patient portal embed:', embed ? 'found' : 'not found');
+          embed = await fetchAdminIntegrationEmbed(user.role);
+          if (!embed) {
+            embed = await fetchIntegrationEmbed();
+          }
         }
         
         if (!embed?.iframeCode || typeof document === 'undefined') {
@@ -71,8 +69,6 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
           return;
         }
         
-        console.log('[RouteGuard] Embed iframeCode length:', embed.iframeCode.length);
-
         let url: string | null = null;
         let isScript = false;
 
@@ -99,28 +95,32 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
           return;
         }
         
-        console.log('[RouteGuard] Extracted URL:', url, 'isScript:', isScript);
-
-        // Add userId parameter (using doctorId if available) if user is logged in and postLogin is true
+     
         const postLogin = true; // You can make this configurable if needed
-        // Use doctorId as userId if available, otherwise fall back to user.userId
-        const userIdToUse = user?.doctorId || user?.userId;
+        let userIdToUse;
+        if(user?.role === 'Doctor') {
+          userIdToUse = user?.doctorId;
+        } 
+        else if(user?.role === 'Cashier') {
+          userIdToUse = user?.userId;
+        }
+        else {
+          userIdToUse = user?.userId;
+        }
+     
         
         if (userIdToUse && postLogin) {
           console.log('[RouteGuard] Adding userId parameter:', userIdToUse, user?.doctorId ? '(using doctorId)' : '(using user.userId)');
           try {
-            // Use URL constructor if it's a valid absolute URL
             if (url.startsWith('http://') || url.startsWith('https://')) {
               const urlObj = new URL(url);
               urlObj.searchParams.set('userId', userIdToUse);
               url = urlObj.toString();
             } else {
-              // For relative URLs or invalid URLs, append manually
               const separator = url.includes('?') ? '&' : '?';
               url = `${url}${separator}userId=${userIdToUse}`;
             }
           } catch (error) {
-            // If URL parsing fails, append userId as query parameter manually
             const separator = url.includes('?') ? '&' : '?';
             url = `${url}${separator}userId=${userIdToUse}`;
           }
@@ -129,7 +129,6 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
         if (!isCancelled) {
           console.log('[RouteGuard] Setting widget frame - isScript:', isScript, 'url:', url);
           if (isScript) {
-            // For script tags, we'll load it as a script element
             setWidgetFrame({
               src: url,
               isScript: true,
@@ -246,8 +245,8 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
     }
   }, [widgetFrame?.isScript, widgetFrame?.src]);
 
-  // Widget is only for doctors, not for admin accounts
-  const shouldShowWidget = !!widgetFrame && user?.role === 'Doctor';
+  // Widget is for doctors and cashiers
+  const shouldShowWidget = !!widgetFrame && (user?.role === 'Doctor' || user?.role === 'Cashier');
 
   console.log('[RouteGuard] Render check - shouldShowWidget:', shouldShowWidget, 'widgetFrame:', widgetFrame ? 'exists' : 'null', 'isScript:', widgetFrame?.isScript, 'user role:', user?.role);
 

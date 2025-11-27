@@ -71,8 +71,12 @@ export async function fetchIntegrationEmbed(): Promise<IntegrationEmbed | null> 
   return body.embed ?? null;
 }
 
-export async function fetchAdminIntegrationEmbed(): Promise<IntegrationEmbed | null> {
-  const response = await fetch('/api/patient-portal/admin-integration-embeds/latest');
+export async function fetchAdminIntegrationEmbed(role?: string): Promise<IntegrationEmbed | null> {
+  const url = role 
+    ? `/api/patient-portal/admin-integration-embeds/latest?role=${encodeURIComponent(role)}`
+    : '/api/patient-portal/admin-integration-embeds/latest';
+  
+  const response = await fetch(url);
 
   if (response.status === 404) {
     return null;

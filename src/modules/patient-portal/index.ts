@@ -65,6 +65,7 @@ const portalAccountRegisterSchema = z.object({
 const integrationEmbedSchema = z.object({
   iframeCode: z.string().trim().min(1),
   contextKey: z.string().trim().min(1),
+  role: z.enum(['Doctor', 'AdminAssistant', 'Cashier', 'ITAdmin', 'Pharmacist', 'PharmacyTech', 'InventoryManager', 'Nurse', 'LabTech']).optional(),
 });
 
 function getEnvIntegrationEmbed(): IntegrationEmbedDocument | null {
@@ -190,16 +191,20 @@ router.post(
   '/admin-integration-embeds',
   validate({ body: integrationEmbedSchema }),
   async (req: Request, res: Response) => {
-    const { iframeCode, contextKey } = req.body as z.infer<typeof integrationEmbedSchema>;
+    const { iframeCode, contextKey, role } = req.body as z.infer<typeof integrationEmbedSchema>;
     const timestamp = new Date().toISOString();
 
     try {
-      const result = await insertAdminIntegrationEmbed({
+      const document: IntegrationEmbedDocument = {
         iframeCode,
         contextKey,
         createdAt: timestamp,
         updatedAt: timestamp,
-      });
+      };
+      if (role) {
+        document.role = role;
+      }
+      const result = await insertAdminIntegrationEmbed(document);
 
       return res.status(201).json({ id: result.insertedId ?? null });
     } catch (error) {
@@ -213,9 +218,11 @@ router.post(
   },
 );
 
-router.get('/admin-integration-embeds/latest', async (_req: Request, res: Response) => {
+router.get('/admin-integration-embeds/latest', async (req: Request, res: Response) => {
   try {
-    const document = await fetchLatestAdminIntegrationEmbed();
+    // Get role from query parameter
+    const role = typeof req.query.role === 'string' ? req.query.role : undefined;
+    const document = await fetchLatestAdminIntegrationEmbed(role);
 
     if (!document) {
       return res.status(404).json({ error: 'No admin integration embed configured' });

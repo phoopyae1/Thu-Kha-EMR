@@ -28,8 +28,13 @@ export async function addProblem(userId: string, payload: CreateProblemInput): P
 
   // Notify Atenxion agent about problem creation
   try {
-    const { recordAtenxionTransaction } = await import('./atenxion.js');
-    await recordAtenxionTransaction(user?.doctorId || userId);
+    if (user?.doctorId) {
+      const { recordAtenxionTransactionForDoctor } = await import('./atenxion.js');
+      await recordAtenxionTransactionForDoctor(user.doctorId);
+    } else {
+      const { recordAtenxionTransaction } = await import('./atenxion.js');
+      await recordAtenxionTransaction(userId);
+    }
     console.log('Atenxion transaction recorded for problem creation:', problem.problemId);
   } catch (error) {
     console.warn('Failed to record Atenxion transaction for problem creation:', error);

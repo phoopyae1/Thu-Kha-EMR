@@ -63,8 +63,13 @@ export async function createVitals(userId: string, payload: CreateVitalsInput): 
 
   // Notify Atenxion agent about vitals creation
   try {
-    const { recordAtenxionTransaction } = await import('./atenxion.js');
-    await recordAtenxionTransaction(visit?.doctorId || userId);
+    if (visit?.doctorId) {
+      const { recordAtenxionTransactionForDoctor } = await import('./atenxion.js');
+      await recordAtenxionTransactionForDoctor(visit.doctorId);
+    } else {
+      const { recordAtenxionTransaction } = await import('./atenxion.js');
+      await recordAtenxionTransaction(userId);
+    }
     console.log('Atenxion transaction recorded for vitals creation:', vitals.vitalsId);
   } catch (error) {
     console.warn('Failed to record Atenxion transaction for vitals creation:', error);

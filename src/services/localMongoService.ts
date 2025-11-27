@@ -3,6 +3,7 @@ import { MongoClient, Db, Collection } from 'mongodb';
 export interface IntegrationEmbedDocument {
   iframeCode: string;
   contextKey: string;
+  role?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,26 +96,40 @@ export async function fetchLatestIntegrationEmbed(): Promise<IntegrationEmbedDoc
   }
 }
 
-// Admin integration - uses adminIntegrationSettings collection
+// Helper function to get collection name based on role
+function getAdminIntegrationCollectionName(role?: string): string {
+  if (!role) {
+    // Default to 'adminIntegrationSettings' if no role is provided (backward compatibility)
+    return 'adminIntegrationSettings';
+  }
+  // Use lowercase role name for collection name
+  const roleLower = role.toLowerCase();
+  return `adminIntegrationSettings_${roleLower}`;
+}
+
+// Admin integration - uses role-specific collections
 export async function insertAdminIntegrationEmbed(document: IntegrationEmbedDocument): Promise<InsertOneResponse> {
   try {
-    const collection = await getCollection('adminIntegrationSettings');
+    const collectionName = getAdminIntegrationCollectionName(document.role);
+    const collection = await getCollection(collectionName);
     // Use upsert to update existing document or insert new one
     const existing = await collection.findOne({}, { sort: { createdAt: -1 } });
     
     if (existing && existing._id) {
       // Update existing document
+      const updateData: any = {
+        iframeCode: document.iframeCode,
+        contextKey: document.contextKey,
+        updatedAt: document.updatedAt,
+        // Keep original createdAt
+        createdAt: existing.createdAt || document.createdAt,
+      };
+      if (document.role !== undefined) {
+        updateData.role = document.role;
+      }
       await collection.updateOne(
         { _id: existing._id },
-        { 
-          $set: {
-            iframeCode: document.iframeCode,
-            contextKey: document.contextKey,
-            updatedAt: document.updatedAt,
-            // Keep original createdAt
-            createdAt: existing.createdAt || document.createdAt,
-          }
-        }
+        { $set: updateData }
       );
       return { insertedId: existing._id.toString() };
     } else {
@@ -128,9 +143,10 @@ export async function insertAdminIntegrationEmbed(document: IntegrationEmbedDocu
   }
 }
 
-export async function fetchLatestAdminIntegrationEmbed(): Promise<IntegrationEmbedDocument | null> {
+export async function fetchLatestAdminIntegrationEmbed(role?: string): Promise<IntegrationEmbedDocument | null> {
   try {
-    const collection = await getCollection('adminIntegrationSettings');
+    const collectionName = getAdminIntegrationCollectionName(role);
+    const collection = await getCollection(collectionName);
     const document = await collection.findOne({}, { sort: { createdAt: -1 } });
     return document;
   } catch (error) {

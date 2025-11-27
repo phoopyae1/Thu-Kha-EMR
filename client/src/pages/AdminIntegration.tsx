@@ -1,33 +1,54 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
+import type { Role } from '../api/client';
+
+const ROLE_OPTIONS: Array<{ value: Role; label: string }> = [
+  { value: 'Doctor', label: 'Doctor' },
+  { value: 'AdminAssistant', label: 'Administrative Assistant' },
+  { value: 'Cashier', label: 'Cashier' },
+  { value: 'ITAdmin', label: 'IT Administrator' },
+  { value: 'Pharmacist', label: 'Pharmacist' },
+  { value: 'PharmacyTech', label: 'Pharmacy Technician' },
+  { value: 'InventoryManager', label: 'Inventory Manager' },
+  { value: 'Nurse', label: 'Nurse' },
+  { value: 'LabTech', label: 'Laboratory Technician' },
+];
 
 export default function AdminIntegration() {
   const { t } = useTranslation();
   const [iframeCode, setIframeCode] = useState('');
   const [contextKey, setContextKey] = useState('');
+  const [role, setRole] = useState<Role>('Doctor');
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [saveResult, setSaveResult] = useState<'idle' | 'success' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [recordId, setRecordId] = useState<string | null>(null);
 
-  // Load existing admin integration embed on mount
+  // Load existing admin integration embed on mount and when role changes
   useEffect(() => {
     const loadIntegration = async () => {
+      setIsLoading(true);
+      // Clear fields while loading new role's data
+      setIframeCode('');
+      setContextKey('');
+      
       try {
-        const response = await fetch('/api/patient-portal/admin-integration-embeds/latest');
+        // Load integration for the current selected role
+        const response = await fetch(`/api/patient-portal/admin-integration-embeds/latest?role=${encodeURIComponent(role)}`);
         if (response.status === 404) {
-          // No admin integration embed configured yet
+          // No admin integration embed configured yet for this role
           setIsLoading(false);
           return;
         }
         if (!response.ok) {
           throw new Error('Failed to load admin integration embed');
         }
-        const body = (await response.json()) as { embed?: { iframeCode?: string; contextKey?: string } | null };
+        const body = (await response.json()) as { embed?: { iframeCode?: string; contextKey?: string; role?: Role } | null };
         if (body.embed) {
           setIframeCode(body.embed.iframeCode || '');
           setContextKey(body.embed.contextKey || '');
+          // Don't update role from response to avoid infinite loop
         }
       } catch (error) {
         console.error('Failed to load admin integration embed:', error);
@@ -38,7 +59,7 @@ export default function AdminIntegration() {
     };
 
     loadIntegration();
-  }, []);
+  }, [role]);
 
   const isSubmitDisabled = useMemo(() => {
     const trimmedKey = contextKey.trim();
@@ -65,6 +86,7 @@ export default function AdminIntegration() {
         body: JSON.stringify({
           iframeCode: iframeCode.trim(),
           contextKey: contextKey.trim(),
+          role: role,
         }),
       });
 
@@ -101,6 +123,26 @@ export default function AdminIntegration() {
         )}
 
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+          <div>
+            <label className="block text-sm font-medium text-slate-700" htmlFor="role">
+              {t('Role')}
+            </label>
+            <select
+              id="role"
+              name="role"
+              required
+              value={role}
+              onChange={(event) => setRole(event.target.value as Role)}
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-inner focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-slate-700" htmlFor="contextKey">
               {t('Context key')}
