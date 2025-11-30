@@ -193,45 +193,45 @@ export default function Reports() {
 
           <section className={`grid gap-8 ${effectiveDoctorId ? 'lg:grid-cols-1' : 'lg:grid-cols-2'}`}>
             {!effectiveDoctorId && (
-              <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-900">{t('Visits by department (90 days)')}</h2>
-                <p className="mt-1 text-sm text-gray-500">
-                  {t('Highlights departments with the highest encounter volume and unique patient counts.')}
-                </p>
-                <div className="mt-4 overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-sm">
-                    <thead className="bg-gray-50">
+            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-900">{t('Visits by department (90 days)')}</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                {t('Highlights departments with the highest encounter volume and unique patient counts.')}
+              </p>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wide">
+                        {t('Department')}
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
+                        {t('Visits')}
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
+                        {t('Patients')}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {data.visitsByDepartment.length === 0 && (
                       <tr>
-                        <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wide">
-                          {t('Department')}
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
-                          {t('Visits')}
-                        </th>
-                        <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
-                          {t('Patients')}
-                        </th>
+                        <td colSpan={3} className="px-4 py-6 text-center text-gray-500">
+                          {t('No visit data available.')}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data.visitsByDepartment.length === 0 && (
-                        <tr>
-                          <td colSpan={3} className="px-4 py-6 text-center text-gray-500">
-                            {t('No visit data available.')}
-                          </td>
-                        </tr>
-                      )}
-                      {data.visitsByDepartment.map((row) => (
-                        <tr key={row.department}>
-                          <td className="px-4 py-2 font-medium text-gray-900">{row.department || t('Unassigned')}</td>
-                          <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.visitCount)}</td>
-                          <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.patientCount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    )}
+                    {data.visitsByDepartment.map((row) => (
+                      <tr key={row.department}>
+                        <td className="px-4 py-2 font-medium text-gray-900">{row.department || t('Unassigned')}</td>
+                        <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.visitCount)}</td>
+                        <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.patientCount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
+            </div>
             )}
 
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">

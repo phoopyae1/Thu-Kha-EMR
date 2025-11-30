@@ -82,10 +82,10 @@ export async function createPrescription(
     include: { items: true },
   });
 
-  // Notify Atenxion agent about prescription creation
+  // Notify Atenxion agent about prescription creation (doctor-specific)
   try {
-    const { recordAtenxionTransaction } = await import('./atenxion.js');
-    await recordAtenxionTransaction(patientId);
+    const { recordAtenxionTransactionForDoctor } = await import('./atenxion.js');
+    await recordAtenxionTransactionForDoctor(doctorId);
     console.log('Atenxion transaction recorded for prescription creation:', prescription.prescriptionId);
   } catch (error) {
     console.warn('Failed to record Atenxion transaction for prescription creation:', error);

@@ -824,6 +824,16 @@ router.post(
       // Create lab order using the lab service
       const labOrder = await labService.createLabOrder(doctorId, labOrderPayload);
 
+      // Notify Atenxion agent about lab order creation (doctor-specific)
+      try {
+        const { recordAtenxionTransactionForDoctor } = await import("../services/atenxion.js");
+        await recordAtenxionTransactionForDoctor(doctorId);
+        console.log("Atenxion transaction recorded for lab order creation:", labOrder.labOrderId);
+      } catch (error) {
+        console.warn("Failed to record Atenxion transaction for lab order creation:", error);
+        // Don't fail the request if Atenxion notification fails
+      }
+
       res.status(201).json({
         labOrderId: labOrder.labOrderId,
         visitId: labOrder.visitId,

@@ -24,6 +24,22 @@ router.post('/visits/:id/diagnoses', requireAuth, requireRole('Doctor'), async (
   }
   const diag = await prisma.diagnosis.create({ data: { visitId: id, diagnosis: parsed.data.diagnosis } });
   await logDataChange(req.user!.userId, 'diagnosis', diag.diagId, undefined, diag);
+  
+  // Notify Atenxion agent about diagnosis creation (doctor-specific)
+  try {
+    const visit = await prisma.visit.findUnique({
+      where: { visitId: id },
+      select: { doctorId: true },
+    });
+    if (visit?.doctorId) {
+      const { recordAtenxionTransactionForDoctor } = await import('../../services/atenxion.js');
+      await recordAtenxionTransactionForDoctor(visit.doctorId);
+      console.log('Atenxion transaction recorded for diagnosis creation:', diag.diagId);
+    }
+  } catch (error) {
+    console.warn('Failed to record Atenxion transaction for diagnosis creation:', error);
+  }
+  
   res.status(201).json(diag);
 });
 

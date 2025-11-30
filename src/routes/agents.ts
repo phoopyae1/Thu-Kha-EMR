@@ -3412,33 +3412,33 @@ router.post(
         recentAbnormal: recentAbnormal.map((resultItem) => {
           const orderNumber = orderIdToNumberMap.get(resultItem.LabOrder.labOrderId) || null;
           return {
-            testName: resultItem.LabOrderItem.testName,
-            testCode: resultItem.LabOrderItem.testCode,
-            resultValue: resultItem.resultValue,
-            resultValueNum: resultItem.resultValueNum
-              ? Number(resultItem.resultValueNum.toString()).toFixed(3)
-              : null,
-            unit: resultItem.unit,
-            abnormalFlag: resultItem.abnormalFlag,
-            resultedAt: resultItem.resultedAt.toISOString(),
-            date: formatDate(resultItem.resultedAt),
-            referenceLow: resultItem.referenceLow
+          testName: resultItem.LabOrderItem.testName,
+          testCode: resultItem.LabOrderItem.testCode,
+          resultValue: resultItem.resultValue,
+          resultValueNum: resultItem.resultValueNum
+            ? Number(resultItem.resultValueNum.toString()).toFixed(3)
+            : null,
+          unit: resultItem.unit,
+          abnormalFlag: resultItem.abnormalFlag,
+          resultedAt: resultItem.resultedAt.toISOString(),
+          date: formatDate(resultItem.resultedAt),
+          referenceLow: resultItem.referenceLow
+            ? Number(resultItem.referenceLow.toString()).toFixed(3)
+            : null,
+          referenceHigh: resultItem.referenceHigh
+            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+            : null,
+          referenceRange:
+            resultItem.referenceLow && resultItem.referenceHigh
+              ? `${Number(resultItem.referenceLow.toString()).toFixed(3)} - ${Number(resultItem.referenceHigh.toString()).toFixed(3)}`
+              : resultItem.referenceLow
               ? Number(resultItem.referenceLow.toString()).toFixed(3)
-              : null,
-            referenceHigh: resultItem.referenceHigh
-              ? Number(resultItem.referenceHigh.toString()).toFixed(3)
-              : null,
-            referenceRange:
-              resultItem.referenceLow && resultItem.referenceHigh
-                ? `${Number(resultItem.referenceLow.toString()).toFixed(3)} - ${Number(resultItem.referenceHigh.toString()).toFixed(3)}`
-                : resultItem.referenceLow
-                ? Number(resultItem.referenceLow.toString()).toFixed(3)
-                : resultItem.referenceHigh
-              ? Number(resultItem.referenceHigh.toString()).toFixed(3)
-              : null,
+              : resultItem.referenceHigh
+            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+            : null,
             orderId: orderNumber, // Use numbered order (1, 2, 3, etc.) - per doctor
-            orderDoctorName: resultItem.LabOrder.Visit.doctor.name,
-            department: resultItem.LabOrder.Visit.doctor.department,
+          orderDoctorName: resultItem.LabOrder.Visit.doctor.name,
+          department: resultItem.LabOrder.Visit.doctor.department,
           };
         }),
         allResults: finalLabResults.map((labResult) => {
