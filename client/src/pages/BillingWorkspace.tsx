@@ -58,7 +58,8 @@ function formatMoney(value: string, currency = 'SGD') {
   if (Number.isNaN(numeric)) {
     return value;
   }
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(numeric);
+  // Format as USD to show $ sign, but currency is SGD
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numeric);
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {

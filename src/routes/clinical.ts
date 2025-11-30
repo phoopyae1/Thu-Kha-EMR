@@ -155,6 +155,20 @@ router.get(
   },
 );
 
+router.delete(
+  '/lab-orders/:labOrderId',
+  requireAuth,
+  requireRole('Doctor', 'ITAdmin'),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      await labs.deleteLabOrder(req.params.labOrderId);
+      res.json({ message: 'Lab order deleted successfully' });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.post(
   '/lab-results',
   requireAuth,

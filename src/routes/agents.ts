@@ -1292,6 +1292,294 @@ router.post(
   }
 );
 
+// Medication Overview API - Combines medication orders and prescriptions
+router.post(
+  "/medication-overview",
+  requirePatientAuth,
+  async (req: any, res: Response, next: NextFunction) => {
+    try {
+      const { patientId, startDate, endDate } = req.body;
+      
+      if (!patientId) {
+        return res.status(400).json({
+          error: "Patient ID is required",
+          msg: "Failed",
+        });
+      }
+
+      // Build date filter
+      const dateFilter: any = {};
+      if (startDate || endDate) {
+        dateFilter.createdAt = {};
+        if (startDate) dateFilter.createdAt.gte = new Date(startDate);
+        if (endDate) dateFilter.createdAt.lte = new Date(endDate);
+      }
+
+      // Get medication orders
+      const medicationOrders = await prisma.medicationOrder.findMany({
+        where: {
+          patientId,
+          ...dateFilter,
+        },
+        include: {
+          prescription: {
+            include: {
+              items: {
+                include: {
+                  drug: true,
+                },
+              },
+              visit: {
+                include: {
+                  doctor: true,
+                },
+              },
+            },
+          },
+          approvedBy: true,
+          updatedBy: true,
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Get prescriptions (prescribed by doctors)
+      const prescriptions = await prisma.prescription.findMany({
+        where: {
+          patientId,
+          ...dateFilter,
+        },
+        include: {
+          items: {
+            include: {
+              drug: true,
+            },
+          },
+          visit: {
+            include: {
+              doctor: true,
+            },
+          },
+          doctor: true,
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      // Helper function to map status to readable text
+      const getOrderStatusText = (status: string): string => {
+        const statusMap: Record<string, string> = {
+          PENDING: "Pending",
+          APPROVED: "Approved",
+          SHIPPING: "Shipping",
+          ON_THE_WAY: "On the way",
+          SHIPPED: "Shipped",
+          DELIVERED: "Delivered",
+          CANCELLED: "Cancelled",
+          REJECTED: "Rejected",
+        };
+        return statusMap[status] || status;
+      };
+
+      const getPrescriptionStatusText = (status: string): string => {
+        const statusMap: Record<string, string> = {
+          PENDING: "Pending",
+          PARTIAL: "Partially Dispensed",
+          DISPENSED: "Dispensed",
+          CANCELLED: "Cancelled",
+        };
+        return statusMap[status] || status;
+      };
+
+      // Format medication orders
+      const formattedOrders = medicationOrders.map((order: any) => {
+        const firstPrescriptionItem = order.prescription?.items?.[0];
+        const drug = firstPrescriptionItem?.drug;
+        const drugName = order.drugName || drug?.name || "Unknown medication";
+        const dosage = order.dosage || firstPrescriptionItem?.dose || "";
+        const medicineName = dosage ? `${drugName} ${dosage}`.trim() : drugName;
+
+        return {
+          type: "medication_order",
+          orderId: order.orderId,
+          medicine: medicineName,
+          drugName: drugName,
+          dosage: order.dosage || firstPrescriptionItem?.dose || null,
+          instructions: order.instructions || firstPrescriptionItem?.notes || null,
+          quantity: order.quantity || firstPrescriptionItem?.quantityPrescribed || null,
+          frequency: firstPrescriptionItem?.frequency || null,
+          duration: firstPrescriptionItem?.durationDays ? `${firstPrescriptionItem.durationDays} days` : null,
+          status: getOrderStatusText(order.status || "PENDING"),
+          statusCode: order.status,
+          createdAt: order.createdAt ? order.createdAt.toISOString().split("T")[0] : null,
+          approvedAt: order.approvedAt ? order.approvedAt.toISOString().split("T")[0] : null,
+          approvedBy: order.approvedBy?.name || null,
+          prescriptionId: order.prescription?.prescriptionId || null,
+          visitId: order.prescription?.visit?.visitId || null,
+          visitDate: order.prescription?.visit?.visitDate 
+            ? new Date(order.prescription.visit.visitDate).toISOString().split("T")[0] 
+            : null,
+          doctorName: order.prescription?.visit?.doctor?.name || null,
+          doctorId: order.prescription?.visit?.doctor?.doctorId || null,
+          department: order.prescription?.visit?.department || null,
+        };
+      });
+
+      // Format prescriptions
+      const formattedPrescriptions = prescriptions.flatMap((prescription: any) => {
+        return prescription.items.map((item: any) => {
+          const drug = item.drug;
+          const medicineName = `${drug.name} ${drug.strength}`.trim();
+          
+          return {
+            type: "prescription",
+            prescriptionId: prescription.prescriptionId,
+            prescriptionItemId: item.itemId,
+            medicine: medicineName,
+            drugName: drug.name,
+            drugStrength: drug.strength,
+            drugForm: drug.form,
+            dosage: item.dose,
+            route: item.route,
+            frequency: item.frequency,
+            duration: `${item.durationDays} days`,
+            quantity: item.quantityPrescribed,
+            prn: item.prn,
+            allowGeneric: item.allowGeneric,
+            notes: item.notes || prescription.notes || null,
+            status: getPrescriptionStatusText(prescription.status),
+            statusCode: prescription.status,
+            createdAt: prescription.createdAt ? prescription.createdAt.toISOString().split("T")[0] : null,
+            visitId: prescription.visitId,
+            visitDate: prescription.visit?.visitDate 
+              ? new Date(prescription.visit.visitDate).toISOString().split("T")[0] 
+              : null,
+            doctorName: prescription.doctor?.name || prescription.visit?.doctor?.name || null,
+            doctorId: prescription.doctorId,
+            department: prescription.visit?.department || null,
+          };
+        });
+      });
+
+      // Combine and sort by date (most recent first)
+      const allMedications = [...formattedOrders, ...formattedPrescriptions].sort((a, b) => {
+        const dateA = a.createdAt || "";
+        const dateB = b.createdAt || "";
+        return dateB.localeCompare(dateA);
+      });
+
+      // Build flat response with numbered fields
+      const result: any = {
+        status: "Success",
+        currency: "SGD",
+        currencySymbol: "$",
+        totalMedications: allMedications.length,
+        totalMedicationOrders: formattedOrders.length,
+        totalPrescriptions: prescriptions.length,
+        totalPrescriptionItems: formattedPrescriptions.length,
+      };
+
+      // Add numbered medication fields
+      allMedications.forEach((med, index) => {
+        const prefix = `medication${index + 1}`;
+        result[`${prefix}Type`] = med.type;
+        result[`${prefix}Medicine`] = med.medicine;
+        result[`${prefix}DrugName`] = med.drugName;
+        result[`${prefix}Dosage`] = med.dosage;
+        result[`${prefix}Instructions`] = med.instructions || med.notes;
+        result[`${prefix}Quantity`] = med.quantity;
+        result[`${prefix}Frequency`] = med.frequency;
+        result[`${prefix}Duration`] = med.duration;
+        result[`${prefix}Status`] = med.status;
+        result[`${prefix}StatusCode`] = med.statusCode;
+        result[`${prefix}Date`] = med.createdAt;
+        result[`${prefix}DoctorName`] = med.doctorName;
+        result[`${prefix}DoctorId`] = med.doctorId;
+        result[`${prefix}Department`] = med.department;
+        result[`${prefix}VisitId`] = med.visitId;
+        result[`${prefix}VisitDate`] = med.visitDate;
+
+        if (med.type === "medication_order") {
+          result[`${prefix}OrderId`] = med.orderId;
+          result[`${prefix}ApprovedAt`] = med.approvedAt;
+          result[`${prefix}ApprovedBy`] = med.approvedBy;
+          result[`${prefix}PrescriptionId`] = med.prescriptionId;
+        } else if (med.type === "prescription") {
+          result[`${prefix}PrescriptionId`] = med.prescriptionId;
+          result[`${prefix}PrescriptionItemId`] = med.prescriptionItemId;
+          result[`${prefix}DrugStrength`] = med.drugStrength;
+          result[`${prefix}DrugForm`] = med.drugForm;
+          result[`${prefix}Route`] = med.route;
+          result[`${prefix}Prn`] = med.prn;
+          result[`${prefix}AllowGeneric`] = med.allowGeneric;
+        }
+      });
+
+      // Add summary by type
+      const ordersByStatus = formattedOrders.reduce((acc: any, order: any) => {
+        acc[order.statusCode] = (acc[order.statusCode] || 0) + 1;
+        return acc;
+      }, {});
+
+      const prescriptionsByStatus = formattedPrescriptions.reduce((acc: any, pres: any) => {
+        acc[pres.statusCode] = (acc[pres.statusCode] || 0) + 1;
+        return acc;
+      }, {});
+
+      result.medicationOrdersByStatus = ordersByStatus;
+      result.prescriptionsByStatus = prescriptionsByStatus;
+
+      // Get unique doctors
+      const uniqueDoctors = new Map<string, { doctorId: string; doctorName: string; department: string | null }>();
+      allMedications.forEach((med) => {
+        if (med.doctorId && med.doctorName) {
+          if (!uniqueDoctors.has(med.doctorId)) {
+            uniqueDoctors.set(med.doctorId, {
+              doctorId: med.doctorId,
+              doctorName: med.doctorName,
+              department: med.department,
+            });
+          }
+        }
+      });
+
+      result.totalDoctors = uniqueDoctors.size;
+      Array.from(uniqueDoctors.values()).forEach((doctor, index) => {
+        const prefix = `doctor${index + 1}`;
+        result[`${prefix}Id`] = doctor.doctorId;
+        result[`${prefix}Name`] = doctor.doctorName;
+        result[`${prefix}Department`] = doctor.department;
+      });
+
+      // Get unique medicines
+      const uniqueMedicines = [...new Set(allMedications.map((m) => m.medicine).filter(Boolean))];
+      result.uniqueMedicines = uniqueMedicines;
+      result.uniqueMedicinesCount = uniqueMedicines.length;
+
+      // Nested structured breakdown
+      result.detailBreakdown = {
+        medicationOrders: formattedOrders,
+        prescriptions: formattedPrescriptions,
+        allMedications: allMedications,
+        doctors: Array.from(uniqueDoctors.values()),
+        medicines: uniqueMedicines,
+      };
+
+      res.json(result);
+    } catch (error) {
+      console.error("Medication Overview Error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : "Failed to fetch medication overview",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
 // 4. Billing Agent API - Optimized for Widgets
 router.post(
   "/billing",
@@ -1373,8 +1661,8 @@ router.post(
         },
       });
 
-      // Get recent invoices with minimal data
-      const recentInvoices = await prisma.invoice.findMany({
+      // Get all invoices with items for visit-by-visit breakdown
+      const allInvoicesWithItems = await prisma.invoice.findMany({
         where: whereClause,
         select: {
           invoiceId: true,
@@ -1384,8 +1672,10 @@ router.post(
           amountPaid: true,
           amountDue: true,
           createdAt: true,
+          visitId: true,
           Visit: {
             select: {
+              visitId: true,
               visitDate: true,
               department: true,
               doctor: {
@@ -1396,10 +1686,22 @@ router.post(
               },
             },
           },
+          items: {
+            select: {
+              itemId: true,
+              sourceType: true,
+              description: true,
+              quantity: true,
+              unitPrice: true,
+              lineTotal: true,
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
-        take: 10,
       });
+
+      // Get recent invoices with minimal data (for backward compatibility)
+      const recentInvoices = allInvoicesWithItems.slice(0, 10);
 
       // Get recent payments
       const recentPayments = await prisma.payment.findMany({
@@ -1621,11 +1923,11 @@ router.post(
       const totalDue = Number(overallSummary._sum.amountDue || 0);
       const totalInvoices = overallSummary._count.invoiceId;
 
-      // Currency formatting helper
+      // Currency formatting helper - format as USD to show $ sign, but currency is SGD
       const formatCurrency = (amount: number): string => {
-        return new Intl.NumberFormat('en-SG', { 
+        return new Intl.NumberFormat('en-US', { 
           style: 'currency', 
-          currency: 'SGD',
+          currency: 'USD',
           minimumFractionDigits: 2,
           maximumFractionDigits: 2
         }).format(amount);
@@ -1701,14 +2003,14 @@ router.post(
       });
 
       // Add numbered recent invoice fields (recentInvoice1, recentInvoice2, etc.)
-      recentInvoices.slice(0, 3).forEach((invoice, index) => {
+      allInvoicesWithItems.slice(0, 3).forEach((invoice, index) => {
         const prefix = `recentInvoice${index + 1}`;
         const invoiceAmount = Number(invoice.grandTotal);
         result[`${prefix}Number`] = invoice.invoiceNo;
         result[`${prefix}Amount`] = invoiceAmount.toFixed(2);
         result[`${prefix}AmountFormatted`] = formatCurrency(invoiceAmount);
         result[`${prefix}Status`] = invoice.status;
-        result[`${prefix}Doctor`] = invoice.Visit.doctor.name;
+        result[`${prefix}Doctor`] = invoice.Visit?.doctor?.name || "Unknown Doctor";
         result[`${prefix}Date`] = invoice.createdAt.toISOString().split("T")[0];
       });
 
@@ -1782,6 +2084,218 @@ router.post(
         result[`${prefix}Note`] = payment.note || null;
       });
 
+      // VISIT-BY-VISIT BREAKDOWN - One by one with line breaks
+      // Group invoices by visit
+      const visitsMap = new Map<string, typeof allInvoicesWithItems>();
+      allInvoicesWithItems.forEach((invoice) => {
+        const visitId = invoice.visitId || 'no-visit';
+        if (!visitsMap.has(visitId)) {
+          visitsMap.set(visitId, []);
+        }
+        visitsMap.get(visitId)!.push(invoice);
+      });
+
+      // Sort visits by date (most recent first)
+      const sortedVisits = Array.from(visitsMap.entries()).sort((a, b) => {
+        const dateA = a[1][0]?.Visit?.visitDate || a[1][0]?.createdAt || new Date(0);
+        const dateB = b[1][0]?.Visit?.visitDate || b[1][0]?.createdAt || new Date(0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      result.visitCount = sortedVisits.length;
+      
+      // Create visit-by-visit breakdown with line breaks
+      sortedVisits.forEach(([visitId, invoices], visitIndex) => {
+        const visit = invoices[0]?.Visit;
+        const visitDate = visit?.visitDate || invoices[0]?.createdAt;
+        const visitDateStr = visitDate ? visitDate.toISOString().split("T")[0] : null;
+        const doctorName = visit?.doctor?.name || "Unknown Doctor";
+        const department = visit?.department || "Unknown Department";
+        
+        const prefix = `visit${visitIndex + 1}`;
+        
+        // Visit header information
+        result[`${prefix}Date`] = visitDateStr;
+        result[`${prefix}DoctorName`] = doctorName;
+        result[`${prefix}Department`] = department;
+        result[`${prefix}VisitId`] = visitId !== 'no-visit' ? visitId : null;
+        
+        // Calculate totals for this visit
+        let visitTotal = 0;
+        let visitPaid = 0;
+        let visitDue = 0;
+        const visitItems: Array<{
+          sourceType: string;
+          description: string;
+          quantity: number;
+          unitPrice: number;
+          lineTotal: number;
+        }> = [];
+        
+        invoices.forEach((invoice) => {
+          visitTotal += Number(invoice.grandTotal);
+          visitPaid += Number(invoice.amountPaid);
+          visitDue += Number(invoice.amountDue);
+          
+          invoice.items.forEach((item) => {
+            visitItems.push({
+              sourceType: item.sourceType,
+              description: item.description,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              lineTotal: Number(item.lineTotal),
+            });
+          });
+        });
+        
+        result[`${prefix}Total`] = visitTotal.toFixed(2);
+        result[`${prefix}TotalFormatted`] = formatCurrency(visitTotal);
+        result[`${prefix}Paid`] = visitPaid.toFixed(2);
+        result[`${prefix}PaidFormatted`] = formatCurrency(visitPaid);
+        result[`${prefix}Due`] = visitDue.toFixed(2);
+        result[`${prefix}DueFormatted`] = formatCurrency(visitDue);
+        result[`${prefix}ItemCount`] = visitItems.length;
+        result[`${prefix}InvoiceCount`] = invoices.length;
+        
+        // Add line break separator (using newline character)
+        result[`${prefix}Separator`] = "\n---\n";
+        
+        // Add each item in this visit
+        visitItems.forEach((item, itemIndex) => {
+          const itemPrefix = `${prefix}Item${itemIndex + 1}`;
+          result[`${itemPrefix}SourceType`] = item.sourceType;
+          result[`${itemPrefix}Description`] = item.description;
+          result[`${itemPrefix}Quantity`] = item.quantity;
+          result[`${itemPrefix}UnitPrice`] = item.unitPrice.toFixed(2);
+          result[`${itemPrefix}UnitPriceFormatted`] = formatCurrency(item.unitPrice);
+          result[`${itemPrefix}LineTotal`] = item.lineTotal.toFixed(2);
+          result[`${itemPrefix}LineTotalFormatted`] = formatCurrency(item.lineTotal);
+        });
+        
+        // Create a formatted text summary for this visit (with line breaks)
+        const visitSummaryLines: string[] = [];
+        visitSummaryLines.push(`Visit ${visitIndex + 1}: ${visitDateStr || 'Date Unknown'}`);
+        visitSummaryLines.push(`Doctor: ${doctorName} (${department})`);
+        visitSummaryLines.push(`Total: ${formatCurrency(visitTotal)} | Paid: ${formatCurrency(visitPaid)} | Due: ${formatCurrency(visitDue)}`);
+        visitSummaryLines.push("");
+        visitSummaryLines.push("Items:");
+        
+        // Group items by source type for better readability
+        const itemsBySourceType = new Map<string, typeof visitItems>();
+        visitItems.forEach((item) => {
+          if (!itemsBySourceType.has(item.sourceType)) {
+            itemsBySourceType.set(item.sourceType, []);
+          }
+          itemsBySourceType.get(item.sourceType)!.push(item);
+        });
+        
+        // Add items grouped by source type
+        itemsBySourceType.forEach((items, sourceType) => {
+          visitSummaryLines.push(`  ${sourceType}:`);
+          items.forEach((item) => {
+            visitSummaryLines.push(
+              `    - ${item.description} (Qty: ${item.quantity}) @ ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.lineTotal)}`
+            );
+          });
+        });
+        
+        visitSummaryLines.push("");
+        result[`${prefix}Summary`] = visitSummaryLines.join("\n");
+      });
+      
+      // Create a complete formatted text with all visits (one by one with line breaks)
+      const allVisitsSummary: string[] = [];
+      allVisitsSummary.push("BILLING SUMMARY BY VISIT");
+      allVisitsSummary.push("=".repeat(50));
+      allVisitsSummary.push("");
+      
+      sortedVisits.forEach(([visitId, invoices], visitIndex) => {
+        const visit = invoices[0]?.Visit;
+        const visitDate = visit?.visitDate || invoices[0]?.createdAt;
+        const visitDateStr = visitDate ? visitDate.toISOString().split("T")[0] : null;
+        const doctorName = visit?.doctor?.name || "Unknown Doctor";
+        const department = visit?.department || "Unknown Department";
+        
+        allVisitsSummary.push(`VISIT ${visitIndex + 1}`);
+        allVisitsSummary.push("-".repeat(30));
+        allVisitsSummary.push(`Date: ${visitDateStr || 'Date Unknown'}`);
+        allVisitsSummary.push(`Doctor: ${doctorName}`);
+        allVisitsSummary.push(`Department: ${department}`);
+        allVisitsSummary.push("");
+        
+        let visitTotal = 0;
+        let visitPaid = 0;
+        let visitDue = 0;
+        const visitItems: Array<{
+          sourceType: string;
+          description: string;
+          quantity: number;
+          unitPrice: number;
+          lineTotal: number;
+        }> = [];
+        
+        invoices.forEach((invoice) => {
+          visitTotal += Number(invoice.grandTotal);
+          visitPaid += Number(invoice.amountPaid);
+          visitDue += Number(invoice.amountDue);
+          
+          invoice.items.forEach((item) => {
+            visitItems.push({
+              sourceType: item.sourceType,
+              description: item.description,
+              quantity: Number(item.quantity),
+              unitPrice: Number(item.unitPrice),
+              lineTotal: Number(item.lineTotal),
+            });
+          });
+        });
+        
+        allVisitsSummary.push(`Invoice Total: ${formatCurrency(visitTotal)}`);
+        allVisitsSummary.push(`Amount Paid: ${formatCurrency(visitPaid)}`);
+        allVisitsSummary.push(`Amount Due: ${formatCurrency(visitDue)}`);
+        allVisitsSummary.push("");
+        allVisitsSummary.push("Breakdown by Service Type:");
+        allVisitsSummary.push("");
+        
+        // Group items by source type
+        const itemsBySourceType = new Map<string, typeof visitItems>();
+        visitItems.forEach((item) => {
+          if (!itemsBySourceType.has(item.sourceType)) {
+            itemsBySourceType.set(item.sourceType, []);
+          }
+          itemsBySourceType.get(item.sourceType)!.push(item);
+        });
+        
+        // Add items grouped by source type (SERVICE, PHARMACY, LAB, DOCTOR_FEE)
+        const sourceTypeOrder = ['DOCTOR_FEE', 'SERVICE', 'LAB', 'PHARMACY'];
+        sourceTypeOrder.forEach((sourceType) => {
+          const items = itemsBySourceType.get(sourceType);
+          if (items && items.length > 0) {
+            const sourceTypeLabel = sourceType === 'DOCTOR_FEE' ? 'Consultation' :
+                                   sourceType === 'SERVICE' ? 'Service Charges' :
+                                   sourceType === 'LAB' ? 'Lab Tests' :
+                                   sourceType === 'PHARMACY' ? 'Pharmacy' : sourceType;
+            const typeTotal = items.reduce((sum, item) => sum + item.lineTotal, 0);
+            allVisitsSummary.push(`  ${sourceTypeLabel}: ${formatCurrency(typeTotal)}`);
+            items.forEach((item) => {
+              allVisitsSummary.push(
+                `    - ${item.description}`
+              );
+              allVisitsSummary.push(
+                `      Quantity: ${item.quantity} × ${formatCurrency(item.unitPrice)} = ${formatCurrency(item.lineTotal)}`
+              );
+            });
+            allVisitsSummary.push("");
+          }
+        });
+        
+        allVisitsSummary.push("");
+        allVisitsSummary.push("=".repeat(50));
+        allVisitsSummary.push("");
+      });
+      
+      result.allVisitsSummary = allVisitsSummary.join("\n");
+
       // NESTED DETAILED BREAKDOWN (for structured access)
       result.detailBreakdown = {
         bySourceType: spendingBySourceType.map((source) => ({
@@ -1831,7 +2345,7 @@ router.post(
           referenceNo: payment.referenceNo,
           note: payment.note,
         })),
-        allInvoices: recentInvoices.map((invoice) => ({
+        allInvoices: allInvoicesWithItems.slice(0, 10).map((invoice) => ({
           invoiceId: invoice.invoiceId,
           invoiceNo: invoice.invoiceNo,
           status: invoice.status,
@@ -1843,11 +2357,97 @@ router.post(
           amountDueFormatted: formatCurrency(Number(invoice.amountDue)),
           createdAt: invoice.createdAt.toISOString(),
           date: invoice.createdAt.toISOString().split("T")[0],
-          visitDate: invoice.Visit.visitDate.toISOString().split("T")[0],
-          department: invoice.Visit.department,
-          doctorName: invoice.Visit.doctor.name,
-          doctorId: invoice.Visit.doctor.doctorId,
+          visitDate: invoice.Visit?.visitDate ? invoice.Visit.visitDate.toISOString().split("T")[0] : null,
+          department: invoice.Visit?.department || null,
+          doctorName: invoice.Visit?.doctor?.name || null,
+          doctorId: invoice.Visit?.doctor?.doctorId || null,
         })),
+        byVisit: sortedVisits.map(([visitId, invoices], visitIndex) => {
+          const visit = invoices[0]?.Visit;
+          const visitDate = visit?.visitDate || invoices[0]?.createdAt;
+          const visitDateStr = visitDate ? visitDate.toISOString().split("T")[0] : null;
+          const doctorName = visit?.doctor?.name || "Unknown Doctor";
+          const department = visit?.department || "Unknown Department";
+          
+          let visitTotal = 0;
+          let visitPaid = 0;
+          let visitDue = 0;
+          const visitItems: Array<{
+            sourceType: string;
+            description: string;
+            quantity: number;
+            unitPrice: number;
+            lineTotal: number;
+          }> = [];
+          
+          invoices.forEach((invoice) => {
+            visitTotal += Number(invoice.grandTotal);
+            visitPaid += Number(invoice.amountPaid);
+            visitDue += Number(invoice.amountDue);
+            
+            invoice.items.forEach((item) => {
+              visitItems.push({
+                sourceType: item.sourceType,
+                description: item.description,
+                quantity: Number(item.quantity),
+                unitPrice: Number(item.unitPrice),
+                lineTotal: Number(item.lineTotal),
+              });
+            });
+          });
+          
+          // Group items by source type
+          const itemsBySourceType = new Map<string, typeof visitItems>();
+          visitItems.forEach((item) => {
+            if (!itemsBySourceType.has(item.sourceType)) {
+              itemsBySourceType.set(item.sourceType, []);
+            }
+            itemsBySourceType.get(item.sourceType)!.push(item);
+          });
+          
+          return {
+            visitNumber: visitIndex + 1,
+            visitId: visitId !== 'no-visit' ? visitId : null,
+            visitDate: visitDateStr,
+            doctorName,
+            department,
+            total: visitTotal.toFixed(2),
+            totalFormatted: formatCurrency(visitTotal),
+            paid: visitPaid.toFixed(2),
+            paidFormatted: formatCurrency(visitPaid),
+            due: visitDue.toFixed(2),
+            dueFormatted: formatCurrency(visitDue),
+            invoiceCount: invoices.length,
+            itemCount: visitItems.length,
+            items: visitItems.map((item) => ({
+              sourceType: item.sourceType,
+              description: item.description,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice.toFixed(2),
+              unitPriceFormatted: formatCurrency(item.unitPrice),
+              lineTotal: item.lineTotal.toFixed(2),
+              lineTotalFormatted: formatCurrency(item.lineTotal),
+            })),
+            itemsBySourceType: Array.from(itemsBySourceType.entries()).map(([sourceType, items]) => ({
+              sourceType,
+              sourceTypeLabel: sourceType === 'DOCTOR_FEE' ? 'Consultation' :
+                              sourceType === 'SERVICE' ? 'Service Charges' :
+                              sourceType === 'LAB' ? 'Lab Tests' :
+                              sourceType === 'PHARMACY' ? 'Pharmacy' : sourceType,
+              total: items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2),
+              totalFormatted: formatCurrency(items.reduce((sum, item) => sum + item.lineTotal, 0)),
+              itemCount: items.length,
+              items: items.map((item) => ({
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice.toFixed(2),
+                unitPriceFormatted: formatCurrency(item.unitPrice),
+                lineTotal: item.lineTotal.toFixed(2),
+                lineTotalFormatted: formatCurrency(item.lineTotal),
+              })),
+            })),
+          };
+        }),
       };
       
       res.json(result);
@@ -1867,12 +2467,89 @@ router.post(
 // 5. Lab Report Detail Agent API
 router.post(
   "/lab-reports",
-  requirePatientAuth,
-  async (req: any, res: Response, next: NextFunction) => {
+  requireDoctorOrPatientAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { patientId, startDate, endDate, testCode, testName } = req.body;
+      const { patientId, patientName, startDate, endDate, testCode, testName } = req.body;
+      const user = req.user;
       
-      if (!patientId || typeof patientId !== 'string' || patientId.trim() === '') {
+      if (!user) {
+        return res.status(401).json({ error: "Unauthorized", msg: "Failed" });
+      }
+      
+      // Determine which patientId to use
+      let targetPatientId: string | null = null;
+      
+      if (patientId) {
+        // If patientId is provided in request body
+        if (user.role === "Patient" && user.patientId !== patientId) {
+          // Patients can only access their own lab reports
+          return res.status(403).json({
+            error: "Patients can only access their own lab reports",
+            msg: "Failed",
+          });
+        }
+        // Doctors can query any patient, patients can query themselves
+        targetPatientId = patientId;
+      } else if (patientName && user.role === "Doctor") {
+        // If patientName is provided and user is a doctor, search for patient by name
+        if (!patientName.trim()) {
+        return res.status(400).json({
+            error: "patientName cannot be empty",
+          msg: "Failed",
+        });
+      }
+        
+        // Search for patient by name (case-insensitive, partial match)
+        const patients = await prisma.patient.findMany({
+          where: {
+            name: {
+              contains: patientName.trim(),
+              mode: 'insensitive',
+            },
+          },
+          select: {
+            patientId: true,
+            name: true,
+          },
+          take: 10,
+          orderBy: {
+            name: 'asc',
+          },
+        });
+        
+        if (patients.length === 0) {
+          return res.status(404).json({
+            error: `No patient found with name matching "${patientName}"`,
+            msg: "Failed",
+          });
+        }
+        
+        if (patients.length > 1) {
+          // Multiple patients found - return list for doctor to choose
+          return res.status(400).json({
+            error: "Multiple patients found with that name. Please use patientId instead.",
+            msg: "Failed",
+            matches: patients.map(p => ({
+              patientId: p.patientId,
+              name: p.name,
+            })),
+          });
+        }
+        
+        // Single patient found
+        targetPatientId = patients[0].patientId;
+      } else if (user.role === "Patient" && user.patientId) {
+        // Patient authenticated but no patientId in body - use their own
+        targetPatientId = user.patientId;
+      } else {
+        return res.status(400).json({
+          error: "patientId is required (or patientName for doctors)",
+          msg: "Failed",
+        });
+      }
+      
+      if (!targetPatientId) {
         return res.status(400).json({
           error: "Patient ID is required and must be a valid UUID",
           msg: "Failed",
@@ -1881,14 +2558,14 @@ router.post(
       
       // Validate UUID format
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(patientId.trim())) {
+      if (!uuidRegex.test(targetPatientId.trim())) {
         return res.status(400).json({
           error: "Invalid patient ID format",
           msg: "Failed",
         });
       }
       
-      const validPatientId = patientId.trim();
+      const validPatientId = targetPatientId.trim();
 
       // Validate patient exists
       const patient = await prisma.patient.findUnique({
@@ -1945,9 +2622,9 @@ router.post(
           notes: string | null;
           orderStatus: string;
           visitDate: Date;
-            doctorId: string | null;
-            doctorName: string | null;
-            department: string | null;
+          doctorId: string | null;
+          doctorName: string | null;
+          department: string | null;
         }>
         >(Prisma.sql`
           SELECT 
@@ -1966,13 +2643,15 @@ router.post(
           lr."notes",
           lo.status as "orderStatus",
           v."visitDate",
-            lo."doctorId"::text as "doctorId",
-            '' as "doctorName",
-          v.department
+            COALESCE(lo."doctorId", v."doctorId")::text as "doctorId",
+            COALESCE(d.name, dv.name, '') as "doctorName",
+            COALESCE(d.department, dv.department, v.department, '') as "department"
         FROM "LabResult" lr
         JOIN "LabOrderItem" loi ON lr."labOrderItemId" = loi."labOrderItemId"
         JOIN "LabOrder" lo ON lr."labOrderId" = lo."labOrderId"
         JOIN "Visit" v ON lo."visitId" = v."visitId"
+        LEFT JOIN "Doctor" d ON lo."doctorId" = d."doctorId"
+        LEFT JOIN "Doctor" dv ON v."doctorId" = dv."doctorId"
           WHERE lr."patientId" = ${validPatientId}::uuid
             AND lo."patientId" = ${validPatientId}::uuid
             AND v."patientId" = ${validPatientId}::uuid
@@ -2082,10 +2761,12 @@ router.post(
 
       console.log(`[Agents] Raw lab results fetched: ${labResultsRaw.length} for patient ${validPatientId}`);
       
-      // Fetch doctor names in batch if we have doctorIds
-      const doctorIds = [...new Set(labResultsRaw.map(r => r.doctorId).filter(Boolean))] as string[];
+      // Fetch doctor names in batch if we have doctorIds (fallback if not in query)
+      const doctorIds = [...new Set(labResultsRaw.map(r => r.doctorId).filter(Boolean).map(id => id?.trim()))] as string[];
       const doctorsMap = new Map<string, { name: string; department: string }>();
       
+      // Always try to fetch doctors if we have doctorIds, even if query returned names
+      // This ensures we have a fallback if the JOIN didn't work
       if (doctorIds.length > 0) {
         try {
           const doctors = await prisma.doctor.findMany({
@@ -2095,6 +2776,12 @@ router.post(
           doctors.forEach(d => {
             doctorsMap.set(d.doctorId, { name: d.name, department: d.department });
           });
+          console.log(`[Agents] Fetched ${doctors.length} doctors for ${doctorIds.length} doctorIds. DoctorIds: ${doctorIds.join(', ')}`);
+          if (doctors.length < doctorIds.length) {
+            const foundIds = new Set(doctors.map(d => d.doctorId));
+            const missingIds = doctorIds.filter(id => !foundIds.has(id));
+            console.warn(`[Agents] Missing doctors for IDs: ${missingIds.join(', ')}`);
+          }
         } catch (err) {
           console.error(`[Agents] Error fetching doctors:`, err);
         }
@@ -2109,7 +2796,27 @@ router.post(
           ? String(r.referenceHigh) 
           : null;
         
-        const doctorInfo = r.doctorId ? doctorsMap.get(r.doctorId) : null;
+        // Use doctor name from query first, fallback to lookup map
+        let doctorName = r.doctorName && r.doctorName.trim() !== '' ? r.doctorName.trim() : null;
+        let doctorDepartment = r.department && r.department.trim() !== '' ? r.department.trim() : null;
+        
+        // If still no doctor name, try lookup map
+        if (!doctorName && r.doctorId) {
+          const doctorInfo = doctorsMap.get(r.doctorId.trim());
+          if (doctorInfo) {
+            doctorName = doctorInfo.name;
+            doctorDepartment = doctorInfo.department;
+          } else {
+            // Log for debugging
+            console.log(`[Agents] Doctor not found in map for doctorId: ${r.doctorId}, doctorName from query: ${r.doctorName}`);
+          }
+        }
+        
+        // Final fallback: if we have doctorId but no name, try direct lookup
+        if (!doctorName && r.doctorId && r.doctorId.trim() !== '') {
+          // This will be handled by the batch lookup above, but log if it still fails
+          console.warn(`[Agents] Could not resolve doctor name for doctorId: ${r.doctorId}`);
+        }
         
         return {
         labResultId: r.labResultId,
@@ -2128,8 +2835,8 @@ router.post(
             visitDate: r.visitDate,
             doctor: {
               doctorId: r.doctorId || '',
-              name: doctorInfo?.name || 'Unknown',
-              department: doctorInfo?.department || r.department || '',
+              name: doctorName || 'Unknown',
+              department: doctorDepartment || '',
             },
           },
         },
@@ -2255,6 +2962,9 @@ router.post(
               ? Number(latestResultForTest.resultValueNum.toString()).toFixed(3)
               : null,
             latestResultUnit: latestResultForTest?.unit || null,
+            latestResultDoctor: latestResultForTest?.LabOrder.Visit.doctor.name || null,
+            latestResultDoctorId: latestResultForTest?.LabOrder.Visit.doctor.doctorId || null,
+            latestResultDepartment: latestResultForTest?.LabOrder.Visit.doctor.department || null,
           };
         }),
         ...breakdownByTestLegacy.map((t) => ({
@@ -2266,6 +2976,9 @@ router.post(
           latestResultValue: null,
           latestResultValueNum: null,
           latestResultUnit: null,
+          latestResultDoctor: null,
+          latestResultDoctorId: null,
+          latestResultDepartment: null,
         })),
       ].sort((a, b) => b.latestResult.getTime() - a.latestResult.getTime());
 
@@ -2398,6 +3111,15 @@ router.post(
       const uniqueTests = new Set(
         finalLabResults.map((r) => r.LabOrderItem.testCode || r.LabOrderItem.testName)
       ).size;
+      const uniqueDoctors = new Set(
+        finalLabResults.map((r) => r.LabOrder.Visit.doctor.doctorId).filter(Boolean)
+      );
+      const uniqueDoctorNames = Array.from(uniqueDoctors)
+        .map(doctorId => {
+          const result = finalLabResults.find(r => r.LabOrder.Visit.doctor.doctorId === doctorId);
+          return result?.LabOrder.Visit.doctor.name || null;
+        })
+        .filter(Boolean);
       const latestResult = finalLabResults.length > 0 ? finalLabResults[0] : null;
 
       // Date formatting helper
@@ -2412,6 +3134,8 @@ router.post(
         totalAbnormal,
         normalResults: totalResults - totalAbnormal,
         uniqueTests,
+        uniqueDoctorsCount: uniqueDoctors.size,
+        uniqueDoctorNames: uniqueDoctorNames.join(", "),
         
         // Latest Result (flat fields)
         latestResultTestName:
@@ -2442,10 +3166,6 @@ router.post(
             : latestResult?.referenceHigh
             ? Number(latestResult.referenceHigh.toString()).toFixed(3)
           : null,
-        latestResultDoctor:
-          latestResult?.LabOrder.Visit.doctor.name || null,
-        latestResultOrderDoctor:
-          latestResult?.LabOrder.Visit.doctor.name || null,
         latestResultOrderDoctorName:
           latestResult?.LabOrder.Visit.doctor.name || null,
         
@@ -2467,6 +3187,9 @@ router.post(
         result[`${prefix}LatestResultValue`] = test.latestResultValue || null;
         result[`${prefix}LatestResultValueNum`] = test.latestResultValueNum || null;
         result[`${prefix}LatestResultUnit`] = test.latestResultUnit || null;
+        result[`${prefix}LatestResultDoctor`] = test.latestResultDoctor || null;
+        result[`${prefix}LatestResultDoctorId`] = test.latestResultDoctorId || null;
+        result[`${prefix}LatestResultDepartment`] = test.latestResultDepartment || null;
       });
 
       // Add numbered abnormal breakdown (abnormal1, abnormal2, etc.)
@@ -2486,9 +3209,51 @@ router.post(
         result[`${prefix}AbnormalCount`] = Number(month.abnormalCount);
       });
 
+      // Group lab results by labOrderId and doctor to create order number mapping (before processing results)
+      // Orders are numbered per doctor (each doctor's orders start from 1, 2, 3, etc.)
+      const ordersByDoctor = new Map<string, Array<{
+        labOrderId: string;
+        visitDate: Date;
+        doctorId: string;
+      }>>();
+      
+      finalLabResults.forEach((labResult) => {
+        const orderId = labResult.LabOrder.labOrderId;
+        const doctorId = labResult.LabOrder.Visit.doctor.doctorId || 'unknown';
+        
+        if (!ordersByDoctor.has(doctorId)) {
+          ordersByDoctor.set(doctorId, []);
+        }
+        
+        const doctorOrders = ordersByDoctor.get(doctorId)!;
+        if (!doctorOrders.find(o => o.labOrderId === orderId)) {
+          doctorOrders.push({
+            labOrderId: orderId,
+            visitDate: labResult.LabOrder.Visit.visitDate,
+            doctorId: doctorId,
+          });
+        }
+      });
+      
+      // Sort orders by visit date (most recent first) for each doctor and create mapping
+      const orderIdToNumberMap = new Map<string, string>();
+      
+      ordersByDoctor.forEach((doctorOrders, doctorId) => {
+        // Sort this doctor's orders by visit date (most recent first)
+        const sortedDoctorOrders = doctorOrders.sort((a, b) => 
+          b.visitDate.getTime() - a.visitDate.getTime()
+        );
+        
+        // Number this doctor's orders starting from 1
+        sortedDoctorOrders.forEach((order, index) => {
+          orderIdToNumberMap.set(order.labOrderId, String(index + 1));
+        });
+      });
+
       // Add numbered recent abnormal results (abnormalResult1, abnormalResult2, etc.)
       recentAbnormal.slice(0, 10).forEach((resultItem, index) => {
         const prefix = `abnormalResult${index + 1}`;
+        const orderNumber = orderIdToNumberMap.get(resultItem.LabOrder.labOrderId) || null;
         result[`${prefix}TestName`] = resultItem.LabOrderItem.testName;
         result[`${prefix}TestCode`] = resultItem.LabOrderItem.testCode;
         result[`${prefix}Value`] = resultItem.resultValue;
@@ -2519,10 +3284,7 @@ router.post(
             : abnormalRefHighStr
             ? abnormalRefHighStr
           : null;
-        result[`${prefix}Doctor`] =
-          resultItem.LabOrder.Visit.doctor.name;
-        result[`${prefix}OrderDoctor`] =
-          resultItem.LabOrder.Visit.doctor.name;
+        result[`${prefix}OrderId`] = orderNumber; // Use numbered order (1, 2, 3, etc.) - per doctor
         result[`${prefix}OrderDoctorName`] =
           resultItem.LabOrder.Visit.doctor.name;
         result[`${prefix}Department`] =
@@ -2533,6 +3295,7 @@ router.post(
       // Show up to 100 results in numbered fields for better coverage
       finalLabResults.slice(0, 100).forEach((labResult, index) => {
         const prefix = `labResult${index + 1}`;
+        const orderNumber = orderIdToNumberMap.get(labResult.LabOrder.labOrderId) || null;
         result[`${prefix}TestName`] = labResult.LabOrderItem.testName;
         result[`${prefix}TestCode`] = labResult.LabOrderItem.testCode;
         result[`${prefix}Value`] = labResult.resultValue;
@@ -2567,14 +3330,61 @@ router.post(
             : refHighStr
             ? refHighStr
           : null;
-        result[`${prefix}Doctor`] = labResult.LabOrder.Visit.doctor.name;
-        result[`${prefix}OrderDoctor`] = labResult.LabOrder.Visit.doctor.name; // Explicit order doctor name
-        result[`${prefix}OrderDoctorName`] = labResult.LabOrder.Visit.doctor.name; // Alternative field name
+        result[`${prefix}OrderId`] = orderNumber; // Use numbered order (1, 2, 3, etc.) - per doctor
+        result[`${prefix}OrderDoctorName`] = labResult.LabOrder.Visit.doctor.name;
         result[`${prefix}Department`] =
           labResult.LabOrder.Visit.doctor.department;
         result[`${prefix}OrderStatus`] = labResult.LabOrder.status;
         result[`${prefix}Notes`] = labResult.notes;
       });
+
+      // Group lab results by labOrderId and create numbered order fields (order1, order2, etc.)
+      const ordersMap = new Map<string, {
+        labOrderId: string;
+        status: string;
+        visitDate: Date;
+        doctorName: string;
+        doctorId: string;
+        department: string;
+        results: typeof finalLabResults;
+      }>();
+      
+      finalLabResults.forEach((labResult) => {
+        const orderId = labResult.LabOrder.labOrderId;
+        if (!ordersMap.has(orderId)) {
+          ordersMap.set(orderId, {
+            labOrderId: orderId,
+            status: labResult.LabOrder.status,
+            visitDate: labResult.LabOrder.Visit.visitDate,
+            doctorName: labResult.LabOrder.Visit.doctor.name,
+            doctorId: labResult.LabOrder.Visit.doctor.doctorId,
+            department: labResult.LabOrder.Visit.doctor.department,
+            results: [],
+          });
+        }
+        ordersMap.get(orderId)!.results.push(labResult);
+      });
+      
+      // Sort orders by visit date (most recent first)
+      const sortedOrders = Array.from(ordersMap.values()).sort((a, b) => 
+        b.visitDate.getTime() - a.visitDate.getTime()
+      );
+      
+      // Add numbered order fields (order1, order2, etc.)
+      // Use the orderIdToNumberMap that maps to doctor-specific order numbers
+      sortedOrders.slice(0, 50).forEach((order, index) => {
+        const prefix = `order${index + 1}`;
+        const orderNumber = orderIdToNumberMap.get(order.labOrderId) || String(index + 1);
+        result[`${prefix}OrderId`] = orderNumber; // Use doctor-specific number (1, 2, 3, etc.)
+        result[`${prefix}Status`] = order.status;
+        result[`${prefix}VisitDate`] = formatDate(order.visitDate);
+        result[`${prefix}DoctorName`] = order.doctorName;
+        result[`${prefix}DoctorId`] = order.doctorId;
+        result[`${prefix}Department`] = order.department;
+        result[`${prefix}ResultsCount`] = order.results.length;
+      });
+      
+      result.totalOrders = sortedOrders.length;
 
       // NESTED DETAILED BREAKDOWN (for structured access)
       result.detailBreakdown = {
@@ -2584,6 +3394,9 @@ router.post(
           resultCount: Number(test.resultCount),
           abnormalCount: Number(test.abnormalCount),
           latestResultDate: formatDate(test.latestResult),
+          latestResultDoctor: test.latestResultDoctor || null,
+          latestResultDoctorId: test.latestResultDoctorId || null,
+          latestResultDepartment: test.latestResultDepartment || null,
         })),
         byAbnormalFlag: breakdownByAbnormal.map((item) => ({
           flag: item.abnormalFlag,
@@ -2596,36 +3409,38 @@ router.post(
           resultCount: Number(month.resultCount),
           abnormalCount: Number(month.abnormalCount),
         })),
-        recentAbnormal: recentAbnormal.map((resultItem) => ({
-          testName: resultItem.LabOrderItem.testName,
-          testCode: resultItem.LabOrderItem.testCode,
-          resultValue: resultItem.resultValue,
-          resultValueNum: resultItem.resultValueNum
-            ? Number(resultItem.resultValueNum.toString()).toFixed(3)
-            : null,
-          unit: resultItem.unit,
-          abnormalFlag: resultItem.abnormalFlag,
-          resultedAt: resultItem.resultedAt.toISOString(),
-          date: formatDate(resultItem.resultedAt),
-          referenceLow: resultItem.referenceLow
-            ? Number(resultItem.referenceLow.toString()).toFixed(3)
-            : null,
-          referenceHigh: resultItem.referenceHigh
-            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
-            : null,
-          referenceRange:
-            resultItem.referenceLow && resultItem.referenceHigh
-              ? `${Number(resultItem.referenceLow.toString()).toFixed(3)} - ${Number(resultItem.referenceHigh.toString()).toFixed(3)}`
-              : resultItem.referenceLow
+        recentAbnormal: recentAbnormal.map((resultItem) => {
+          const orderNumber = orderIdToNumberMap.get(resultItem.LabOrder.labOrderId) || null;
+          return {
+            testName: resultItem.LabOrderItem.testName,
+            testCode: resultItem.LabOrderItem.testCode,
+            resultValue: resultItem.resultValue,
+            resultValueNum: resultItem.resultValueNum
+              ? Number(resultItem.resultValueNum.toString()).toFixed(3)
+              : null,
+            unit: resultItem.unit,
+            abnormalFlag: resultItem.abnormalFlag,
+            resultedAt: resultItem.resultedAt.toISOString(),
+            date: formatDate(resultItem.resultedAt),
+            referenceLow: resultItem.referenceLow
               ? Number(resultItem.referenceLow.toString()).toFixed(3)
-              : resultItem.referenceHigh
-            ? Number(resultItem.referenceHigh.toString()).toFixed(3)
-            : null,
-          doctorName: resultItem.LabOrder.Visit.doctor.name,
-          orderDoctor: resultItem.LabOrder.Visit.doctor.name,
-          orderDoctorName: resultItem.LabOrder.Visit.doctor.name,
-          department: resultItem.LabOrder.Visit.doctor.department,
-        })),
+              : null,
+            referenceHigh: resultItem.referenceHigh
+              ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+              : null,
+            referenceRange:
+              resultItem.referenceLow && resultItem.referenceHigh
+                ? `${Number(resultItem.referenceLow.toString()).toFixed(3)} - ${Number(resultItem.referenceHigh.toString()).toFixed(3)}`
+                : resultItem.referenceLow
+                ? Number(resultItem.referenceLow.toString()).toFixed(3)
+                : resultItem.referenceHigh
+              ? Number(resultItem.referenceHigh.toString()).toFixed(3)
+              : null,
+            orderId: orderNumber, // Use numbered order (1, 2, 3, etc.) - per doctor
+            orderDoctorName: resultItem.LabOrder.Visit.doctor.name,
+            department: resultItem.LabOrder.Visit.doctor.department,
+          };
+        }),
         allResults: finalLabResults.map((labResult) => {
           // Format date and time separately
           const resultDate = new Date(labResult.resultedAt);
@@ -2656,6 +3471,8 @@ router.post(
             ? `${refHigh}${unit ? ` ${unit}` : ''}`
             : null;
           
+          const orderNumber = orderIdToNumberMap.get(labResult.LabOrder.labOrderId) || null;
+          
           return {
           labResultId: labResult.labResultId,
           testName: labResult.LabOrderItem.testName,
@@ -2675,10 +3492,9 @@ router.post(
             referenceRange: referenceRange,
             status: labResult.abnormalFlag ? `Flagged: ${labResult.abnormalFlag}` : 'Normal',
           notes: labResult.notes,
+          orderId: orderNumber, // Use numbered order (1, 2, 3, etc.) - per doctor
           orderStatus: labResult.LabOrder.status,
           visitDate: formatDate(labResult.LabOrder.Visit.visitDate),
-          doctorName: labResult.LabOrder.Visit.doctor.name,
-          orderDoctor: labResult.LabOrder.Visit.doctor.name,
           orderDoctorName: labResult.LabOrder.Visit.doctor.name,
           doctorId: labResult.LabOrder.Visit.doctor.doctorId,
           department: labResult.LabOrder.Visit.doctor.department,

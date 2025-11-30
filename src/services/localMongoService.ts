@@ -118,15 +118,15 @@ export async function insertAdminIntegrationEmbed(document: IntegrationEmbedDocu
     if (existing && existing._id) {
       // Update existing document
       const updateData: any = {
-        iframeCode: document.iframeCode,
-        contextKey: document.contextKey,
-        updatedAt: document.updatedAt,
-        // Keep original createdAt
-        createdAt: existing.createdAt || document.createdAt,
+            iframeCode: document.iframeCode,
+            contextKey: document.contextKey,
+            updatedAt: document.updatedAt,
+            // Keep original createdAt
+            createdAt: existing.createdAt || document.createdAt,
       };
       if (document.role !== undefined) {
         updateData.role = document.role;
-      }
+          }
       await collection.updateOne(
         { _id: existing._id },
         { $set: updateData }

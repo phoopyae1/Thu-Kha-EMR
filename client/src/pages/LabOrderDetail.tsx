@@ -156,7 +156,7 @@ export default function LabOrderDetailPage() {
     : undefined;
 
   return (
-    <DashboardLayout title={t('Lab order detail')} subtitle={subtitle} activeItem="patients">
+    <DashboardLayout title={t('Lab order detail')} subtitle={subtitle} activeItem="lab">
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="flex items-center justify-between">
           <Link
@@ -187,7 +187,7 @@ export default function LabOrderDetailPage() {
               <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <dt className="text-xs uppercase text-gray-500">{t('Order ID')}</dt>
-                  <dd className="text-sm text-gray-900">{order.labOrderId}</dd>
+                  <dd className="text-sm text-gray-900">{order.orderId || order.labOrderId}</dd>
                 </div>
                 <div>
                   <dt className="text-xs uppercase text-gray-500">{t('Created')}</dt>

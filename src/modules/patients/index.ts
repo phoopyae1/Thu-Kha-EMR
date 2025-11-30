@@ -181,4 +181,113 @@ router.get('/:id', requireAuth, async (req: Request, res: Response) => {
   res.json(patient);
 });
 
+// Patient Overview - Returns past visit dates and upcoming appointment dates
+router.get('/:id/overview', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id: patientId } = req.params;
+    const user = req.user;
+
+    // Security: Patients can only view their own overview
+    if (user?.role === 'Patient' && user.patientId !== patientId) {
+      return res.status(403).json({ error: 'Forbidden: You can only view your own overview' });
+    }
+
+    // Verify patient exists
+    const patient = await prisma.patient.findUnique({
+      where: { patientId },
+      select: { patientId: true, name: true },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Get past visits (visits before today)
+    const pastVisits = await prisma.visit.findMany({
+      where: {
+        patientId,
+        visitDate: { lt: today },
+      },
+      select: {
+        visitId: true,
+        visitDate: true,
+        doctor: {
+          select: {
+            name: true,
+            department: true,
+          },
+        },
+      },
+      orderBy: {
+        visitDate: 'desc',
+      },
+    });
+
+    // Get upcoming appointments (appointments from today onwards, not cancelled)
+    const upcomingAppointments = await prisma.appointment.findMany({
+      where: {
+        patientId,
+        date: { gte: today },
+        status: { not: 'Cancelled' },
+      },
+      select: {
+        appointmentId: true,
+        date: true,
+        startTimeMin: true,
+        endTimeMin: true,
+        status: true,
+        reason: true,
+        doctor: {
+          select: {
+            name: true,
+            department: true,
+          },
+        },
+      },
+      orderBy: {
+        date: 'asc',
+        startTimeMin: 'asc',
+      },
+    });
+
+    res.json({
+      patientId: patient.patientId,
+      patientName: patient.name,
+      pastVisits: pastVisits.map((visit) => ({
+        visitId: visit.visitId,
+        visitDate: visit.visitDate.toISOString().split('T')[0], // YYYY-MM-DD format
+        doctorName: visit.doctor.name,
+        department: visit.doctor.department,
+      })),
+      upcomingAppointments: upcomingAppointments.map((appointment) => {
+        const hours = Math.floor(appointment.startTimeMin / 60);
+        const minutes = appointment.startTimeMin % 60;
+        const endHours = Math.floor(appointment.endTimeMin / 60);
+        const endMinutes = appointment.endTimeMin % 60;
+        const period = hours >= 12 ? 'PM' : 'AM';
+        const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+        const endPeriod = endHours >= 12 ? 'PM' : 'AM';
+        const endDisplayHours = endHours > 12 ? endHours - 12 : endHours === 0 ? 12 : endHours;
+        
+        return {
+          appointmentId: appointment.appointmentId,
+          date: appointment.date.toISOString().split('T')[0], // YYYY-MM-DD format
+          startTime: `${displayHours}:${String(minutes).padStart(2, '0')} ${period}`,
+          endTime: `${endDisplayHours}:${String(endMinutes).padStart(2, '0')} ${endPeriod}`,
+          status: appointment.status,
+          reason: appointment.reason,
+          doctorName: appointment.doctor.name,
+          department: appointment.doctor.department,
+        };
+      }),
+    });
+  } catch (error) {
+    console.error('Error fetching patient overview:', error);
+    res.status(500).json({ error: 'Failed to fetch patient overview' });
+  }
+});
+
 export default router;

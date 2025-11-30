@@ -808,7 +808,7 @@ export default function AppointmentDetail() {
                       )}
                     </div>
                   )}
-                  {!editing ? (
+                  {!editing && appointment?.status !== 'Completed' ? (
                     <div className="flex flex-col gap-3">
                       <button
                         type="button"

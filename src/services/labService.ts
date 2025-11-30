@@ -71,7 +71,7 @@ export async function listLabOrders(filters: ListLabOrderFilters) {
     }
   }
 
-  return prisma.labOrder.findMany({
+  const orders = await prisma.labOrder.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     include: {
@@ -81,6 +81,42 @@ export async function listLabOrders(filters: ListLabOrderFilters) {
       results: { orderBy: { resultedAt: 'desc' } },
     },
   });
+
+  // Fetch patient names for all unique patient IDs
+  const uniquePatientIds = [...new Set(orders.map((o) => o.patientId))];
+  const patients = await prisma.patient.findMany({
+    where: { patientId: { in: uniquePatientIds } },
+    select: { patientId: true, name: true },
+  });
+  const patientMap = new Map(patients.map((p) => [p.patientId, p.name]));
+
+  // Group orders by doctor and assign numbered order IDs (1, 2, 3, etc. per doctor)
+  const ordersByDoctor = new Map<string, typeof orders>();
+  orders.forEach((order) => {
+    const doctorId = order.doctorId || 'unknown';
+    if (!ordersByDoctor.has(doctorId)) {
+      ordersByDoctor.set(doctorId, []);
+    }
+    ordersByDoctor.get(doctorId)!.push(order);
+  });
+
+  // Sort each doctor's orders by creation date (most recent first) and assign numbers
+  const orderIdMap = new Map<string, string>();
+  ordersByDoctor.forEach((doctorOrders, doctorId) => {
+    const sortedOrders = doctorOrders.sort((a, b) => {
+      return b.createdAt.getTime() - a.createdAt.getTime();
+    });
+    sortedOrders.forEach((order, index) => {
+      orderIdMap.set(order.labOrderId, String(index + 1));
+    });
+  });
+
+  // Add orderId and patientName fields to each order
+  return orders.map((order) => ({
+    ...order,
+    orderId: orderIdMap.get(order.labOrderId) || null,
+    patientName: patientMap.get(order.patientId) || null,
+  }));
 }
 
 export function computeAbnormal(
@@ -226,7 +262,26 @@ export async function enterLabResult(
 }
 
 export async function getLabOrderDetail(labOrderId: string) {
-  return prisma.labOrder.findUnique({
+  // First get the order to find its doctorId
+  const order = await prisma.labOrder.findUnique({
+    where: { labOrderId },
+    select: { doctorId: true },
+  });
+
+  // Get all orders for this doctor to calculate the order number
+  const doctorOrders = order?.doctorId
+    ? await prisma.labOrder.findMany({
+        where: { doctorId: order.doctorId },
+        orderBy: { createdAt: 'desc' },
+        select: { labOrderId: true, createdAt: true },
+      })
+    : [];
+
+  // Find the index of this order in the doctor's orders (1-based)
+  const orderIndex = doctorOrders.findIndex((o) => o.labOrderId === labOrderId);
+  const orderId = orderIndex >= 0 ? String(orderIndex + 1) : null;
+  
+  const orderDetail = await prisma.labOrder.findUnique({
     where: { labOrderId },
     include: {
       items: {
@@ -234,6 +289,22 @@ export async function getLabOrderDetail(labOrderId: string) {
       },
       results: { orderBy: { resultedAt: 'desc' } },
     },
+  });
+
+  if (!orderDetail) {
+    return null;
+  }
+
+  return {
+    ...orderDetail,
+    orderId,
+  };
+}
+
+export async function deleteLabOrder(labOrderId: string) {
+  // Delete the lab order (cascade will delete items and results)
+  await prisma.labOrder.delete({
+    where: { labOrderId },
   });
 }
 

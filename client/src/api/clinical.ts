@@ -122,8 +122,10 @@ export interface LabOrderItemEntry {
 
 export interface LabOrderEntry {
   labOrderId: string;
+  orderId: string | null; // Numbered order ID per doctor (1, 2, 3, etc.)
   visitId: string;
   patientId: string;
+  patientName: string | null; // Patient name
   doctorId: string;
   status: LabOrderStatus;
   priority: string | null;
@@ -183,6 +185,12 @@ export async function listLabOrders(params: {
   const query = search.toString();
   const response = await fetchJSON(`/lab-orders${query ? `?${query}` : ''}`);
   return response.data as LabOrderEntry[];
+}
+
+export async function deleteLabOrder(labOrderId: string): Promise<void> {
+  await fetchJSON(`/lab-orders/${labOrderId}`, {
+    method: 'DELETE',
+  });
 }
 
 export async function getLabOrderDetail(labOrderId: string): Promise<LabOrderEntry | null> {

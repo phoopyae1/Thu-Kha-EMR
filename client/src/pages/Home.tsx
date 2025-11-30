@@ -1632,6 +1632,16 @@ function DoctorQueueDashboard() {
         }
       }
 
+      // Automatically complete the appointment after saving visit
+      if (selected.status === 'InProgress') {
+        try {
+          await patchStatus(selected.appointmentId, { status: 'Completed' });
+        } catch (err) {
+          console.error('Failed to complete appointment:', err);
+          // Continue even if completion fails
+        }
+      }
+
       setSuccess(t('Visit saved successfully.'));
       await loadQueue();
       setSelectedId(selected.appointmentId);

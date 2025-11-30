@@ -540,8 +540,11 @@ export async function cohort(params: CohortParams): Promise<CohortResult[]> {
   return fetchJSON(`/insights/cohort?${qs.toString()}`);
 }
 
-export async function getReportSummary(): Promise<ReportSummary> {
-  return fetchJSON('/reports/summary');
+export async function getReportSummary(doctorId?: string | null): Promise<ReportSummary> {
+  const url = doctorId 
+    ? `/reports/summary?doctorId=${encodeURIComponent(doctorId)}`
+    : '/reports/summary';
+  return fetchJSON(url) as Promise<ReportSummary>;
 }
 
 export interface UserAccount {

@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
-import { getReportSummary, type ReportSummary } from '../api/client';
+import { getReportSummary, listDoctors, type ReportSummary, type Doctor } from '../api/client';
 import { useTranslation } from '../hooks/useTranslation';
+import { useAuth } from '../context/AuthProvider';
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat().format(value);
@@ -42,13 +42,55 @@ function MetricCard({ label, value, highlight = false }: MetricCardProps) {
 
 export default function Reports() {
   const { t } = useTranslation();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ITAdmin' || user?.role === 'AdminAssistant';
+  const isDoctor = user?.role === 'Doctor';
+  
   const [data, setData] = useState<ReportSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedDoctorId, setSelectedDoctorId] = useState<string>('');
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(true);
 
+  // For doctors, automatically use their doctorId
+  const effectiveDoctorId = isDoctor ? (user?.doctorId || null) : (selectedDoctorId || null);
+
+  // Load doctors list (only for admins)
+  useEffect(() => {
+    if (!isAdmin) {
+      setDoctorsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    listDoctors()
+      .then((doctorsList) => {
+        if (!cancelled) {
+          setDoctors(doctorsList);
+        }
+      })
+      .catch((err: any) => {
+        console.error('Failed to load doctors:', err);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDoctorsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  // Load report data when doctor selection changes or user changes
   useEffect(() => {
     let cancelled = false;
-    getReportSummary()
+    setLoading(true);
+    setError(null);
+    
+    getReportSummary(effectiveDoctorId)
       .then((summary) => {
         if (!cancelled) {
           setData(summary);
@@ -68,21 +110,69 @@ export default function Reports() {
     return () => {
       cancelled = true;
     };
-  }, [t]);
+  }, [effectiveDoctorId, t]);
 
   const metrics = useMemo(() => {
     if (!data) return [];
-    return [
+    const baseMetrics = [
       { label: t('Total patients'), value: data.totals.patients, highlight: true },
       { label: t('Active patients (90d)'), value: data.totals.activePatients },
       { label: t('Visits in last 30 days'), value: data.totals.visitsLast30Days },
       { label: t('Upcoming appointments (7d)'), value: data.totals.upcomingAppointments },
-      { label: t('Doctors'), value: data.totals.doctors },
     ];
-  }, [data, t]);
+    // Only show doctors count when not filtering by a specific doctor and user is admin
+    if (!effectiveDoctorId && isAdmin) {
+      baseMetrics.push({ label: t('Doctors'), value: data.totals.doctors });
+    }
+    return baseMetrics;
+  }, [data, effectiveDoctorId, isAdmin, t]);
+
+  // Get doctor name for display
+  const selectedDoctor = useMemo(() => {
+    if (!effectiveDoctorId) return null;
+    const found = doctors.find(d => d.doctorId === effectiveDoctorId);
+    if (found) return found;
+    // If doctor is viewing their own reports but not in the list, show a placeholder
+    if (isDoctor && user?.doctorId === effectiveDoctorId) {
+      return { name: user.email.split('@')[0], department: 'N/A' };
+    }
+    return null;
+  }, [effectiveDoctorId, doctors, isDoctor, user]);
 
   return (
     <DashboardLayout title={t('Reports overview')} subtitle={t('Monitor clinical and operational trends')} activeItem="reports">
+      {isAdmin && (
+        <div className="mb-6 flex items-center gap-4">
+          <label htmlFor="doctor-select" className="text-sm font-medium text-gray-700">
+            {t('Filter by doctor')}:
+          </label>
+          <select
+            id="doctor-select"
+            value={selectedDoctorId}
+            onChange={(e) => setSelectedDoctorId(e.target.value)}
+            disabled={doctorsLoading}
+            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/40 disabled:bg-gray-100 disabled:text-gray-500"
+          >
+            <option value="">{t('All doctors')}</option>
+            {doctors.map((doctor) => (
+              <option key={doctor.doctorId} value={doctor.doctorId}>
+                {doctor.name} ({doctor.department})
+              </option>
+            ))}
+          </select>
+          {selectedDoctor && (
+            <span className="text-sm text-gray-600">
+              {t('Showing reports for {name}', { name: selectedDoctor.name })}
+            </span>
+          )}
+        </div>
+      )}
+      {isDoctor && effectiveDoctorId && (
+        <div className="mb-6 text-sm text-gray-600">
+          {t('Showing your reports')}
+        </div>
+      )}
+
       {loading && <p className="text-sm text-gray-500">{t('Loading report...')}</p>}
       {error && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div>
@@ -101,46 +191,48 @@ export default function Reports() {
             </div>
           </section>
 
-          <section className="grid gap-8 lg:grid-cols-2">
-            <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-900">{t('Visits by department (90 days)')}</h2>
-              <p className="mt-1 text-sm text-gray-500">
-                {t('Highlights departments with the highest encounter volume and unique patient counts.')}
-              </p>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wide">
-                        {t('Department')}
-                      </th>
-                      <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
-                        {t('Visits')}
-                      </th>
-                      <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
-                        {t('Patients')}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.visitsByDepartment.length === 0 && (
+          <section className={`grid gap-8 ${effectiveDoctorId ? 'lg:grid-cols-1' : 'lg:grid-cols-2'}`}>
+            {!effectiveDoctorId && (
+              <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+                <h2 className="text-lg font-semibold text-gray-900">{t('Visits by department (90 days)')}</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  {t('Highlights departments with the highest encounter volume and unique patient counts.')}
+                </p>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 text-sm">
+                    <thead className="bg-gray-50">
                       <tr>
-                        <td colSpan={3} className="px-4 py-6 text-center text-gray-500">
-                          {t('No visit data available.')}
-                        </td>
+                        <th scope="col" className="px-4 py-3 text-left font-medium text-gray-500 uppercase tracking-wide">
+                          {t('Department')}
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
+                          {t('Visits')}
+                        </th>
+                        <th scope="col" className="px-4 py-3 text-right font-medium text-gray-500 uppercase tracking-wide">
+                          {t('Patients')}
+                        </th>
                       </tr>
-                    )}
-                    {data.visitsByDepartment.map((row) => (
-                      <tr key={row.department}>
-                        <td className="px-4 py-2 font-medium text-gray-900">{row.department || t('Unassigned')}</td>
-                        <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.visitCount)}</td>
-                        <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.patientCount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {data.visitsByDepartment.length === 0 && (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-6 text-center text-gray-500">
+                            {t('No visit data available.')}
+                          </td>
+                        </tr>
+                      )}
+                      {data.visitsByDepartment.map((row) => (
+                        <tr key={row.department}>
+                          <td className="px-4 py-2 font-medium text-gray-900">{row.department || t('Unassigned')}</td>
+                          <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.visitCount)}</td>
+                          <td className="px-4 py-2 text-right text-gray-700">{formatNumber(row.patientCount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
               <h2 className="text-lg font-semibold text-gray-900">{t('Top diagnoses')}</h2>
@@ -257,19 +349,6 @@ export default function Reports() {
                     ))}
                   </tbody>
                 </table>
-              </div>
-
-              <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50 p-4">
-                <h3 className="text-sm font-semibold text-blue-800">{t('Need deeper analysis?')}</h3>
-                <p className="mt-1 text-sm text-blue-700">
-                  {t('Run a cohort query to explore patients who match specific lab criteria.')}
-                </p>
-                <Link
-                  to="/cohort"
-                  className="mt-3 inline-flex items-center justify-center rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-500"
-                >
-                  {t('Open cohort explorer')}
-                </Link>
               </div>
             </div>
           </section>

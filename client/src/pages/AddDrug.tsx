@@ -157,11 +157,11 @@ export default function AddDrug() {
   const scanWarnings = invoiceResult?.warnings ?? [];
 
   function formatCurrency(amount: number) {
-    const currency = invoiceMetadata?.currency ?? 'SGD';
+    // Format as USD to show $ sign, but currency is SGD
     try {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount);
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     } catch {
-      return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'SGD' }).format(amount);
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
     }
   }
 

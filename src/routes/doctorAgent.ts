@@ -15,6 +15,31 @@ const MedicationAgentSchema = z.object({
   doctorId: z.string().uuid(),
 });
 
+// Validation schema for patient overview
+const PatientOverviewSchema = z.object({
+  doctorId: z.string().uuid(),
+});
+
+// Validation schema for doctor agent lab order (uses patientName, date, time instead of visitId)
+const DoctorAgentLabOrderSchema = z.object({
+  doctorId: z.string().uuid(),
+  patientName: z.string().min(1),
+  date: z.string(), // Date string (YYYY-MM-DD format)
+  startTime: z.string(), // Time string: 24-hour format (HH:MM, e.g., "16:00") or 12-hour format with AM/PM (e.g., "4:00 PM", "4:00PM", "4:00 AM", "4:00AM")
+  priority: z.string().optional(),
+  notes: z.string().max(500).optional(),
+  items: z
+    .array(
+      z.object({
+        testCode: z.string().min(1),
+        testName: z.string().min(1),
+        specimen: z.string().optional(),
+        notes: z.string().max(300).optional(),
+      }),
+    )
+    .min(1),
+});
+
 // Patient Record Agent API - Returns patient record with visit information, BMI, SpO2, etc.
 router.post(
   "/patient-record",
@@ -493,17 +518,8 @@ router.post(
         });
       }
 
-      // Get doctorId from authenticated user
-      const doctorId = user.doctorId;
-      if (!doctorId) {
-        return res.status(403).json({
-          error: "User is not linked to a doctor profile",
-          msg: "Failed",
-        });
-      }
-
       // Validate request body
-      const validationResult = CreateLabOrderSchema.safeParse(req.body);
+      const validationResult = DoctorAgentLabOrderSchema.safeParse(req.body);
       if (!validationResult.success) {
         return res.status(400).json({
           error: "Invalid request body",
@@ -514,19 +530,281 @@ router.post(
 
       const payload = validationResult.data;
 
-      // Verify visit exists and belongs to the doctor
-      const visit = await prisma.visit.findUnique({
-        where: { visitId: payload.visitId },
-        select: { visitId: true, patientId: true, doctorId: true },
+      // Use doctorId from request body
+      const doctorId = payload.doctorId;
+
+      // Verify the doctorId exists and is valid
+      const doctor = await prisma.doctor.findUnique({
+        where: { doctorId },
+        select: { doctorId: true, name: true },
       });
 
-      if (!visit) {
+      if (!doctor) {
         return res.status(404).json({
-          error: "Visit not found",
+          error: "Doctor not found",
           msg: "Failed",
         });
       }
 
+      // Search for patient by name
+      const patients = await prisma.patient.findMany({
+        where: {
+          name: {
+            contains: payload.patientName.trim(),
+            mode: 'insensitive',
+          },
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+        take: 10,
+        orderBy: {
+          name: 'asc',
+        },
+      });
+
+      if (patients.length === 0) {
+        return res.status(404).json({
+          error: `No patient found with name matching "${payload.patientName}"`,
+          msg: "Failed",
+        });
+      }
+
+      if (patients.length > 1) {
+        return res.status(400).json({
+          error: "Multiple patients found with that name. Please provide a more specific patient name.",
+          msg: "Failed",
+          matches: patients.map(p => ({
+            patientId: p.patientId,
+            name: p.name,
+          })),
+        });
+      }
+
+      const patient = patients[0];
+
+      // Parse date and time
+      const visitDate = toDateOnly(payload.date);
+      let startTimeMin: number;
+      try {
+        startTimeMin = toMinutes(payload.startTime);
+      } catch (error) {
+        return res.status(400).json({
+          error: `Invalid time format: ${payload.startTime}. Please use 24-hour format (HH:MM, e.g., "16:00") or 12-hour format with AM/PM (e.g., "4:00 PM", "4:00PM", "4:00 AM", "4:00AM")`,
+          msg: "Failed",
+        });
+      }
+
+      // Create date range for the day (appointment.date is DateTime, so we need to query the entire day)
+      // visitDate is already a Date object with time set to 00:00:00 UTC from toDateOnly
+      const startOfDay = new Date(visitDate);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(visitDate);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      
+      // Also create a date-only version for visit lookup (visitDate is stored as date-only in DB)
+      const visitDateOnly = new Date(visitDate);
+      visitDateOnly.setUTCHours(0, 0, 0, 0);
+
+      // Find visit that matches patient, doctor, date, and time
+      // First, find appointments for this patient, doctor, and date
+      let appointments = await prisma.appointment.findMany({
+        where: {
+          patientId: patient.patientId,
+          doctorId: doctorId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+          startTimeMin: startTimeMin,
+          status: {
+            not: 'Cancelled',
+          },
+        },
+        select: {
+          appointmentId: true,
+          startTimeMin: true,
+          date: true,
+          status: true,
+        },
+      });
+
+      // If no appointment found and time is ambiguous (less than 12 hours and no AM/PM in input),
+      // try the PM version (add 12 hours)
+      if (appointments.length === 0 && !payload.startTime.toUpperCase().includes('AM') && !payload.startTime.toUpperCase().includes('PM')) {
+        const hours = Math.floor(startTimeMin / 60);
+        if (hours < 12) {
+          // Try PM version (add 12 hours)
+          const pmTimeMin = startTimeMin + 12 * 60;
+          appointments = await prisma.appointment.findMany({
+            where: {
+              patientId: patient.patientId,
+              doctorId: doctorId,
+              date: {
+                gte: startOfDay,
+                lte: endOfDay,
+              },
+              startTimeMin: pmTimeMin,
+              status: {
+                not: 'Cancelled',
+              },
+            },
+            select: {
+              appointmentId: true,
+              startTimeMin: true,
+              date: true,
+              status: true,
+            },
+          });
+          // Update startTimeMin to the PM version if found
+          if (appointments.length > 0) {
+            startTimeMin = pmTimeMin;
+          }
+        }
+      }
+
+      // Debug: Log what we found
+      console.log(`[lab-order] Looking for appointment: patient=${patient.patientId}, doctor=${doctorId}, date=${payload.date}, time=${payload.startTime} (${startTimeMin} minutes)`);
+      console.log(`[lab-order] Found ${appointments.length} appointments matching criteria`);
+
+      // Find visit linked to the appointment or matching the criteria
+      // visitDate is stored as date-only in DB, so we need to compare just the date part
+      let visit = await prisma.visit.findFirst({
+        where: {
+          patientId: patient.patientId,
+          doctorId: doctorId,
+          visitDate: visitDateOnly,
+        },
+        select: {
+          visitId: true,
+          patientId: true,
+          doctorId: true,
+          visitDate: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      // If no visit found but appointment exists, create a visit
+      if (!visit && appointments.length > 0) {
+        const appointment = appointments[0];
+        // Get doctor info for department
+        const doctorInfo = await prisma.doctor.findUnique({
+          where: { doctorId },
+          select: { department: true },
+        });
+
+        if (!doctorInfo) {
+          return res.status(404).json({
+            error: "Doctor not found",
+            msg: "Failed",
+          });
+        }
+
+        // Create a new visit for this appointment
+        visit = await prisma.visit.create({
+          data: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            visitDate: visitDate,
+            department: doctorInfo.department,
+            reason: null,
+          },
+          select: {
+            visitId: true,
+            patientId: true,
+            doctorId: true,
+            visitDate: true,
+          },
+        });
+      }
+
+      if (!visit) {
+        // Check if appointment exists but was cancelled or doesn't match exactly
+        const allAppointments = await prisma.appointment.findMany({
+          where: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            date: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
+          },
+          select: {
+            status: true,
+            startTimeMin: true,
+            date: true,
+          },
+        });
+
+        console.log(`[lab-order] All appointments for patient ${patient.patientId}, doctor ${doctorId} on ${payload.date}:`, allAppointments.map(apt => ({
+          status: apt.status,
+          startTimeMin: apt.startTimeMin,
+          time: `${Math.floor(apt.startTimeMin / 60)}:${String(apt.startTimeMin % 60).padStart(2, '0')}`,
+        })));
+
+        const exactMatch = allAppointments.find(apt => apt.startTimeMin === startTimeMin);
+        const cancelledMatch = exactMatch && exactMatch.status === 'Cancelled';
+
+        if (cancelledMatch) {
+          return res.status(400).json({
+            error: `Appointment for patient "${patient.name}" on ${payload.date} at ${payload.startTime} is cancelled. Cannot create lab order.`,
+            msg: "Failed",
+          });
+        }
+
+        if (allAppointments.length > 0) {
+          // Appointment exists but time doesn't match exactly
+          const times = allAppointments.map(apt => {
+            const hours = Math.floor(apt.startTimeMin / 60);
+            const minutes = apt.startTimeMin % 60;
+            const period = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+            return `${displayHours}:${String(minutes).padStart(2, '0')} ${period}`;
+          }).join(', ');
+          return res.status(400).json({
+            error: `Appointment found for patient "${patient.name}" on ${payload.date}, but time ${payload.startTime} (parsed as ${startTimeMin} minutes) doesn't match. Available times: ${times}. Please use 24-hour format (HH:MM) or 12-hour format with AM/PM (e.g., "4:00 PM" or "16:00").`,
+            msg: "Failed",
+          });
+        }
+
+        // Check if there are any appointments for this patient with this doctor on any date
+        const anyAppointments = await prisma.appointment.findMany({
+          where: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            status: {
+              not: 'Cancelled',
+            },
+          },
+          select: {
+            date: true,
+            startTimeMin: true,
+            status: true,
+          },
+          take: 5,
+          orderBy: {
+            date: 'desc',
+          },
+        });
+
+        if (anyAppointments.length > 0) {
+          const recentDates = [...new Set(anyAppointments.map(apt => apt.date.toISOString().split('T')[0]))].slice(0, 3);
+          return res.status(404).json({
+            error: `No appointment found for patient "${patient.name}" on ${payload.date} at ${payload.startTime} with this doctor. Recent appointment dates: ${recentDates.join(', ')}. Please check the date and time. If using time without AM/PM, use 24-hour format (e.g., "16:00" for 4:00 PM) or include AM/PM (e.g., "4:00 PM").`,
+            msg: "Failed",
+          });
+        }
+
+        return res.status(404).json({
+          error: `No appointment or visit found for patient "${patient.name}" on ${payload.date} at ${payload.startTime} with this doctor. Please ensure the appointment exists and is not cancelled. If using time without AM/PM, use 24-hour format (e.g., "16:00" for 4:00 PM) or include AM/PM (e.g., "4:00 PM").`,
+          msg: "Failed",
+        });
+      }
+
+      // Verify visit belongs to the doctor
       if (visit.doctorId !== doctorId) {
         return res.status(403).json({
           error: "Visit does not belong to this doctor",
@@ -534,21 +812,23 @@ router.post(
         });
       }
 
-      // Verify patientId matches visit
-      if (visit.patientId !== payload.patientId) {
-        return res.status(400).json({
-          error: "Patient ID does not match the visit",
-          msg: "Failed",
-        });
-      }
+      // Create lab order payload with visitId and patientId
+      const labOrderPayload = {
+        visitId: visit.visitId,
+        patientId: patient.patientId,
+        priority: payload.priority,
+        notes: payload.notes,
+        items: payload.items,
+      };
 
       // Create lab order using the lab service
-      const labOrder = await labService.createLabOrder(doctorId, payload);
+      const labOrder = await labService.createLabOrder(doctorId, labOrderPayload);
 
       res.status(201).json({
         labOrderId: labOrder.labOrderId,
         visitId: labOrder.visitId,
         patientId: labOrder.patientId,
+        patientName: patient.name,
         doctorId: labOrder.doctorId,
         status: labOrder.status,
         priority: labOrder.priority,
@@ -1337,7 +1617,7 @@ router.post(
 
           // Use doctorId from request body if provided, otherwise use authenticated doctor's ID
           const visitDoctorId = payload.doctorId || doctorId;
-          
+
           // Get doctor's department from database
           const doctor = await tx.doctor.findUnique({
             where: { doctorId: visitDoctorId },
@@ -1838,6 +2118,170 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to create clinical documentation",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Patient Overview API - Returns past visit dates and upcoming appointment dates
+router.post(
+  "/patient-overview",
+  requireAuth,
+  requireRole("Doctor"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = PatientOverviewSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { doctorId } = validationResult.data;
+
+      // Verify the doctorId exists
+      const doctor = await prisma.doctor.findUnique({
+        where: { doctorId },
+        select: { doctorId: true, name: true },
+      });
+
+      if (!doctor) {
+        return res.status(404).json({
+          error: "Doctor not found",
+          msg: "Failed",
+        });
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Get all visits for this doctor
+      const allVisits = await prisma.visit.findMany({
+        where: {
+          doctorId,
+        },
+        select: {
+          visitId: true,
+          visitDate: true,
+          patientId: true,
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: {
+          visitDate: 'desc',
+        },
+      });
+
+      // Get all appointments for this doctor (not cancelled)
+      const allAppointments = await prisma.appointment.findMany({
+        where: {
+          doctorId,
+          status: { not: 'Cancelled' },
+        },
+        select: {
+          appointmentId: true,
+          date: true,
+          startTimeMin: true,
+          endTimeMin: true,
+          status: true,
+          reason: true,
+          patientId: true,
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+            },
+          },
+        },
+        orderBy: [
+          { date: 'asc' },
+          { startTimeMin: 'asc' },
+        ],
+      });
+
+      // Group visits and appointments by patient
+      const patientMap = new Map<string, {
+        patientId: string;
+        patientName: string;
+        visitDates: string[];
+        appointmentDates: string[];
+      }>();
+
+      // Process visits
+      allVisits.forEach((visit) => {
+        const patientId = visit.patientId;
+        if (!patientMap.has(patientId)) {
+          patientMap.set(patientId, {
+            patientId,
+            patientName: visit.patient.name,
+            visitDates: [],
+            appointmentDates: [],
+          });
+        }
+        const visitDate = visit.visitDate.toISOString().split('T')[0];
+        const patientData = patientMap.get(patientId)!;
+        if (!patientData.visitDates.includes(visitDate)) {
+          patientData.visitDates.push(visitDate);
+        }
+      });
+
+      // Process appointments
+      allAppointments.forEach((appointment) => {
+        const patientId = appointment.patientId;
+        if (!patientMap.has(patientId)) {
+          patientMap.set(patientId, {
+            patientId,
+            patientName: appointment.patient.name,
+            visitDates: [],
+            appointmentDates: [],
+          });
+        }
+        const appointmentDate = appointment.date.toISOString().split('T')[0];
+        const patientData = patientMap.get(patientId)!;
+        if (!patientData.appointmentDates.includes(appointmentDate)) {
+          patientData.appointmentDates.push(appointmentDate);
+        }
+      });
+
+      // Convert map to array and sort by patient name
+      const patients = Array.from(patientMap.values()).sort((a, b) => 
+        a.patientName.localeCompare(b.patientName)
+      );
+
+      res.json({
+        doctorId: doctor.doctorId,
+        doctorName: doctor.name,
+        patients: patients.map((patient) => ({
+          patientId: patient.patientId,
+          patientName: patient.patientName,
+          visitDates: patient.visitDates.sort().reverse(), // Most recent first
+          appointmentDates: patient.appointmentDates.sort(), // Upcoming first
+        })),
+        msg: "Success",
+      });
+    } catch (error) {
+      console.error("Doctor Agent Patient Overview Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch patient overview",
         msg: "Failed",
       });
     }

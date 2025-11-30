@@ -821,9 +821,10 @@ function formatMinutes(minutes: number) {
 }
 
 function formatCurrency(amount: number) {
+  // Format as USD to show $ sign, but currency is SGD
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "SGD",
+    currency: "USD",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -3675,7 +3676,7 @@ function MedicationsSection({
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
-            {t("Medication orders")}
+            {t("Self Medication orders")}
           </h3>
           <PharmacyIcon className="h-5 w-5 text-emerald-600" />
         </div>
@@ -3838,18 +3839,18 @@ function MedicationsSection({
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
-            {t("Past Medications (Visit History)")}
+            {t("Doctor Prescribed Medications")}
           </h3>
           <PharmacyIcon className="h-5 w-5 text-slate-400" />
         </div>
         <p className="mt-2 text-sm text-slate-500">
           {t(
-            "Medications from previous visits. For active prescriptions, see above."
+            "Medications prescribed by your doctor. For active prescriptions, see above."
           )}
         </p>
         {medications.length === 0 ? (
           <p className="mt-4 text-sm text-slate-500">
-            {t("No past medications recorded.")}
+            {t("No doctor prescribed medications recorded.")}
           </p>
         ) : (
           <ul className="mt-4 space-y-3 text-sm text-slate-600">

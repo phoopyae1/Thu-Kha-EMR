@@ -32,7 +32,7 @@ export async function addProblem(userId: string, payload: CreateProblemInput): P
       const { recordAtenxionTransactionForDoctor } = await import('./atenxion.js');
       await recordAtenxionTransactionForDoctor(user.doctorId);
     } else {
-      const { recordAtenxionTransaction } = await import('./atenxion.js');
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
       await recordAtenxionTransaction(userId);
     }
     console.log('Atenxion transaction recorded for problem creation:', problem.problemId);

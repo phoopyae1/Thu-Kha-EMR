@@ -67,7 +67,7 @@ export async function createVitals(userId: string, payload: CreateVitalsInput): 
       const { recordAtenxionTransactionForDoctor } = await import('./atenxion.js');
       await recordAtenxionTransactionForDoctor(visit.doctorId);
     } else {
-      const { recordAtenxionTransaction } = await import('./atenxion.js');
+    const { recordAtenxionTransaction } = await import('./atenxion.js');
       await recordAtenxionTransaction(userId);
     }
     console.log('Atenxion transaction recorded for vitals creation:', vitals.vitalsId);
