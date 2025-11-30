@@ -21,8 +21,14 @@ function formatMoney(value: string) {
   if (Number.isNaN(numeric)) {
     return value;
   }
+  // Display exact value without any rounding or truncation
   // Format as USD to show $ sign, but currency is SGD
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numeric);
+  return new Intl.NumberFormat('en-US', { 
+    style: 'currency', 
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
+  }).format(numeric);
 }
 
 export default function PosList() {

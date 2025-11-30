@@ -54,8 +54,34 @@ function formatMoney(value: string) {
   if (Number.isNaN(numeric)) {
     return value;
   }
+  // Display exact value without any rounding or truncation
   // Format as USD to show $ sign, but currency is SGD
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(numeric);
+  return new Intl.NumberFormat('en-US', { 
+    style: 'currency', 
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
+  }).format(numeric);
+}
+
+function parseErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    if ('response' in error && error.response && typeof error.response === 'object') {
+      const response = error.response as any;
+      if (response.data && typeof response.data === 'object') {
+        if (response.data.error) {
+          return String(response.data.error);
+        }
+        if (response.data.details && Array.isArray(response.data.details)) {
+          return response.data.details.map((d: any) => d.message || JSON.stringify(d)).join(', ');
+        }
+      }
+    }
+    if ('message' in error) {
+      return String(error.message);
+    }
+  }
+  return 'An error occurred';
 }
 
 export default function VisitBilling() {
@@ -337,19 +363,70 @@ export default function VisitBilling() {
     setIsAddingItem(true);
 
     try {
+      // Normalize monetary values to ensure they match the validation pattern
+      // The regex requires: /^-?\d+(\.\d{1,})?$/ (at least one digit, optional decimal with at least one digit after)
+      // This function handles currency-formatted input like "$62,698.00" or "62,698.00" or "62698.00"
+      const normalizeMonetaryValue = (value: string): string => {
+        if (!value || value.trim() === '') return '0';
+        const trimmed = value.trim();
+        // Remove currency symbols ($, €, £, etc.) and commas
+        const cleaned = trimmed.replace(/[$€£¥,\s]/g, '');
+        // Parse as float to handle various formats, then convert back to string
+        const numValue = Number.parseFloat(cleaned);
+        if (isNaN(numValue)) {
+          return '0';
+        }
+        // Convert to string, ensuring it matches the regex pattern
+        // If it's a whole number, return as-is (e.g., "100")
+        // If it has decimals, ensure at least one digit after decimal point
+        const strValue = numValue.toString();
+        // If it's a whole number, return it
+        if (Number.isInteger(numValue)) {
+          return strValue;
+        }
+        // If it has decimals, ensure at least one digit after decimal point
+        // The toString() should already handle this, but let's be explicit
+        return strValue;
+      };
+
+      const normalizedUnitPrice = normalizeMonetaryValue(unitPrice);
+      const normalizedDiscount = discount && discount !== '0' ? normalizeMonetaryValue(discount) : undefined;
+      const normalizedTax = tax && tax !== '0' ? normalizeMonetaryValue(tax) : undefined;
+
+      // Validate that values match the expected pattern: /^-?\d+(\.\d{1,})?$/
+      const monetaryPattern = /^-?\d+(\.\d{1,})?$/;
+      
+      if (!monetaryPattern.test(normalizedUnitPrice)) {
+        setItemError(`Invalid unit price format: "${unitPrice}". Please enter a valid number (e.g., 100 or 100.00).`);
+        setIsAddingItem(false);
+        return;
+      }
+
+      if (normalizedDiscount && !monetaryPattern.test(normalizedDiscount)) {
+        setItemError(`Invalid discount format: "${discount}". Please enter a valid number (e.g., 10 or 10.00).`);
+        setIsAddingItem(false);
+        return;
+      }
+
+      if (normalizedTax && !monetaryPattern.test(normalizedTax)) {
+        setItemError(`Invalid tax format: "${tax}". Please enter a valid number (e.g., 5 or 5.00).`);
+        setIsAddingItem(false);
+        return;
+      }
+
       const payload: Record<string, unknown> = {
         sourceType: itemDraft.sourceType,
         description,
         quantity,
-        unitPrice,
+        unitPrice: normalizedUnitPrice,
       };
 
-      if (discount && discount !== '0') {
-        payload.discountAmt = discount;
+      if (normalizedDiscount && normalizedDiscount !== '0') {
+        payload.discountAmt = normalizedDiscount;
       }
 
-      if (tax && tax !== '0') {
-        payload.taxAmt = tax;
+      if (normalizedTax && normalizedTax !== '0') {
+        payload.taxAmt = normalizedTax;
       }
 
       await fetchJSON(`/billing/invoices/${invoice.invoiceId}/items`, {
@@ -368,8 +445,9 @@ export default function VisitBilling() {
       });
       await refreshInvoice();
     } catch (err) {
-      console.error(err);
-      setItemError('Unable to add invoice item right now.');
+      console.error('Error adding invoice item:', err);
+      const errorMessage = parseErrorMessage(err);
+      setItemError(errorMessage || 'Unable to add invoice item right now.');
     } finally {
       setIsAddingItem(false);
     }
@@ -965,3 +1043,4 @@ export default function VisitBilling() {
     </DashboardLayout>
   );
 }
+

@@ -547,8 +547,8 @@ function PaymentReceiptModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
-      <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6">
+      <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl flex flex-col">
+        <div className="border-b border-slate-200 bg-slate-50 px-8 py-6 flex-shrink-0">
           <div className="flex items-center justify-end gap-2 mb-4">
             <button
               type="button"
@@ -600,7 +600,7 @@ function PaymentReceiptModal({
           </div>
         </div>
 
-        <div className="px-8 py-6 text-sm text-slate-600">
+        <div className="px-8 py-6 text-sm text-slate-600 overflow-y-auto flex-1">
           {patient ? (
             <div className="grid gap-1 text-sm text-slate-600">
               <p className="text-base font-semibold text-slate-900">
@@ -822,11 +822,12 @@ function formatMinutes(minutes: number) {
 
 function formatCurrency(amount: number) {
   // Format as USD to show $ sign, but currency is SGD
+  // Display exact value without any rounding or truncation
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
   }).format(amount);
 }
 
@@ -3676,7 +3677,7 @@ function MedicationsSection({
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
-            {t("Self Medication orders")}
+            {t("Self-Medication orders")}
           </h3>
           <PharmacyIcon className="h-5 w-5 text-emerald-600" />
         </div>
@@ -3839,7 +3840,7 @@ function MedicationsSection({
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold text-slate-900">
-            {t("Doctor Prescribed Medications")}
+            {t("Doctor-Prescribed Medications")}
           </h3>
           <PharmacyIcon className="h-5 w-5 text-slate-400" />
         </div>

@@ -157,11 +157,22 @@ export default function AddDrug() {
   const scanWarnings = invoiceResult?.warnings ?? [];
 
   function formatCurrency(amount: number) {
+    // Display exact value without any rounding or truncation
     // Format as USD to show $ sign, but currency is SGD
     try {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+      return new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
+      }).format(amount);
     } catch {
-      return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+      return new Intl.NumberFormat('en-US', { 
+        style: 'currency', 
+        currency: 'USD',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
+      }).format(amount);
     }
   }
 
