@@ -90,7 +90,8 @@ export default function DashboardLayout({
       return user?.role === 'ITAdmin';
     }
     if (item.key === 'billing') {
-      return user && ['Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'].includes(user.role);
+      // Commented out 'Doctor' - doctors should not have access to billing
+      return user && ['Cashier', 'ITAdmin', 'Pharmacist'].includes(user.role);
     }
     if (item.key === 'pharmacy') {
       return (

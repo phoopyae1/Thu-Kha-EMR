@@ -69,7 +69,8 @@ router.use(requireAuth);
 
 router.post(
   '/invoices',
-  requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
   validate({ body: CreateInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -84,7 +85,8 @@ router.post(
 
 router.get(
   '/invoices',
-  requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const parsed = ListInvoicesQuerySchema.safeParse(req.query);
@@ -120,7 +122,8 @@ router.get(
 
 router.get(
   '/invoices/:invoiceId',
-  requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const invoice = await prisma.invoice.findUnique({
@@ -144,7 +147,8 @@ router.get(
 
 router.patch(
   '/invoices/:invoiceId/items',
-  requireRole('Cashier', 'ITAdmin', 'Doctor'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin'),
   validate({ body: ModifyInvoiceItemsSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -178,7 +182,8 @@ router.patch(
 
 router.delete(
   '/items/:itemId',
-  requireRole('Cashier', 'ITAdmin', 'Doctor'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       await removeInvoiceItem(req.params.itemId);
@@ -191,7 +196,8 @@ router.delete(
 
 router.post(
   '/invoices/:invoiceId/payments',
-  requireRole('Cashier', 'ITAdmin', 'Doctor'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin'),
   validate({ body: PostPaymentSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -206,7 +212,8 @@ router.post(
 
 router.post(
   '/invoices/:invoiceId/void',
-  requireRole('Cashier', 'ITAdmin', 'Doctor', 'AdminAssistant'),
+  // Commented out 'Doctor' - doctors should not have access to billing
+  requireRole('Cashier', 'ITAdmin', 'AdminAssistant'),
   validate({ body: VoidInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -249,7 +256,8 @@ router.delete(
 
 router.get(
   '/services',
-  requireRole('ITAdmin', 'Cashier', 'Doctor', 'Pharmacist'),
+  // Commented out 'Doctor' - doctors should not have access to billing services
+  requireRole('ITAdmin', 'Cashier', 'Pharmacist'),
   async (_req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const services = await prisma.serviceCatalog.findMany({
@@ -352,7 +360,8 @@ router.post(
 
 router.get(
   '/invoices/:invoiceId/receipt',
-  requireRole('Cashier', 'ITAdmin', 'Doctor', 'Pharmacist'),
+  // Commented out 'Doctor' - doctors should not have access to billing receipts
+  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const invoice = await prisma.invoice.findUnique({

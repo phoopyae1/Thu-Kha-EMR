@@ -533,6 +533,22 @@ router.post(
       // Use doctorId from request body
       const doctorId = payload.doctorId;
 
+      // For doctors, verify the doctorId in the request matches their own doctorId
+      if (user.role === 'Doctor') {
+        if (!user.doctorId) {
+          return res.status(403).json({
+            error: 'Doctor account is not properly linked to a doctor profile',
+            msg: 'Failed',
+          });
+        }
+        if (String(doctorId) !== String(user.doctorId)) {
+          return res.status(403).json({
+            error: 'You can only create lab orders for your own doctor profile',
+            msg: 'Failed',
+          });
+        }
+      }
+
       // Verify the doctorId exists and is valid
       const doctor = await prisma.doctor.findUnique({
         where: { doctorId },

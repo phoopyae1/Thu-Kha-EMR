@@ -195,18 +195,20 @@ function App() {
           </RouteGuard>
         }
       />
+      {/* Commented out 'Doctor' - doctors should not have access to billing */}
       <Route
         path="/admin/:adminId/billing/workspace"
         element={
-          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Doctor', 'Pharmacist']}>
+          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Pharmacist']}>
             <BillingWorkspace />
           </RouteGuard>
         }
       />
+      {/* Commented out 'Doctor' - doctors should not have access to billing */}
       <Route
         path="/admin/:adminId/billing/visit/:visitId"
         element={
-          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Doctor', 'Pharmacist']}>
+          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Pharmacist']}>
             <VisitBilling />
           </RouteGuard>
         }

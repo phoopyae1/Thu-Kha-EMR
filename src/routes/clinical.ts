@@ -1,6 +1,9 @@
 import { Router, type Response, type NextFunction } from 'express';
 import { requireAuth, requireRole, type AuthRequest } from '../modules/auth/index.js';
 import { validate } from '../middleware/validate.js';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 import {
   CreateLabOrderSchema,
   CreateProblemSchema,
@@ -108,8 +111,29 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
-      const data = await labs.createLabOrder(user.userId, req.body);
-      res.json(data);
+      // For doctors, use their doctorId; for ITAdmin, use the doctorId from the request body if available
+      if (user.role === 'Doctor') {
+        if (!user.doctorId) {
+          return res.status(403).json({ 
+            error: 'Doctor account is not properly linked to a doctor profile',
+            msg: 'Failed' 
+          });
+        }
+        const data = await labs.createLabOrder(user.doctorId, req.body);
+        res.json(data);
+      } else {
+        // ITAdmin can create lab orders, but need to provide doctorId in the request body
+        // This endpoint is mainly for backward compatibility; new orders should use /doctor-agent/lab-order
+        const body = req.body as { doctorId?: string };
+        if (!body.doctorId) {
+          return res.status(400).json({ 
+            error: 'doctorId is required in request body for ITAdmin',
+            msg: 'Failed' 
+          });
+        }
+        const data = await labs.createLabOrder(body.doctorId, req.body);
+        res.json(data);
+      }
     } catch (error) {
       next(error);
     }
@@ -122,6 +146,17 @@ router.get(
   requireRole('LabTech', 'Doctor', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
+      const user = req.user;
+      // If user is a Doctor, automatically filter by their doctorId
+      // ITAdmin and LabTech can see all orders
+      // IMPORTANT: Doctors can ONLY see their own lab orders
+      if (user?.role === 'Doctor' && !user?.doctorId) {
+        return res.status(403).json({ 
+          error: 'Doctor account is not properly linked to a doctor profile',
+          msg: 'Failed' 
+        });
+      }
+      
       const filters = {
         patientId: typeof req.query.patientId === 'string' && req.query.patientId.length > 0
           ? req.query.patientId
@@ -131,6 +166,9 @@ router.get(
           : undefined,
         status: typeof req.query.status === 'string' && req.query.status.length > 0
           ? req.query.status
+          : undefined,
+        doctorId: user?.role === 'Doctor' && user?.doctorId
+          ? user.doctorId
           : undefined,
       };
       const data = await labs.listLabOrders(filters);
@@ -147,9 +185,55 @@ router.get(
   requireRole('LabTech', 'Doctor', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const data = await labs.getLabOrderDetail(req.params.labOrderId);
+      const user = req.user;
+      const labOrderId = req.params.labOrderId;
+      
+      // If user is a Doctor, verify the lab order belongs to them
+      if (user?.role === 'Doctor') {
+        if (!user?.doctorId) {
+          return res.status(403).json({ 
+            error: 'Doctor account is not properly linked to a doctor profile',
+            msg: 'Failed' 
+          });
+        }
+        
+        // Check if the lab order belongs to this doctor
+        const order = await prisma.labOrder.findUnique({
+          where: { labOrderId },
+          select: { doctorId: true },
+        });
+        
+        if (!order) {
+          return res.status(404).json({ 
+            error: 'Lab order not found',
+            msg: 'Failed' 
+          });
+        }
+        
+        // Compare doctorIds (both should be strings)
+        // Normalize both to strings for comparison
+        const orderDoctorId = String(order.doctorId);
+        const userDoctorId = String(user.doctorId);
+        
+        if (orderDoctorId !== userDoctorId) {
+          console.warn(`[lab-order-detail] Access denied: Order doctorId (${orderDoctorId}) does not match user doctorId (${userDoctorId}) for labOrderId ${labOrderId}`);
+          return res.status(403).json({ 
+            error: 'You do not have permission to view this lab order',
+            msg: 'Failed' 
+          });
+        }
+      }
+      
+      const data = await labs.getLabOrderDetail(labOrderId);
+      if (!data) {
+        return res.status(404).json({ 
+          error: 'Lab order not found',
+          msg: 'Failed' 
+        });
+      }
       res.json(data);
     } catch (error) {
+      console.error('[lab-order-detail] Error fetching lab order:', error);
       next(error);
     }
   },
@@ -161,7 +245,40 @@ router.delete(
   requireRole('Doctor', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      await labs.deleteLabOrder(req.params.labOrderId);
+      const user = req.user;
+      const labOrderId = req.params.labOrderId;
+      
+      // If user is a Doctor, verify the lab order belongs to them
+      if (user?.role === 'Doctor') {
+        if (!user?.doctorId) {
+          return res.status(403).json({ 
+            error: 'Doctor account is not properly linked to a doctor profile',
+            msg: 'Failed' 
+          });
+        }
+        
+        // Check if the lab order belongs to this doctor
+        const order = await prisma.labOrder.findUnique({
+          where: { labOrderId },
+          select: { doctorId: true },
+        });
+        
+        if (!order) {
+          return res.status(404).json({ 
+            error: 'Lab order not found',
+            msg: 'Failed' 
+          });
+        }
+        
+        if (order.doctorId !== user.doctorId) {
+          return res.status(403).json({ 
+            error: 'You do not have permission to delete this lab order',
+            msg: 'Failed' 
+          });
+        }
+      }
+      
+      await labs.deleteLabOrder(labOrderId);
       res.json({ message: 'Lab order deleted successfully' });
     } catch (error) {
       next(error);

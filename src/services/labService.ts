@@ -13,12 +13,17 @@ import type {
 
 const prisma = new PrismaClient();
 
-type LabOrderWithItems = LabOrder & { items: LabOrderItem[] };
+type LabOrderWithItems = LabOrder & { 
+  items: LabOrderItem[]; 
+  orderId?: string | null;
+  patientName?: string | null;
+};
 
 type ListLabOrderFilters = {
   patientId?: string;
   visitId?: string;
   status?: string;
+  doctorId?: string;
 };
 
 export async function createLabOrder(
@@ -41,7 +46,12 @@ export async function createLabOrder(
         })),
       },
     },
-    include: { items: true },
+    include: { 
+      items: {
+        include: { results: { orderBy: { resultedAt: 'desc' } } },
+      },
+      results: { orderBy: { resultedAt: 'desc' } },
+    },
   });
 
   // Notify Atenxion agent about lab order creation
@@ -53,7 +63,31 @@ export async function createLabOrder(
     console.warn('Failed to record Atenxion transaction for lab order creation:', error);
   }
 
-  return order;
+  // Calculate orderId and fetch patientName to match the format returned by listLabOrders
+  // Fetch ALL orders for this doctor to calculate sequential order number
+  const allDoctorOrders = await prisma.labOrder.findMany({
+    where: { doctorId },
+    select: { labOrderId: true, createdAt: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  
+  // Find the index of this order in the doctor's orders (1-based)
+  const orderIndex = allDoctorOrders.findIndex((o) => o.labOrderId === order.labOrderId);
+  const orderId = orderIndex >= 0 ? String(orderIndex + 1) : null;
+  
+  // Fetch patient name
+  const patient = await prisma.patient.findUnique({
+    where: { patientId: order.patientId },
+    select: { name: true },
+  });
+  const patientName = patient?.name || null;
+
+  // Return order with orderId and patientName added
+  return {
+    ...order,
+    orderId,
+    patientName,
+  } as LabOrderWithItems;
 }
 
 export async function listLabOrders(filters: ListLabOrderFilters) {
@@ -69,6 +103,9 @@ export async function listLabOrders(filters: ListLabOrderFilters) {
     if (normalized && Object.values(LabOrderStatus).includes(normalized as LabOrderStatus)) {
       where.status = normalized;
     }
+  }
+  if (filters.doctorId) {
+    where.doctorId = filters.doctorId;
   }
 
   const orders = await prisma.labOrder.findMany({
@@ -90,26 +127,41 @@ export async function listLabOrders(filters: ListLabOrderFilters) {
   });
   const patientMap = new Map(patients.map((p) => [p.patientId, p.name]));
 
-  // Group orders by doctor and assign numbered order IDs (1, 2, 3, etc. per doctor)
-  const ordersByDoctor = new Map<string, typeof orders>();
-  orders.forEach((order) => {
-    const doctorId = order.doctorId || 'unknown';
-    if (!ordersByDoctor.has(doctorId)) {
-      ordersByDoctor.set(doctorId, []);
-    }
-    ordersByDoctor.get(doctorId)!.push(order);
-  });
-
-  // Sort each doctor's orders by creation date (most recent first) and assign numbers
+  // Get all unique doctor IDs from the filtered orders
+  const uniqueDoctorIds = Array.from(new Set(orders.map((o) => o.doctorId).filter(Boolean) as string[]));
+  
+  // For each doctor, fetch ALL their orders (ignoring filters) to calculate sequential order IDs
+  // This ensures order IDs are sequential based on all orders for that doctor, not just filtered results
+  // Order IDs are calculated purely by creation date, independent of patient names
+  // Each doctor's orders are numbered independently: Doctor A's orders are 1,2,3... Doctor B's orders are 1,2,3...
   const orderIdMap = new Map<string, string>();
-  ordersByDoctor.forEach((doctorOrders, doctorId) => {
-    const sortedOrders = doctorOrders.sort((a, b) => {
-      return b.createdAt.getTime() - a.createdAt.getTime();
+  
+  for (const doctorId of uniqueDoctorIds) {
+    if (!doctorId || typeof doctorId !== 'string') continue;
+    
+    // Fetch ALL orders for this doctor (no filters) to get the correct sequential numbering
+    // This ensures the order ID reflects the position among ALL orders for this doctor
+    // Orders are sorted by creation date ascending (oldest first) so the first order gets 1, second gets 2, etc.
+    const allDoctorOrders = await prisma.labOrder.findMany({
+      where: { doctorId },
+      select: { labOrderId: true, createdAt: true },
+      orderBy: { createdAt: 'asc' }, // Sort by creation date ascending (oldest first) for sequential numbering
     });
-    sortedOrders.forEach((order, index) => {
+    
+    // Assign sequential numbers (1, 2, 3, ...) based on creation order
+    // The first order created for this doctor gets 1, second gets 2, etc.
+    // This numbering is unique per doctor and independent of patient names
+    allDoctorOrders.forEach((order, index) => {
       orderIdMap.set(order.labOrderId, String(index + 1));
     });
-  });
+  }
+  
+  // Verify that all orders have been assigned an orderId
+  // If an order doesn't have a doctorId or wasn't found in the map, log a warning
+  const ordersWithoutOrderId = orders.filter((o) => !orderIdMap.has(o.labOrderId));
+  if (ordersWithoutOrderId.length > 0) {
+    console.warn(`Warning: ${ordersWithoutOrderId.length} orders were not assigned an orderId. This may indicate missing doctorId.`);
+  }
 
   // Add orderId and patientName fields to each order
   return orders.map((order) => ({
@@ -268,16 +320,18 @@ export async function getLabOrderDetail(labOrderId: string) {
     select: { doctorId: true },
   });
 
-  // Get all orders for this doctor to calculate the order number
+  // Get ALL orders for this doctor (sorted by creation date ascending) to calculate sequential order number
+  // This ensures the order ID reflects the position among ALL orders for this doctor
   const doctorOrders = order?.doctorId
     ? await prisma.labOrder.findMany({
         where: { doctorId: order.doctorId },
-        orderBy: { createdAt: 'desc' },
+        orderBy: { createdAt: 'asc' }, // Sort ascending to get sequential numbering (1, 2, 3, ...)
         select: { labOrderId: true, createdAt: true },
       })
     : [];
 
   // Find the index of this order in the doctor's orders (1-based)
+  // The first order created gets 1, second gets 2, etc.
   const orderIndex = doctorOrders.findIndex((o) => o.labOrderId === labOrderId);
   const orderId = orderIndex >= 0 ? String(orderIndex + 1) : null;
   
