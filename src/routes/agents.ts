@@ -1402,6 +1402,11 @@ router.post(
         const drugName = order.drugName || drug?.name || "Unknown medication";
         const dosage = order.dosage || firstPrescriptionItem?.dose || "";
         const medicineName = dosage ? `${drugName} ${dosage}`.trim() : drugName;
+        
+        // Determine if ordered by doctor (has prescription linked)
+        const orderedByDoctor = !!order.prescription?.prescriptionId;
+        const doctorName = order.prescription?.visit?.doctor?.name || null;
+        const doctorId = order.prescription?.visit?.doctor?.doctorId || null;
 
         return {
           type: "medication_order",
@@ -1423,13 +1428,14 @@ router.post(
           visitDate: order.prescription?.visit?.visitDate 
             ? new Date(order.prescription.visit.visitDate).toISOString().split("T")[0] 
             : null,
-          doctorName: order.prescription?.visit?.doctor?.name || null,
-          doctorId: order.prescription?.visit?.doctor?.doctorId || null,
+          doctorName: doctorName,
+          doctorId: doctorId,
           department: order.prescription?.visit?.department || null,
+          orderedByDoctor: orderedByDoctor, // Flag indicating if ordered by doctor
         };
       });
 
-      // Format prescriptions
+      // Format prescriptions (all prescriptions are ordered by doctors)
       const formattedPrescriptions = prescriptions.flatMap((prescription: any) => {
         return prescription.items.map((item: any) => {
           const drug = item.drug;
@@ -1461,6 +1467,7 @@ router.post(
             doctorName: prescription.doctor?.name || prescription.visit?.doctor?.name || null,
             doctorId: prescription.doctorId,
             department: prescription.visit?.department || null,
+            orderedByDoctor: true, // All prescriptions are ordered by doctors
           };
         });
       });
@@ -1472,6 +1479,10 @@ router.post(
         return dateB.localeCompare(dateA);
       });
 
+      // Count medications ordered by doctors
+      const doctorOrderedMedications = allMedications.filter((med) => med.orderedByDoctor === true);
+      const selfOrderedMedications = allMedications.filter((med) => med.orderedByDoctor === false || med.orderedByDoctor === undefined);
+
       // Build flat response with numbered fields
       const result: any = {
         status: "Success",
@@ -1481,6 +1492,8 @@ router.post(
         totalMedicationOrders: formattedOrders.length,
         totalPrescriptions: prescriptions.length,
         totalPrescriptionItems: formattedPrescriptions.length,
+        totalDoctorOrderedMedications: doctorOrderedMedications.length,
+        totalSelfOrderedMedications: selfOrderedMedications.length,
       };
 
       // Add numbered medication fields
@@ -1502,6 +1515,7 @@ router.post(
         result[`${prefix}Department`] = med.department;
         result[`${prefix}VisitId`] = med.visitId;
         result[`${prefix}VisitDate`] = med.visitDate;
+        result[`${prefix}OrderedByDoctor`] = med.orderedByDoctor === true ? "Yes" : "No";
 
         if (med.type === "medication_order") {
           result[`${prefix}OrderId`] = med.orderId;
