@@ -4411,31 +4411,43 @@ function BillingSection({
               const invoiceItems = invoice.items ?? [];
               const isExpanded =
                 expandedInvoice === (invoice.invoiceId ?? invoice.invoiceNo);
+              const isVoid = invoice.status === 'VOID' || invoice.status === 'Void';
               return (
                 <li
                   key={invoice.invoiceId ?? invoice.invoiceNo}
-                  className="rounded-2xl border border-slate-100 bg-slate-50 p-4"
+                  className={`rounded-2xl border p-4 ${
+                    isVoid
+                      ? 'border-red-300 bg-red-50/50 opacity-75'
+                      : 'border-slate-100 bg-slate-50'
+                  }`}
                 >
+                  {isVoid && (
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-red-700 border border-red-200">
+                        {t("Void")}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs text-slate-500">
+                      <div className={`text-xs ${isVoid ? 'text-red-600' : 'text-slate-500'}`}>
                         {t("Balance due")}
                       </div>
-                      <div className="mt-1 font-semibold text-slate-900">
+                      <div className={`mt-1 font-semibold ${isVoid ? 'text-red-700 line-through' : 'text-slate-900'}`}>
                         {formatCurrency(invoice.amountDue ?? 0)}
                       </div>
-                      <div className="mt-2 text-xs font-bold text-slate-500">
+                      <div className={`mt-2 text-xs font-bold ${isVoid ? 'text-red-600' : 'text-slate-500'}`}>
                         {t("Total paid")}
                       </div>
-                      <div className="mt-1 font-semibold text-slate-900">
+                      <div className={`mt-1 font-semibold ${isVoid ? 'text-red-700 line-through' : 'text-slate-900'}`}>
                         {formatCurrency(invoice.amountPaid ?? 0)}
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="font-semibold text-slate-900">
+                      <div className={`font-semibold ${isVoid ? 'text-red-700' : 'text-slate-900'}`}>
                         {invoice.invoiceNo ?? invoice.invoiceId}
                       </div>
-                      <div className="text-xs text-slate-500">
+                      <div className={`text-xs ${isVoid ? 'text-red-600' : 'text-slate-500'}`}>
                         {t("Issued {date}", {
                           date: new Date(
                             invoice.createdAt
@@ -4457,7 +4469,11 @@ function BillingSection({
                               : invoice.invoiceId ?? invoice.invoiceNo
                           )
                         }
-                        className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-xs font-medium hover:bg-slate-50 ${
+                          isVoid
+                            ? 'border-red-200 bg-red-50 text-red-700'
+                            : 'border-slate-200 bg-white text-slate-700'
+                        }`}
                       >
                         <span>
                           {t("Fee Breakdown")} ({invoiceItems.length}{" "}
@@ -4550,11 +4566,11 @@ function BillingSection({
                   )}
 
                   {invoicePayments.length > 0 ? (
-                    <div className="mt-3 space-y-1 text-xs text-slate-500">
+                    <div className={`mt-3 space-y-1 text-xs ${isVoid ? 'text-red-600' : 'text-slate-500'}`}>
                       {invoicePayments.map((payment: any) => (
                         <div
                           key={payment.paymentId}
-                          className="flex items-center justify-between"
+                          className={`flex items-center justify-between ${isVoid ? 'line-through' : ''}`}
                         >
                           <span>
                             {new Date(payment.paidAt).toLocaleDateString()} •{" "}
@@ -4565,7 +4581,7 @@ function BillingSection({
                       ))}
                     </div>
                   ) : (
-                    <p className="mt-3 text-xs text-slate-500">
+                    <p className={`mt-3 text-xs ${isVoid ? 'text-red-600' : 'text-slate-500'}`}>
                       {t("No payments applied yet.")}
                     </p>
                   )}

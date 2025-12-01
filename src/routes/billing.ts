@@ -228,18 +228,46 @@ router.post(
 
 router.delete(
   '/invoices/:invoiceId',
-  requireRole('ITAdmin'),
+  requireRole('Cashier', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const invoiceId = req.params.invoiceId;
       
+      // Validate invoiceId format (UUID)
+      if (!invoiceId || typeof invoiceId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invoiceId)) {
+        return res.status(400).json({
+          code: 400,
+          message: 'Invalid invoice ID format',
+        });
+      }
+      
       // Check if invoice exists
       const invoice = await prisma.invoice.findUnique({
         where: { invoiceId },
+        select: { invoiceId: true, invoiceNo: true, status: true },
       });
       
       if (!invoice) {
-        throw new NotFoundError('Invoice not found');
+        return res.status(404).json({
+          code: 404,
+          message: `Invoice not found. It may have already been deleted.`,
+        });
+      }
+      
+      // Prevent deletion of paid invoices (cashiers should void instead)
+      if (invoice.status === 'PAID') {
+        return res.status(400).json({
+          code: 400,
+          message: 'Cannot delete a paid invoice. Please void it instead.',
+        });
+      }
+      
+      // Prevent deletion of void invoices (already voided)
+      if (invoice.status === 'VOID') {
+        return res.status(400).json({
+          code: 400,
+          message: 'Cannot delete a void invoice.',
+        });
       }
       
       // Delete invoice (cascade will handle related items and payments)

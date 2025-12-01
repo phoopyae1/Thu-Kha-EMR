@@ -101,6 +101,9 @@ async function assertInvoiceEditable(invoice: { status: InvoiceStatus }) {
   if (invoice.status === InvoiceStatus.VOID || invoice.status === InvoiceStatus.REFUNDED) {
     throw new BadRequestError('Invoice is void and cannot be modified');
   }
+  if (invoice.status === InvoiceStatus.PAID) {
+    throw new BadRequestError('Invoice is already paid and cannot be modified');
+  }
 }
 
 export async function generateInvoiceNo(tx: TransactionClient = prisma) {

@@ -62,6 +62,10 @@ export async function fetchJSON(
         const errText = await retryRes.text();
         throw new Error(errText || retryRes.statusText);
       }
+      // Handle 204 No Content responses
+      if (retryRes.status === 204 || retryRes.status === 202) {
+        return null;
+      }
       return retryRes.json();
     }
     setAccessToken(null);
@@ -75,13 +79,44 @@ export async function fetchJSON(
     // Try to parse JSON error response
     try {
       const errorJson = JSON.parse(errText);
-      if (errorJson && typeof errorJson.error === 'string') {
-        throw new Error(errorJson.error);
+      // Check for different error response formats
+      if (errorJson && typeof errorJson.message === 'string') {
+        const error = new Error(errorJson.message);
+        (error as any).response = { status: response.status, data: errorJson };
+        throw error;
       }
-    } catch {
-      // If parsing fails, use the raw text or status text
+      if (errorJson && typeof errorJson.error === 'string') {
+        const error = new Error(errorJson.error);
+        (error as any).response = { status: response.status, data: errorJson };
+        throw error;
+      }
+    } catch (parseError) {
+      // If it's already an Error with response, re-throw it
+      if (parseError instanceof Error && (parseError as any).response) {
+        throw parseError;
+      }
+      // Otherwise create a new error with response structure
+      const error = new Error(errText || response.statusText);
+      (error as any).response = { status: response.status, data: { message: errText || response.statusText } };
+      throw error;
     }
-    throw new Error(errText || response.statusText);
+    // Fallback (shouldn't reach here, but just in case)
+    const error = new Error(errText || response.statusText);
+    (error as any).response = { status: response.status, data: { message: errText || response.statusText } };
+    throw error;
   }
+  
+  // Handle 204 No Content and 202 Accepted responses (no body)
+  if (response.status === 204 || response.status === 202) {
+    return null;
+  }
+  
+  // Check if response has content before parsing JSON
+  const contentType = response.headers.get('content-type');
+  if (!contentType || !contentType.includes('application/json')) {
+    const text = await response.text();
+    return text || null;
+  }
+  
   return response.json();
 }

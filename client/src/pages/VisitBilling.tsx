@@ -1,8 +1,9 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import { fetchJSON } from '../api/http';
 import { getPatient, getVisit, type Patient, type VisitDetail as VisitDetailType } from '../api/client';
+import { useAuth } from '../context/AuthProvider';
 
 type InvoiceItem = {
   itemId: string;
@@ -69,14 +70,21 @@ function parseErrorMessage(error: unknown): string {
     if ('response' in error && error.response && typeof error.response === 'object') {
       const response = error.response as any;
       if (response.data && typeof response.data === 'object') {
+        // Check for message field (from errorHandler)
+        if (response.data.message) {
+          return String(response.data.message);
+        }
+        // Check for error field (legacy format)
         if (response.data.error) {
           return String(response.data.error);
         }
+        // Check for details array
         if (response.data.details && Array.isArray(response.data.details)) {
           return response.data.details.map((d: any) => d.message || JSON.stringify(d)).join(', ');
         }
       }
     }
+    // Check for direct message property
     if ('message' in error) {
       return String(error.message);
     }
@@ -86,11 +94,15 @@ function parseErrorMessage(error: unknown): string {
 
 export default function VisitBilling() {
   const { visitId } = useParams<{ visitId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const [visit, setVisit] = useState<VisitDetailType | null>(null);
   const [patient, setPatient] = useState<Patient | null>(null);
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [adjustmentDraft, setAdjustmentDraft] = useState({ discount: '', tax: '' });
   const [itemDraft, setItemDraft] = useState({
     sourceType: 'SERVICE' as ItemSourceType,
@@ -123,11 +135,57 @@ export default function VisitBilling() {
   });
   const [isUpdatingItem, setIsUpdatingItem] = useState(false);
   const [itemUpdateError, setItemUpdateError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
   const hasDue = useMemo(() => {
     if (!invoice) return false;
     const due = Number.parseFloat(invoice.amountDue);
     return !Number.isNaN(due) && due > 0;
   }, [invoice]);
+
+  const canDelete = useMemo(() => {
+    return user && ['Cashier', 'ITAdmin'].includes(user.role);
+  }, [user]);
+
+  async function handleDeleteInvoice() {
+    if (!invoice || !canDelete) return;
+    
+    setIsDeleting(true);
+    setToast(null);
+    
+    try {
+      console.log('Attempting to delete invoice:', invoice.invoiceId, invoice.invoiceNo);
+      await fetchJSON(`/billing/invoices/${invoice.invoiceId}`, {
+        method: 'DELETE',
+      });
+      console.log('Invoice deleted successfully');
+      setToast({ message: 'Invoice deleted successfully', type: 'success' });
+      setTimeout(() => {
+        // Navigate back to billing workspace
+        navigate('/billing/workspace');
+      }, 1500);
+    } catch (err) {
+      console.error('Error deleting invoice:', err);
+      const errorObj = err as any;
+      const errorMessage = parseErrorMessage(err);
+      // Provide more specific error message
+      if (errorObj?.response?.status === 404) {
+        setToast({ 
+          message: `Invoice ${invoice.invoiceNo} not found. It may have already been deleted.`, 
+          type: 'error' 
+        });
+        // Navigate back after showing error
+        setTimeout(() => {
+          navigate('/billing/workspace');
+        }, 3000);
+      } else {
+        setToast({ message: errorMessage || 'Unable to delete invoice.', type: 'error' });
+      }
+      setTimeout(() => setToast(null), 5000);
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  }
 
   useEffect(() => {
     if (!visitId) {
@@ -208,9 +266,13 @@ export default function VisitBilling() {
         }),
       });
       await refreshInvoice();
+      setToast({ message: 'Invoice adjustments updated successfully', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error(err);
-      window.alert('Unable to update invoice totals.');
+      const errorMessage = parseErrorMessage(err);
+      setToast({ message: errorMessage || 'Unable to update invoice totals.', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     }
   }
 
@@ -233,9 +295,13 @@ export default function VisitBilling() {
       await refreshInvoice();
       setEditingField(null);
       setEditValue('');
+      setToast({ message: 'Invoice amount updated successfully', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error(err);
-      window.alert('Unable to update invoice amount.');
+      const errorMessage = parseErrorMessage(err);
+      setToast({ message: errorMessage || 'Unable to update invoice amount.', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     } finally {
       setIsSaving(false);
     }
@@ -326,9 +392,14 @@ export default function VisitBilling() {
       });
       await refreshInvoice();
       cancelEditingItem();
+      setToast({ message: 'Invoice item updated successfully', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
     } catch (err) {
       console.error(err);
-      setItemUpdateError('Unable to update invoice item.');
+      const errorMessage = parseErrorMessage(err);
+      setItemUpdateError(errorMessage || 'Unable to update invoice item.');
+      setToast({ message: errorMessage || 'Unable to update invoice item.', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     } finally {
       setIsUpdatingItem(false);
     }
@@ -499,31 +570,101 @@ export default function VisitBilling() {
   }
 
   return (
-    <DashboardLayout
-      title={`Invoice ${invoice.invoiceNo}`}
-      subtitle={`Visit on ${new Date(visit.visitDate).toLocaleDateString('en-GB')}`}
-      activeItem="billing"
-      headerChildren={
-        <div className="flex items-center gap-3">
+    <>
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          className={`fixed top-4 right-4 z-50 flex items-center gap-3 rounded-lg px-4 py-3 shadow-lg transition-all ${
+            toast.type === 'error'
+              ? 'bg-red-50 border border-red-200 text-red-800'
+              : 'bg-green-50 border border-green-200 text-green-800'
+          }`}
+          style={{ animation: 'slideIn 0.3s ease-out' }}
+        >
+          <div className="flex-shrink-0">
+            {toast.type === 'error' ? (
+              <svg className="h-5 w-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </div>
+          <p className="text-sm font-medium">{toast.message}</p>
           <button
             type="button"
-            onClick={() => window.open(`/api/billing/invoices/${invoice.invoiceId}/receipt`, '_blank')}
-            className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+            onClick={() => setToast(null)}
+            className={`ml-2 flex-shrink-0 rounded p-1 hover:bg-opacity-20 ${
+              toast.type === 'error' ? 'text-red-600 hover:bg-red-600' : 'text-green-600 hover:bg-green-600'
+            }`}
           >
-            Print Receipt
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
+            </svg>
           </button>
-          {hasDue && (
+        </div>
+      )}
+      <style>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
+      <DashboardLayout
+        title={`Invoice ${invoice.invoiceNo}`}
+        subtitle={`Visit on ${new Date(visit.visitDate).toLocaleDateString('en-GB')}`}
+        activeItem="billing"
+        headerChildren={
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setPaymentOpen(true)}
-              className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+              onClick={() => window.open(`/api/billing/invoices/${invoice.invoiceId}/receipt`, '_blank')}
+              className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
             >
-              Add Payment
+              Print Receipt
             </button>
-          )}
-        </div>
-      }
-    >
+            {hasDue && (
+              <button
+                type="button"
+                onClick={() => setPaymentOpen(true)}
+                className="rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+              >
+                Add Payment
+              </button>
+            )}
+            {canDelete && invoice.status !== 'PAID' && invoice.status !== 'VOID' && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                disabled={isDeleting}
+                className="rounded-full border border-red-300 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Invoice'}
+              </button>
+            )}
+          </div>
+        }
+      >
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
           <section className="rounded-lg border border-gray-200 bg-white shadow-sm">
@@ -1040,7 +1181,38 @@ export default function VisitBilling() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="rounded-lg bg-white p-6 shadow-xl max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Invoice</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete invoice {invoice?.invoiceNo}? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={isDeleting}
+                className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteInvoice}
+                disabled={isDeleting}
+                className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </DashboardLayout>
+    </>
   );
 }
 

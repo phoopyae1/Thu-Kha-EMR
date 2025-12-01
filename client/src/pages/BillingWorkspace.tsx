@@ -116,6 +116,9 @@ export default function BillingWorkspace() {
   const [selectedInvoiceForVoid, setSelectedInvoiceForVoid] = useState<InvoiceSummary | null>(null);
   const [voidError, setVoidError] = useState<string | null>(null);
   const [voidLoading, setVoidLoading] = useState(false);
+  const [selectedInvoiceForDelete, setSelectedInvoiceForDelete] = useState<InvoiceSummary | null>(null);
+  const [isDeletingInvoice, setIsDeletingInvoice] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [selectedInvoiceForEdit, setSelectedInvoiceForEdit] = useState<InvoiceSummary | null>(null);
   const [editDraft, setEditDraft] = useState({ discount: '', tax: '' });
@@ -135,6 +138,7 @@ export default function BillingWorkspace() {
   const [patientVisits, setPatientVisits] = useState<Visit[]>([]);
   const canCollectPayments = user ? ['Cashier', 'ITAdmin'].includes(user.role) : false;
   const canTriggerVoid = canCollectPayments;
+  const canDeleteInvoices = user ? ['Cashier', 'ITAdmin'].includes(user.role) : false;
   const canCreateInvoices = user ? ['Cashier', 'ITAdmin', 'Doctor'].includes(user.role) : false;
   const canRepostPharmacy = user ? ['Pharmacist', 'ITAdmin'].includes(user.role) : false;
   const canEditInvoices = user ? ['Cashier', 'ITAdmin', 'Doctor'].includes(user.role) : false;
@@ -468,6 +472,34 @@ export default function BillingWorkspace() {
       setVoidError('Unable to void invoice right now.');
     } finally {
       setVoidLoading(false);
+    }
+  }
+
+  async function handleDeleteInvoice() {
+    if (!selectedInvoiceForDelete) return;
+    
+    setIsDeletingInvoice(true);
+    setDeleteError(null);
+    
+    try {
+      console.log('Attempting to delete invoice:', selectedInvoiceForDelete.invoiceId, selectedInvoiceForDelete.invoiceNo);
+      await fetchJSON(`/billing/invoices/${selectedInvoiceForDelete.invoiceId}`, {
+        method: 'DELETE',
+      });
+      console.log('Invoice deleted successfully');
+      setSelectedInvoiceForDelete(null);
+      await Promise.all([refreshInvoiceList(), refreshLookupInvoice()]);
+    } catch (error) {
+      console.error('Error deleting invoice:', error);
+      const errorObj = error as any;
+      const errorMessage = errorObj?.response?.data?.message || errorObj?.response?.data?.error || errorObj?.message || 'Unable to delete invoice right now.';
+      setDeleteError(errorMessage);
+      // If invoice not found, refresh the list to get updated data
+      if (errorObj?.response?.status === 404) {
+        await refreshInvoiceList();
+      }
+    } finally {
+      setIsDeletingInvoice(false);
     }
   }
 
@@ -941,6 +973,16 @@ export default function BillingWorkspace() {
                             Void
                           </button>
                         )}
+                        {canDeleteInvoices && invoice.status !== 'PAID' && invoice.status !== 'VOID' && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedInvoiceForDelete(invoice)}
+                            disabled={isDeletingInvoice}
+                            className="rounded-full border border-red-400 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1147,6 +1189,39 @@ export default function BillingWorkspace() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedInvoiceForDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 px-4">
+          <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Delete Invoice</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Are you sure you want to delete invoice {selectedInvoiceForDelete.invoiceNo}? This action cannot be undone.
+            </p>
+            {deleteError && <p className="mb-4 text-sm text-red-600">{deleteError}</p>}
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedInvoiceForDelete(null);
+                  setDeleteError(null);
+                }}
+                disabled={isDeletingInvoice}
+                className="rounded-full border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteInvoice}
+                disabled={isDeletingInvoice}
+                className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeletingInvoice ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}
