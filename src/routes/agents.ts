@@ -1486,7 +1486,7 @@ router.post(
       // Build flat response with numbered fields
       const result: any = {
         status: "Success",
-        currency: "SGD",
+        currency: "USD",
         currencySymbol: "$",
         totalMedications: allMedications.length,
         totalMedicationOrders: formattedOrders.length,
@@ -1937,7 +1937,7 @@ router.post(
       const totalDue = Number(overallSummary._sum.amountDue || 0);
       const totalInvoices = overallSummary._count.invoiceId;
 
-      // Currency formatting helper - format as USD to show $ sign, but currency is SGD
+      // Currency formatting helper - format as USD currency
       const formatCurrency = (amount: number): string => {
         return new Intl.NumberFormat('en-US', { 
           style: 'currency', 
@@ -1950,7 +1950,7 @@ router.post(
       // FLAT RESPONSE - Numbered flat keys (no arrays, no nested objects)
       const result: any = {
         // Currency
-        currency: "SGD",
+        currency: "USD",
         currencySymbol: "$",
         
         // Core Summary

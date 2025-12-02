@@ -43,7 +43,7 @@ export default function LoginCard({
             </svg>
           </div>
         )}
-        <h1 className="text-2xl font-bold text-gray-900">{t('Admin/Staff/Doctor Portal')}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('Patient Portal For Doctors')}</h1>
         <p className="mt-2 text-sm text-gray-600">{t('Sign in to your account')}</p>
       </div>
 

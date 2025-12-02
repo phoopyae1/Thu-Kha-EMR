@@ -158,7 +158,7 @@ export default function AddDrug() {
 
   function formatCurrency(amount: number) {
     // Display exact value without any rounding or truncation
-    // Format as USD to show $ sign, but currency is SGD
+    // Format as USD currency
     try {
       return new Intl.NumberFormat('en-US', { 
         style: 'currency', 

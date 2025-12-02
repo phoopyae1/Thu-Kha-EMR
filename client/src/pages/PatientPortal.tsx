@@ -821,7 +821,7 @@ function formatMinutes(minutes: number) {
 }
 
 function formatCurrency(amount: number) {
-  // Format as USD to show $ sign, but currency is SGD
+  // Format as USD currency
   // Display exact value without any rounding or truncation
   return new Intl.NumberFormat("en-US", {
     style: "currency",

@@ -53,13 +53,13 @@ function isUuid(value: string) {
   return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(value.trim());
 }
 
-function formatMoney(value: string, currency = 'SGD') {
+function formatMoney(value: string, currency = 'USD') {
   const numeric = Number.parseFloat(value);
   if (Number.isNaN(numeric)) {
     return value;
   }
   // Display exact value without any rounding or truncation
-  // Format as USD to show $ sign, but currency is SGD
+  // Format as USD currency
   return new Intl.NumberFormat('en-US', { 
     style: 'currency', 
     currency: 'USD',
@@ -237,7 +237,7 @@ export default function BillingWorkspace() {
     };
   }, [debouncedPatientQuery]);
 
-  const lookupCurrency = 'SGD';
+  const lookupCurrency = 'USD';
 
   async function performVisitLookup(visitId: string) {
     setLookupLoading(true);
@@ -942,10 +942,10 @@ export default function BillingWorkspace() {
                       <InvoiceStatusBadge status={invoice.status} />
                     </td>
                     <td className="px-4 py-2 text-right text-gray-700">
-                      {formatMoney(invoice.grandTotal, 'SGD')}
+                      {formatMoney(invoice.grandTotal, 'USD')}
                     </td>
                     <td className="px-4 py-2 text-right font-semibold text-gray-900">
-                      {formatMoney(invoice.amountDue, 'SGD')}
+                      {formatMoney(invoice.amountDue, 'USD')}
                     </td>
                     <td className="px-4 py-2">
                       <div className="flex justify-end gap-2">
@@ -1008,7 +1008,7 @@ export default function BillingWorkspace() {
                   <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Subtotal:</span>
-                      <span className="font-medium text-gray-900">{formatMoney(invoiceDetails.subTotal, 'SGD')}</span>
+                      <span className="font-medium text-gray-900">{formatMoney(invoiceDetails.subTotal, 'USD')}</span>
                     </div>
                   </div>
                 )}
@@ -1085,7 +1085,7 @@ export default function BillingWorkspace() {
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Record payment</h3>
             <p className="mt-1 text-sm text-gray-500">
-              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, 'SGD')}
+              Invoice {selectedInvoiceForPayment.invoiceNo} — due amount {formatMoney(selectedInvoiceForPayment.amountDue, 'USD')}
             </p>
             <form className="mt-4 space-y-4" onSubmit={handleSubmitPayment}>
               <label className="flex flex-col gap-1 text-sm">

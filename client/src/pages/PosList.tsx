@@ -22,9 +22,9 @@ function formatMoney(value: string) {
     return value;
   }
   // Display exact value without any rounding or truncation
-  // Format as USD to show $ sign, but currency is SGD
+  // Format as USD currency
   return new Intl.NumberFormat('en-US', { 
-    style: 'currency', 
+    style: 'currency',
     currency: 'USD',
     minimumFractionDigits: 2,
     maximumFractionDigits: 20, // Allow more decimal places to preserve exact values

@@ -443,7 +443,7 @@ model Invoice {
   visitId     String        @db.Uuid
   patientId   String        @db.Uuid
   status      InvoiceStatus @default(DRAFT)
-  currency    String        @default("SGD")
+  currency    String        @default("USD")
   note        String?
   subTotal    Decimal       @default(0) @db.Decimal(12, 2)
   discountAmt Decimal       @default(0) @db.Decimal(12, 2)
