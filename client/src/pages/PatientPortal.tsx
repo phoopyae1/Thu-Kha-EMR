@@ -907,6 +907,7 @@ export default function PatientPortal() {
     height?: string | number;
     minHeight?: string | number;
     style?: CSSProperties;
+    isScript?: boolean;
   } | null>(null);
 
   // Widget state for login page (before authentication)
@@ -915,6 +916,7 @@ export default function PatientPortal() {
     title?: string | null;
     allow?: string | null;
     loading?: string | null;
+    isScript?: boolean;
   } | null>(null);
 
   const [showRegister, setShowRegister] = useState(false);
@@ -971,70 +973,104 @@ export default function PatientPortal() {
           return;
         }
 
-        const wrapper = document.createElement("div");
-        wrapper.innerHTML = embed.iframeCode;
-        const iframe = wrapper.querySelector("iframe");
-
-        if (!iframe) {
-          setIntegrationWidget(null);
-          return;
-        }
-
-        const srcAttr = iframe.getAttribute("src");
-        if (!srcAttr) {
-          setIntegrationWidget(null);
-          return;
-        }
-
-        let sanitizedSrc = srcAttr.trim();
-        try {
-          const url = new URL(sanitizedSrc, window.location.origin);
+        // Check if the code contains a script tag
+        const scriptTagMatch = embed.iframeCode.match(/<script[^>]+src=["']([^"']+)["']/i);
+        
+        if (scriptTagMatch) {
+          // Extract the script src URL
+          let scriptSrc = scriptTagMatch[1];
+          
+          // Add userId parameter if user is logged in (postLogin)
           if (session?.patientId) {
-            url.searchParams.set("userId", session.patientId);
-          } else {
-            url.searchParams.delete("userId");
+            try {
+              const url = new URL(scriptSrc, window.location.origin);
+              url.searchParams.set("userId", session.patientId);
+              scriptSrc = url.toString();
+            } catch {
+              const separator = scriptSrc.includes("?") ? "&" : "?";
+              scriptSrc = `${scriptSrc}${separator}userId=${session.patientId}`;
+            }
           }
-          sanitizedSrc = url.toString();
-        } catch {
-          if (session?.patientId && !sanitizedSrc.includes("userId=")) {
-            const separator = sanitizedSrc.includes("?") ? "&" : "?";
-            sanitizedSrc = `${sanitizedSrc}${separator}userId=${session.patientId}`;
+          
+          setIntegrationWidget({
+            src: scriptSrc,
+            title: null,
+            allow: null,
+            loading: null,
+            width: undefined,
+            height: undefined,
+            minHeight: undefined,
+            style: undefined,
+            isScript: true,
+          });
+        } else {
+          // Handle iframe tag (existing logic)
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = embed.iframeCode;
+          const iframe = wrapper.querySelector("iframe");
+
+          if (!iframe) {
+            setIntegrationWidget(null);
+            return;
           }
+
+          const srcAttr = iframe.getAttribute("src");
+          if (!srcAttr) {
+            setIntegrationWidget(null);
+            return;
+          }
+
+          let sanitizedSrc = srcAttr.trim();
+          try {
+            const url = new URL(sanitizedSrc, window.location.origin);
+            if (session?.patientId) {
+              url.searchParams.set("userId", session.patientId);
+            } else {
+              url.searchParams.delete("userId");
+            }
+            sanitizedSrc = url.toString();
+          } catch {
+            if (session?.patientId && !sanitizedSrc.includes("userId=")) {
+              const separator = sanitizedSrc.includes("?") ? "&" : "?";
+              sanitizedSrc = `${sanitizedSrc}${separator}userId=${session.patientId}`;
+            }
+          }
+
+          const widthAttr = iframe.getAttribute("width");
+          const heightAttr = iframe.getAttribute("height");
+          const styleAttr = iframe.getAttribute("style");
+
+          let width = parseDimensionValue(widthAttr);
+          let height = parseDimensionValue(heightAttr);
+          let minHeight: string | number | undefined;
+          let style: CSSProperties | undefined;
+
+          if (styleAttr && styleAttr.trim().length > 0) {
+            const parsedStyle = parseStyleAttribute(styleAttr);
+            style = parsedStyle.style;
+            if (parsedStyle.width !== undefined) {
+              width = width ?? parsedStyle.width;
+            }
+            if (parsedStyle.height !== undefined) {
+              height = height ?? parsedStyle.height;
+            }
+            if (parsedStyle.minHeight !== undefined) {
+              minHeight = parsedStyle.minHeight;
+            }
+          }
+
+          setIntegrationWidget({
+            src: sanitizedSrc,
+            title: iframe.getAttribute("title"),
+            allow: iframe.getAttribute("allow"),
+            loading: iframe.getAttribute("loading"),
+            width,
+            height,
+            minHeight,
+            style,
+            isScript: false,
+          });
         }
-
-        const widthAttr = iframe.getAttribute("width");
-        const heightAttr = iframe.getAttribute("height");
-        const styleAttr = iframe.getAttribute("style");
-
-        let width = parseDimensionValue(widthAttr);
-        let height = parseDimensionValue(heightAttr);
-        let minHeight: string | number | undefined;
-        let style: CSSProperties | undefined;
-
-        if (styleAttr && styleAttr.trim().length > 0) {
-          const parsedStyle = parseStyleAttribute(styleAttr);
-          style = parsedStyle.style;
-          if (parsedStyle.width !== undefined) {
-            width = width ?? parsedStyle.width;
-          }
-          if (parsedStyle.height !== undefined) {
-            height = height ?? parsedStyle.height;
-          }
-          if (parsedStyle.minHeight !== undefined) {
-            minHeight = parsedStyle.minHeight;
-          }
-        }
-
-        setIntegrationWidget({
-          src: sanitizedSrc,
-          title: iframe.getAttribute("title"),
-          allow: iframe.getAttribute("allow"),
-          loading: iframe.getAttribute("loading"),
-          width,
-          height,
-          minHeight,
-          style,
-        });
       } catch (error) {
         console.error("Failed to load integration widget", error);
         setIntegrationWidget(null);
@@ -1067,63 +1103,104 @@ export default function PatientPortal() {
         }
 
         console.log("🔧 Widget Debug - iframe code found:", embed.iframeCode);
-        const wrapper = document.createElement("div");
-        wrapper.innerHTML = embed.iframeCode;
-        const iframe = wrapper.querySelector("iframe");
-
-        if (iframe) {
-          console.log("🔧 Widget Debug - iframe element found:", iframe);
-
-          // Handle patient ID based on authentication status
-          let widgetSrc = iframe.src;
-
-          // Ensure no patient ID is passed before login
+        
+        // Check if the code contains a script tag
+        const scriptTagMatch = embed.iframeCode.match(/<script[^>]+src=["']([^"']+)["']/i);
+        
+        if (scriptTagMatch) {
+          console.log("🔧 Widget Debug - script tag found:", scriptTagMatch[1]);
+          
+          // Extract the script src URL
+          let scriptSrc = scriptTagMatch[1];
+          
+          // Add userId parameter if user is logged in (postLogin)
           if (session?.patientId) {
-            // User is logged in - include patient ID
             console.log(
-              "🔧 Widget Debug - user is logged in, adding patient ID:",
+              "🔧 Widget Debug - user is logged in, adding patient ID to script src:",
               session.patientId
             );
             try {
-              const url = new URL(widgetSrc, window.location.origin);
+              const url = new URL(scriptSrc, window.location.origin);
               url.searchParams.set("userId", session.patientId);
-              widgetSrc = url.toString();
+              scriptSrc = url.toString();
             } catch {
-              const separator = widgetSrc.includes("?") ? "&" : "?";
-              widgetSrc = `${widgetSrc}${separator}userId=${session.patientId}`;
-            }
-          } else {
-            // User is not logged in - ensure NO patient ID is passed
-            console.log(
-              "🔧 Widget Debug - user is not logged in, ensuring NO patient ID is passed"
-            );
-
-            // Remove any existing userId parameter to ensure clean URL
-            try {
-              const url = new URL(widgetSrc, window.location.origin);
-              url.searchParams.delete("userId");
-              widgetSrc = url.toString();
-            } catch {
-              // If URL parsing fails, remove userId parameter manually
-              widgetSrc = widgetSrc.replace(/[?&]userId=[^&]*/g, "");
-              widgetSrc = widgetSrc.replace(/\?&/, "?");
-              widgetSrc = widgetSrc.replace(/\?$/, "");
+              const separator = scriptSrc.includes("?") ? "&" : "?";
+              scriptSrc = `${scriptSrc}${separator}userId=${session.patientId}`;
             }
           }
-
+          
           setLoginWidget({
-            src: widgetSrc,
-            title: iframe.title || "Patient Portal Widget",
-            allow: iframe.allow || "camera; microphone; geolocation",
-            loading: iframe.loading || "lazy",
+            src: scriptSrc,
+            title: "Patient Portal Widget",
+            allow: null,
+            loading: null,
+            isScript: true,
           });
           console.log(
-            "🔧 Widget Debug - widget set successfully with src:",
-            widgetSrc
+            "🔧 Widget Debug - script widget set successfully with src:",
+            scriptSrc
           );
         } else {
-          console.log("🔧 Widget Debug - no iframe element found in code");
-          setLoginWidget(null);
+          // Handle iframe tag (existing logic)
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = embed.iframeCode;
+          const iframe = wrapper.querySelector("iframe");
+
+          if (iframe) {
+            console.log("🔧 Widget Debug - iframe element found:", iframe);
+
+            // Handle patient ID based on authentication status
+            let widgetSrc = iframe.src;
+
+            // Ensure no patient ID is passed before login
+            if (session?.patientId) {
+              // User is logged in - include patient ID
+              console.log(
+                "🔧 Widget Debug - user is logged in, adding patient ID:",
+                session.patientId
+              );
+              try {
+                const url = new URL(widgetSrc, window.location.origin);
+                url.searchParams.set("userId", session.patientId);
+                widgetSrc = url.toString();
+              } catch {
+                const separator = widgetSrc.includes("?") ? "&" : "?";
+                widgetSrc = `${widgetSrc}${separator}userId=${session.patientId}`;
+              }
+            } else {
+              // User is not logged in - ensure NO patient ID is passed
+              console.log(
+                "🔧 Widget Debug - user is not logged in, ensuring NO patient ID is passed"
+              );
+
+              // Remove any existing userId parameter to ensure clean URL
+              try {
+                const url = new URL(widgetSrc, window.location.origin);
+                url.searchParams.delete("userId");
+                widgetSrc = url.toString();
+              } catch {
+                // If URL parsing fails, remove userId parameter manually
+                widgetSrc = widgetSrc.replace(/[?&]userId=[^&]*/g, "");
+                widgetSrc = widgetSrc.replace(/\?&/, "?");
+                widgetSrc = widgetSrc.replace(/\?$/, "");
+              }
+            }
+
+            setLoginWidget({
+              src: widgetSrc,
+              title: iframe.title || "Patient Portal Widget",
+              allow: iframe.allow || "camera; microphone; geolocation",
+              loading: iframe.loading || "lazy",
+              isScript: false,
+            });
+            console.log(
+              "🔧 Widget Debug - widget set successfully with src:",
+              widgetSrc
+            );
+          } else {
+            console.log("🔧 Widget Debug - no iframe element found in code");
+            setLoginWidget(null);
+          }
         }
       } catch (error) {
         console.warn(
@@ -1136,6 +1213,31 @@ export default function PatientPortal() {
 
     loadWidget();
   }, [session?.patientId]); // Re-load when patient ID changes
+
+  // Load script tag dynamically when isScript is true
+  useEffect(() => {
+    if (loginWidget?.isScript && loginWidget.src) {
+      // Remove any existing script with the same src
+      const existingScript = document.querySelector(`script[src="${loginWidget.src}"]`);
+      if (existingScript) {
+        existingScript.remove();
+      }
+
+      // Create and append new script tag
+      const script = document.createElement('script');
+      script.src = loginWidget.src;
+      script.async = true;
+      document.body.appendChild(script);
+
+      // Cleanup function to remove script when component unmounts or widget changes
+      return () => {
+        const scriptToRemove = document.querySelector(`script[src="${loginWidget.src}"]`);
+        if (scriptToRemove) {
+          scriptToRemove.remove();
+        }
+      };
+    }
+  }, [loginWidget?.isScript, loginWidget?.src]);
 
   const tabs = useMemo(
     () => [
@@ -2779,7 +2881,7 @@ export default function PatientPortal() {
         </main>
 
         {/* Fixed positioned widget in bottom-right corner - Shows for both login and post-login */}
-        {loginWidget ? (
+        {loginWidget && !loginWidget.isScript ? (
           <div
             className="fixed bottom-4 right-4 z-40"
             style={{
@@ -2807,6 +2909,7 @@ export default function PatientPortal() {
             />
           </div>
         ) : null}
+        {/* Script tags are loaded via useEffect, no DOM element needed */}
       </div>
     </>
   );
