@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAccessToken, setAccessToken, subscribeAccessToken } from '../api/http';
 import { login as apiLogin, type LoginResponse, type Role } from '../api/client';
-import { loginAtenxionUser, logoutAtenxionUser, loginAtenxionDoctor, logoutAtenxionDoctor, type AtenxionCredentials, type AtenxionDoctorCredentials } from '../api/atenxion';
+import { loginAtenxionUser, logoutAtenxionUser, loginAtenxionDoctor, logoutAtenxionDoctor, loginAtenxionCashier, logoutAtenxionCashier, type AtenxionCredentials, type AtenxionDoctorCredentials, type AtenxionCashierCredentials } from '../api/atenxion';
 import { fetchAdminIntegrationEmbed } from '../api/patientPortal';
 
 interface User {
@@ -27,7 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     getAccessToken(),
   );
   const [user, setUser] = useState<User | null>(() => decodeAccessToken(getAccessToken()));
-  const [currentUserCredentials, setCurrentUserCredentials] = useState<AtenxionCredentials | null>(null);
+  const [currentUserCredentials, setCurrentUserCredentials] = useState<AtenxionCredentials | AtenxionDoctorCredentials | AtenxionCashierCredentials | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeAccessToken((token) => {
@@ -84,11 +84,50 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           userId: loggedInUser.doctorId,
         };
         
-        setCurrentUserCredentials(doctorCredentials as any); // Store for logout
+        setCurrentUserCredentials(doctorCredentials); // Store for logout
         await loginAtenxionDoctor(doctorCredentials);
         console.log('[AuthProvider] Atenxion doctor login successful');
       } catch (error) {
         console.error('[AuthProvider] Atenxion doctor login failed:', error);
+      }
+    }
+    
+    // Call Atenxion login for cashiers
+    if (loggedInUser.role === 'Cashier') {
+      try {
+        // Get admin integration embed for cashiers to extract agentId if available
+        const adminEmbed = await fetchAdminIntegrationEmbed('Cashier');
+        let agentId: string | undefined;
+        
+        if (adminEmbed?.iframeCode) {
+          // Try agentchainId first (like patients do)
+          let agentIdMatch = adminEmbed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
+          if (agentIdMatch) {
+            agentId = agentIdMatch[1];
+            console.log('[AuthProvider] Extracted agentId from agentchainId for cashier:', agentId);
+          } else {
+            // Fallback to agentId pattern
+            agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+            if (agentIdMatch) {
+              agentId = agentIdMatch[1];
+              console.log('[AuthProvider] Extracted agentId from embed for cashier:', agentId);
+            } else {
+              console.warn('[AuthProvider] Could not extract agentId from embed iframeCode for cashier');
+            }
+          }
+        }
+
+        const cashierCredentials: AtenxionCashierCredentials = {
+          cashierId: loggedInUser.userId,
+          agentId: agentId,
+          userId: loggedInUser.userId,
+        };
+        
+        setCurrentUserCredentials(cashierCredentials); // Store for logout
+        await loginAtenxionCashier(cashierCredentials);
+        console.log('[AuthProvider] Atenxion cashier login successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion cashier login failed:', error);
       }
     }
   };
@@ -100,12 +139,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const doctorCredentials: AtenxionDoctorCredentials = {
           doctorId: user.doctorId,
           userId: user.doctorId,
-          agentId: (currentUserCredentials as any).agentId,
+          agentId: (currentUserCredentials as AtenxionDoctorCredentials).agentId,
         };
         await logoutAtenxionDoctor(doctorCredentials);
         console.log('[AuthProvider] Atenxion doctor logout successful');
       } catch (error) {
         console.error('[AuthProvider] Atenxion doctor logout failed:', error);
+        // Continue with logout even if Atenxion logout fails
+      }
+    }
+    
+    // Call Atenxion logout for cashiers before clearing session
+    if (user?.role === 'Cashier' && currentUserCredentials) {
+      try {
+        const cashierCredentials: AtenxionCashierCredentials = {
+          cashierId: user.userId,
+          userId: user.userId,
+          agentId: (currentUserCredentials as AtenxionCashierCredentials).agentId,
+        };
+        await logoutAtenxionCashier(cashierCredentials);
+        console.log('[AuthProvider] Atenxion cashier logout successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion cashier logout failed:', error);
         // Continue with logout even if Atenxion logout fails
       }
     }

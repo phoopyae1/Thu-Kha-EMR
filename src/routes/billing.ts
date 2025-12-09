@@ -76,6 +76,19 @@ router.post(
     try {
       const payload = req.body as CreateInvoiceInput;
       const invoice = await createInvoice(payload);
+      
+      // Notify Atenxion agent about invoice creation (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice creation:", invoice.invoiceId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.status(201).json(invoice);
     } catch (error) {
       next(error);
@@ -173,6 +186,19 @@ router.patch(
         );
         results.push(invoice);
       }
+      
+      // Notify Atenxion agent about invoice update (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId && results.length > 0) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice update:", invoiceId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice update:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.json({ updated: results.length ? results : null });
     } catch (error) {
       next(error);
@@ -187,6 +213,19 @@ router.delete(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       await removeInvoiceItem(req.params.itemId);
+      
+      // Notify Atenxion agent about invoice item deletion (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice item deletion:", req.params.itemId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice item deletion:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.status(204).end();
     } catch (error) {
       next(error);
@@ -203,6 +242,19 @@ router.post(
     try {
       const { amount, method, referenceNo, note } = req.body as z.infer<typeof PostPaymentSchema>;
       const payment = await postPayment(req.params.invoiceId, amount, method, referenceNo, note);
+      
+      // Notify Atenxion agent about payment creation (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for payment creation:", payment.paymentId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for payment creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.status(201).json(payment);
     } catch (error) {
       next(error);
@@ -219,6 +271,19 @@ router.post(
     try {
       const body = req.body as z.infer<typeof VoidInvoiceSchema>;
       const invoice = await voidInvoice(req.params.invoiceId, body.reason);
+      
+      // Notify Atenxion agent about invoice void (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice void:", invoice.invoiceId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice void:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.json(invoice);
     } catch (error) {
       next(error);
@@ -274,6 +339,18 @@ router.delete(
       await prisma.invoice.delete({
         where: { invoiceId },
       });
+      
+      // Notify Atenxion agent about invoice deletion (cashier-specific)
+      if (req.user?.role === 'Cashier' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice deletion:", invoiceId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice deletion:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
       
       res.status(204).end();
     } catch (error) {

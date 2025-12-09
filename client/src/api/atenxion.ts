@@ -24,6 +24,13 @@ export interface AtenxionDoctorCredentials {
   agentchainId?: string;
 }
 
+export interface AtenxionCashierCredentials {
+  userId: string;
+  cashierId: string;
+  agentId?: string;
+  agentchainId?: string;
+}
+
 interface AtenxionRequestBody {
   userId: string;
   patientName: string;
@@ -36,6 +43,14 @@ interface AtenxionRequestBody {
 interface AtenxionDoctorRequestBody {
   userId: string;
   doctorId: string;
+  Authorization: string;
+  agentId?: string;
+  agentchainId?: string;
+}
+
+interface AtenxionCashierRequestBody {
+  userId: string;
+  cashierId: string;
   Authorization: string;
   agentId?: string;
   agentchainId?: string;
@@ -126,6 +141,35 @@ function normalizeDoctorCredentials(
   // if (agentchainId) {
   //   body.agentchainId = agentchainId;
   // }
+
+  return body;
+}
+
+function normalizeCashierCredentials(
+  credentials: AtenxionCashierCredentials
+): AtenxionCashierRequestBody {
+  const cashierId = credentials.cashierId.trim();
+  const userId = cashierId; // userId is the same as cashierId for cashiers
+  const agentId = credentials.agentId?.trim();
+  
+  // Use EMR access token for cashiers
+  const emrToken = getAccessToken();
+  if (!emrToken) {
+    throw new Error("No access token available for cashier authentication");
+  }
+
+  const body: AtenxionCashierRequestBody = {
+    userId,
+    cashierId,
+    Authorization: `Bearer ${emrToken}`,
+  };
+  
+  // Include agentId if it exists (following patient pattern)
+  if (agentId) {
+    body.agentId = agentId.trim();
+  }
+  
+  console.log('[normalizeCashierCredentials] agentId in body:', body.agentId, 'from input:', agentId);
 
   return body;
 }
@@ -327,6 +371,102 @@ export async function logoutAtenxionUser(
   }
 }
 
+export async function loginAtenxionCashier(
+  credentials: AtenxionCashierCredentials,
+) {
+  const url = `${resolveServerUrl()}/api/post-login/user-login`;
+  console.log("Atenxion cashier login URL:", url);
+  let resolvedToken = null;
+  // Get token from MongoDB admin integration DB (contextKey)
+  // Use admin integration for cashiers - get contextKey from MongoDB adminIntegrationSettings_cashier collection
+  const embed = await fetchAdminIntegrationEmbed('Cashier');
+  resolvedToken = embed?.contextKey;
+
+  if (!resolvedToken) {
+    console.warn("Atenxion cashier login: No contextKey found in admin integration embed");
+    // Continue anyway - the API might work without it or return a proper error
+  }
+
+  // Extract agentId from embed if not provided in credentials
+  // Follow the same pattern as doctors - try agentchainId first, then agentId
+  let agentId = credentials.agentId;
+  console.log('[loginAtenxionCashier] Initial agentId from credentials:', agentId);
+  
+  if (!agentId) {
+    console.log('[loginAtenxionCashier] agentId not in credentials, fetching embed to extract...');
+    const embed = await fetchAdminIntegrationEmbed('Cashier');
+    console.log('[loginAtenxionCashier] Embed fetched:', embed ? 'found' : 'not found');
+    
+    if (embed?.iframeCode) {
+      console.log('[loginAtenxionCashier] iframeCode length:', embed.iframeCode.length);
+      console.log('[loginAtenxionCashier] iframeCode preview:', embed.iframeCode.substring(0, 300));
+      
+      // Try agentchainId first (like patients do)
+      let agentIdMatch = embed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
+      if (agentIdMatch) {
+        agentId = agentIdMatch[1];
+        console.log('[loginAtenxionCashier] ✓ Extracted agentId from agentchainId:', agentId);
+      } else {
+        // Try agentId patterns
+        agentIdMatch = embed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+        if (!agentIdMatch) {
+          agentIdMatch = embed.iframeCode.match(/"agentId"\s*:\s*"([^"]+)"/i);
+        }
+        if (!agentIdMatch) {
+          agentIdMatch = embed.iframeCode.match(/'agentId'\s*:\s*'([^']+)'/i);
+        }
+        if (agentIdMatch) {
+          agentId = agentIdMatch[1];
+          console.log('[loginAtenxionCashier] ✓ Extracted agentId from embed:', agentId);
+        } else {
+          console.warn('[loginAtenxionCashier] ✗ Could not extract agentId from embed iframeCode');
+          console.warn('[loginAtenxionCashier] Full iframeCode:', embed.iframeCode);
+        }
+      }
+    } else {
+      console.warn('[loginAtenxionCashier] Embed has no iframeCode');
+    }
+  } else {
+    console.log('[loginAtenxionCashier] Using agentId from credentials:', agentId);
+  }
+
+  // Ensure agentId is included in credentials
+  const finalAgentId = agentId || credentials.agentId;
+  console.log('[loginAtenxionCashier] Final agentId before normalize:', finalAgentId);
+  
+  const credentialsWithAgentId: AtenxionCashierCredentials = {
+    ...credentials,
+    agentId: finalAgentId,
+  };
+  
+  console.log('[loginAtenxionCashier] credentialsWithAgentId.agentId:', credentialsWithAgentId.agentId);
+
+  const requestBody = normalizeCashierCredentials(credentialsWithAgentId);
+  
+  // Use MongoDB contextKey in Authorization header (same as doctor login pattern)
+  const headers = getHeaders(resolvedToken) || {};
+
+  console.log("Atenxion cashier login API call:", {
+    url,
+    body: requestBody,
+    headers,
+    token: resolvedToken ? resolvedToken.substring(0, 20) + "..." : "none",
+  });
+
+  try {
+    const pp = await axios.post(url, requestBody, { headers });
+    console.log("Atenxion cashier login response:", pp);
+    return true;
+  } catch (error) {
+    console.error("Atenxion cashier login failed:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("Response status:", error.response?.status);
+      console.error("Response data:", error.response?.data);
+    }
+    return handleAxiosError(error, "Unable to log in cashier to Atenxion");
+  }
+}
+
 export async function logoutAtenxionDoctor(
   credentials: AtenxionDoctorCredentials,
   token?: string | null
@@ -352,5 +492,33 @@ export async function logoutAtenxionDoctor(
   } catch (error) {
     console.error("Atenxion doctor logout failed:", error);
     return handleAxiosError(error, "Unable to log out doctor from Atenxion");
+  }
+}
+
+export async function logoutAtenxionCashier(
+  credentials: AtenxionCashierCredentials,
+  token?: string | null
+) {
+  const url = `${resolveServerUrl()}/api/post-login/user-logout`;
+  let resolvedToken = token;
+  if (!resolvedToken) {
+    // Use admin integration for cashiers - get contextKey from MongoDB adminIntegrationSettings_cashier collection
+    const embed = await fetchAdminIntegrationEmbed('Cashier');
+    resolvedToken = embed?.contextKey;
+  }
+  const body = normalizeCashierCredentials(credentials);
+  const headers = getHeaders(resolvedToken) || {};
+  try {
+    console.log("Atenxion cashier logout API call:", {
+      url,
+      body,
+      headers,
+      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : "none",
+    });
+    await axios.post(url, body, { headers });
+    return true;
+  } catch (error) {
+    console.error("Atenxion cashier logout failed:", error);
+    return handleAxiosError(error, "Unable to log out cashier from Atenxion");
   }
 }
