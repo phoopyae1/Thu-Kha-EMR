@@ -12,6 +12,11 @@ const router = Router();
 // Validation schema for admin agent (empty body for simple GET-like POST requests)
 const AdminAgentSchema = z.object({}).optional();
 
+// Validation schema for admin profile
+const AdminProfileSchema = z.object({
+  itAdminId: z.string().uuid().optional(),
+});
+
 // Validation schema for creating user account
 const roleSchema = z.enum([
   'Doctor',
@@ -99,6 +104,16 @@ const ViewAllLabResultsSchema = z.object({
   endDate: z.string().optional(), // Filter by resultedAt date
   testCode: z.string().optional(), // Filter by test code
   testName: z.string().optional(), // Filter by test name
+  limit: z.coerce.number().int().positive().max(100).optional().default(50),
+  offset: z.coerce.number().int().nonnegative().optional().default(0),
+});
+
+const ViewAllAppointmentsSchema = z.object({
+  patientId: z.string().uuid().optional(),
+  doctorId: z.string().uuid().optional(),
+  status: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
 });
@@ -817,8 +832,51 @@ router.post(
           });
         }
         if (statusCode === 409) {
+          // For conflicts, try to get details about the conflicting appointment
+          try {
+            const conflictingAppointment = await prisma.appointment.findFirst({
+              where: {
+                doctorId: doctor.doctorId,
+                date: appointmentDate,
+                status: {
+                  not: 'Cancelled',
+                },
+                startTimeMin: {
+                  lt: endTimeMin,
+                },
+                endTimeMin: {
+                  gt: startTimeMin,
+                },
+              },
+              include: {
+                patient: { select: { name: true } },
+              },
+              orderBy: { startTimeMin: 'asc' },
+            });
+
+            if (conflictingAppointment) {
+              const conflictStartTime = formatTime(conflictingAppointment.startTimeMin);
+              const conflictEndTime = formatTime(conflictingAppointment.endTimeMin);
+              const conflictDate = conflictingAppointment.date.toISOString().split("T")[0];
+              
+              return res.status(409).json({
+                error: `Time slot conflicts with an existing appointment. Doctor ${doctor.name} already has an appointment on ${conflictDate} from ${conflictStartTime} to ${conflictEndTime} with patient ${conflictingAppointment.patient.name}.`,
+                msg: "Failed",
+                conflictDetails: {
+                  date: conflictDate,
+                  startTime: conflictStartTime,
+                  endTime: conflictEndTime,
+                  patientName: conflictingAppointment.patient.name,
+                },
+              });
+            }
+          } catch (err) {
+            // If we can't fetch conflict details, use the original error message
+            console.warn("Failed to fetch conflict details:", err);
+          }
+          
           return res.status(409).json({
-            error: validationError.message || "Time slot is already occupied",
+            error: validationError.message || "Time slot conflicts with an existing appointment",
             msg: "Failed",
           });
         }
@@ -1727,6 +1785,538 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to fetch lab results",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Admin Profile API - Returns admin profile information and system-wide statistics
+router.post(
+  "/admin-profile",
+  requireAuth,
+  requireRole("ITAdmin"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body for itAdminId (optional)
+      const validationResult = AdminProfileSchema.safeParse(req.body || {});
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      // Use provided itAdminId or default to authenticated user's userId
+      const itAdminId = validationResult.data.itAdminId || user.userId;
+
+      // Verify the itAdminId matches the authenticated user's userId (only allow access to own profile)
+      if (user.userId !== itAdminId) {
+        return res.status(403).json({
+          error: "Forbidden: You can only access your own profile",
+          msg: "Failed",
+        });
+      }
+
+      // Get user info
+      const userRecord = await prisma.user.findUnique({
+        where: { userId: itAdminId },
+        select: {
+          userId: true,
+          email: true,
+          role: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
+
+      if (!userRecord) {
+        return res.status(404).json({
+          error: "Admin not found",
+          msg: "Failed",
+        });
+      }
+
+      // Get system-wide statistics
+      const [
+        totalUsers,
+        totalDoctors,
+        totalPatients,
+        doctorsWithoutAccounts,
+        totalAppointments,
+        totalLabOrders,
+        totalLabResults,
+        totalMedicationOrders,
+        totalInvoices,
+        totalPayments,
+        totalRevenue,
+      ] = await Promise.all([
+        prisma.user.count(),
+        prisma.doctor.count(),
+        prisma.patient.count(),
+        prisma.doctor.count({
+          where: {
+            user: null,
+          },
+        }),
+        prisma.appointment.count(),
+        prisma.labOrder.count(),
+        prisma.labResult.count(),
+        prisma.medicationOrder.count(),
+        prisma.invoice.count(),
+        prisma.payment.count(),
+        prisma.payment.aggregate({
+          _sum: {
+            amount: true,
+          },
+        }),
+      ]);
+
+      // Get statistics by role
+      const roleCounts = await prisma.user.groupBy({
+        by: ['role'],
+        _count: {
+          userId: true,
+        },
+      });
+
+      const roleCountsMap: Record<string, number> = {};
+      roleCounts.forEach((item) => {
+        roleCountsMap[item.role] = item._count.userId;
+      });
+
+      // Get status breakdowns
+      const [appointmentStatusCounts, labOrderStatusCounts, medicationOrderStatusCounts, invoiceStatusCounts] = await Promise.all([
+        prisma.appointment.groupBy({
+          by: ['status'],
+          _count: {
+            appointmentId: true,
+          },
+        }),
+        prisma.labOrder.groupBy({
+          by: ['status'],
+          _count: {
+            labOrderId: true,
+          },
+        }),
+        prisma.medicationOrder.groupBy({
+          by: ['status'],
+          _count: {
+            orderId: true,
+          },
+        }),
+        prisma.invoice.groupBy({
+          by: ['status'],
+          _count: {
+            invoiceId: true,
+          },
+        }),
+      ]);
+
+      const appointmentStatusMap: Record<string, number> = {};
+      appointmentStatusCounts.forEach((item) => {
+        appointmentStatusMap[item.status] = item._count.appointmentId;
+      });
+
+      const labOrderStatusMap: Record<string, number> = {};
+      labOrderStatusCounts.forEach((item) => {
+        labOrderStatusMap[item.status] = item._count.labOrderId;
+      });
+
+      const medicationOrderStatusMap: Record<string, number> = {};
+      medicationOrderStatusCounts.forEach((item) => {
+        medicationOrderStatusMap[item.status] = item._count.orderId;
+      });
+
+      const invoiceStatusMap: Record<string, number> = {};
+      invoiceStatusCounts.forEach((item) => {
+        invoiceStatusMap[item.status] = item._count.invoiceId;
+      });
+
+      // Get recent statistics (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const [
+        recentUsers,
+        recentDoctors,
+        recentPatients,
+        recentAppointments,
+        recentLabOrders,
+        recentLabResults,
+        recentMedicationOrders,
+        recentInvoices,
+        recentPayments,
+        recentRevenue,
+      ] = await Promise.all([
+        prisma.user.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.doctor.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.patient.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.appointment.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.labOrder.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.labResult.count({
+          where: {
+            resultedAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.medicationOrder.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.invoice.count({
+          where: {
+            createdAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.payment.count({
+          where: {
+            paidAt: { gte: thirtyDaysAgo },
+          },
+        }),
+        prisma.payment.aggregate({
+          where: {
+            paidAt: { gte: thirtyDaysAgo },
+          },
+          _sum: {
+            amount: true,
+          },
+        }),
+      ]);
+
+      // Build flat response structure
+      const result: any = {
+        status: "Success",
+        userId: userRecord.userId,
+        userEmail: userRecord.email,
+        userRole: userRecord.role,
+        userStatus: userRecord.status,
+        userCreatedAt: userRecord.createdAt.toISOString().split("T")[0],
+        userCreatedTime: userRecord.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
+        userUpdatedAt: userRecord.updatedAt.toISOString().split("T")[0],
+
+        // System-wide statistics
+        totalUsers: totalUsers,
+        totalDoctors: totalDoctors,
+        totalPatients: totalPatients,
+        doctorsWithoutAccounts: doctorsWithoutAccounts,
+        totalAppointments: totalAppointments,
+        totalLabOrders: totalLabOrders,
+        totalLabResults: totalLabResults,
+        totalMedicationOrders: totalMedicationOrders,
+        totalInvoices: totalInvoices,
+        totalPayments: totalPayments,
+        totalRevenue: totalRevenue._sum.amount ? Number(totalRevenue._sum.amount) : 0,
+
+        // Role breakdown
+        ...Object.fromEntries(
+          Object.entries(roleCountsMap).map(([role, count]) => [`total${role}`, count])
+        ),
+
+        // Status breakdowns
+        appointmentStatusBreakdown: appointmentStatusMap,
+        labOrderStatusBreakdown: labOrderStatusMap,
+        medicationOrderStatusBreakdown: medicationOrderStatusMap,
+        invoiceStatusBreakdown: invoiceStatusMap,
+
+        // Recent statistics (last 30 days)
+        recentUsersLast30Days: recentUsers,
+        recentDoctorsLast30Days: recentDoctors,
+        recentPatientsLast30Days: recentPatients,
+        recentAppointmentsLast30Days: recentAppointments,
+        recentLabOrdersLast30Days: recentLabOrders,
+        recentLabResultsLast30Days: recentLabResults,
+        recentMedicationOrdersLast30Days: recentMedicationOrders,
+        recentInvoicesLast30Days: recentInvoices,
+        recentPaymentsLast30Days: recentPayments,
+        recentRevenueLast30Days: recentRevenue._sum.amount ? Number(recentRevenue._sum.amount) : 0,
+      };
+
+      res.json(result);
+    } catch (error) {
+      console.error("Admin Agent Profile Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch admin profile",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// View all appointments (showing doctor name, time, date, patient information, etc.)
+router.post(
+  "/appointments",
+  requireAuth,
+  requireRole("ITAdmin"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = ViewAllAppointmentsSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { patientId, doctorId, status, startDate, endDate, limit, offset } = validationResult.data;
+
+      // Build where clause
+      const where: any = {};
+      
+      if (patientId) {
+        where.patientId = patientId;
+      }
+      
+      if (doctorId) {
+        where.doctorId = doctorId;
+      }
+      
+      if (status) {
+        where.status = status;
+      }
+      
+      if (startDate || endDate) {
+        where.date = {};
+        if (startDate) {
+          const start = new Date(startDate);
+          start.setUTCHours(0, 0, 0, 0);
+          where.date.gte = start;
+        }
+        if (endDate) {
+          const end = new Date(endDate);
+          end.setUTCHours(23, 59, 59, 999);
+          where.date.lte = end;
+        }
+      }
+
+      // Fetch appointments with related data
+      const appointments = await prisma.appointment.findMany({
+        where,
+        take: limit,
+        skip: offset,
+        orderBy: [
+          { date: "desc" },
+          { startTimeMin: "desc" },
+        ],
+        include: {
+          patient: {
+            select: {
+              patientId: true,
+              name: true,
+              dob: true,
+              gender: true,
+              contact: true,
+              insurance: true,
+            },
+          },
+          doctor: {
+            select: {
+              doctorId: true,
+              name: true,
+              department: true,
+            },
+          },
+        },
+      });
+
+      // Get total count for pagination
+      const totalCount = await prisma.appointment.count({ where });
+
+      // Helper function to map status to readable text
+      const getStatusText = (status: string): string => {
+        const statusMap: Record<string, string> = {
+          Scheduled: "Scheduled",
+          CheckedIn: "Checked In",
+          InProgress: "In Progress",
+          Completed: "Completed",
+          Cancelled: "Cancelled",
+          NoShow: "No Show",
+        };
+        return statusMap[status] || status;
+      };
+
+      // Format response
+      const formattedAppointments = appointments.map((appointment: any) => {
+        const appointmentData: any = {
+          // Appointment Information
+          appointmentId: appointment.appointmentId,
+          status: getStatusText(appointment.status || "Scheduled"),
+          statusCode: appointment.status,
+          appointmentDate: appointment.date.toISOString().split("T")[0],
+          appointmentTime: formatTime(appointment.startTimeMin),
+          startTime: formatTime(appointment.startTimeMin),
+          endTime: formatTime(appointment.endTimeMin),
+          duration: `${appointment.endTimeMin - appointment.startTimeMin} minutes`,
+          reason: appointment.reason || null,
+          location: appointment.location || null,
+          cancelReason: appointment.cancelReason || null,
+          createdAt: appointment.createdAt.toISOString().split("T")[0],
+          createdTime: appointment.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
+          updatedAt: appointment.updatedAt.toISOString().split("T")[0],
+
+          // Patient Information (who the appointment is for)
+          patientId: appointment.patientId,
+          patientName: appointment.patient.name,
+          patientDob: appointment.patient.dob.toISOString().split("T")[0],
+          patientGender: appointment.patient.gender,
+          patientContact: appointment.patient.contact || null,
+          patientInsurance: appointment.patient.insurance || null,
+
+          // Doctor Information (who the appointment is with)
+          doctorId: appointment.doctorId,
+          doctorName: appointment.doctor.name,
+          doctorDepartment: appointment.department,
+        };
+
+        // Remove null values from optional fields
+        const cleaned: any = {};
+        for (const [key, value] of Object.entries(appointmentData)) {
+          if (value !== null && value !== undefined) {
+            cleaned[key] = value;
+          }
+        }
+        return cleaned;
+      });
+
+      // Calculate summary statistics
+      const allAppointmentsCount = await prisma.appointment.count({});
+      
+      // Get breakdown by status
+      const statusBreakdown = await prisma.appointment.groupBy({
+        by: ['status'],
+        _count: {
+          appointmentId: true,
+        },
+      });
+
+      const statusCounts: Record<string, number> = {};
+      statusBreakdown.forEach((item) => {
+        statusCounts[item.status] = item._count.appointmentId;
+      });
+
+      // Get breakdown by doctor
+      const doctorBreakdown = await prisma.appointment.groupBy({
+        by: ['doctorId'],
+        _count: {
+          appointmentId: true,
+        },
+      });
+
+      // Fetch doctor names for breakdown
+      const doctorIds = doctorBreakdown.map(item => item.doctorId);
+      const doctors = await prisma.doctor.findMany({
+        where: { doctorId: { in: doctorIds } },
+        select: {
+          doctorId: true,
+          name: true,
+          department: true,
+        },
+      });
+
+      const doctorMap = new Map(doctors.map(d => [d.doctorId, d]));
+      const doctorCounts: Record<string, number> = {};
+      doctorBreakdown.forEach((item) => {
+        const doctor = doctorMap.get(item.doctorId);
+        const key = doctor ? `${doctor.name} (${doctor.department})` : item.doctorId;
+        doctorCounts[key] = item._count.appointmentId;
+      });
+
+      // Build response
+      const result: any = {
+        msg: "Success",
+        totalAppointments: totalCount,
+        totalAppointmentsInSystem: allAppointmentsCount,
+        returnedAppointments: formattedAppointments.length,
+        pagination: {
+          limit,
+          offset,
+          hasMore: offset + limit < totalCount,
+        },
+        statusBreakdown: statusCounts,
+        doctorBreakdown: doctorCounts,
+        appointments: formattedAppointments,
+      };
+
+      // Add numbered appointment fields for flat response (only non-null values)
+      formattedAppointments.forEach((appointment, index) => {
+        const prefix = `appointment${index + 1}`;
+        result[`${prefix}AppointmentId`] = appointment.appointmentId;
+        result[`${prefix}Status`] = appointment.status;
+        result[`${prefix}StatusCode`] = appointment.statusCode;
+        result[`${prefix}AppointmentDate`] = appointment.appointmentDate;
+        result[`${prefix}StartTime`] = appointment.startTime;
+        result[`${prefix}EndTime`] = appointment.endTime;
+        result[`${prefix}Duration`] = appointment.duration;
+        result[`${prefix}PatientId`] = appointment.patientId;
+        result[`${prefix}PatientName`] = appointment.patientName;
+        result[`${prefix}DoctorId`] = appointment.doctorId;
+        result[`${prefix}DoctorName`] = appointment.doctorName;
+        result[`${prefix}DoctorDepartment`] = appointment.doctorDepartment;
+        result[`${prefix}CreatedAt`] = appointment.createdAt;
+        
+        // Add fields only if they exist (non-null)
+        if (appointment.patientDob) result[`${prefix}PatientDob`] = appointment.patientDob;
+        if (appointment.patientGender) result[`${prefix}PatientGender`] = appointment.patientGender;
+        if (appointment.patientContact) result[`${prefix}PatientContact`] = appointment.patientContact;
+        if (appointment.patientInsurance) result[`${prefix}PatientInsurance`] = appointment.patientInsurance;
+        if (appointment.reason) result[`${prefix}Reason`] = appointment.reason;
+        if (appointment.location) result[`${prefix}Location`] = appointment.location;
+        if (appointment.cancelReason) result[`${prefix}CancelReason`] = appointment.cancelReason;
+        if (appointment.updatedAt) result[`${prefix}UpdatedAt`] = appointment.updatedAt;
+      });
+
+      res.json(result);
+    } catch (error) {
+      console.error("Admin Agent View All Appointments Error:", error);
+      
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch appointments",
         msg: "Failed",
       });
     }
