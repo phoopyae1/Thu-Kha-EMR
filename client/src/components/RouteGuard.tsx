@@ -24,9 +24,9 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
 
   useEffect(() => {
     console.log('[RouteGuard] Widget useEffect triggered - widgetEnabled:', widgetEnabled, 'user:', user?.role, 'pathname:', location.pathname);
-    // Widget is for doctors and cashiers
+    // Widget is for doctors, cashiers, IT admins, and lab technicians
     console.log('[RouteGuard] Widget loading check - User role:', user?.role);
-    const shouldLoadWidget = user?.role === 'Doctor' || user?.role === 'Cashier';
+    const shouldLoadWidget = user?.role === 'Doctor' || user?.role === 'Cashier' || user?.role === 'ITAdmin' || user?.role === 'LabTech';
     
     console.log('[RouteGuard] shouldLoadWidget calculated:', shouldLoadWidget);
     
@@ -47,9 +47,9 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
     const loadWidget = async () => {
       try {
         console.log('[RouteGuard] Loading widget for role:', user.role);
-        // Fetch from admin integration for doctors and cashiers, patient portal integration for others
+        // Fetch from admin integration for doctors, cashiers, IT admins, and lab technicians, patient portal integration for others
         let embed = null;
-        if (user.role === 'Doctor' || user.role === 'Cashier') {
+        if (user.role === 'Doctor' || user.role === 'Cashier' || user.role === 'ITAdmin' || user.role === 'LabTech') {
           embed = await fetchAdminIntegrationEmbed(user.role);
           if (!embed) {
             embed = await fetchIntegrationEmbed();
@@ -101,7 +101,7 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
         if(user?.role === 'Doctor') {
           userIdToUse = user?.doctorId;
         } 
-        else if(user?.role === 'Cashier') {
+        else if(user?.role === 'Cashier' || user?.role === 'ITAdmin' || user?.role === 'LabTech') {
           userIdToUse = user?.userId;
         }
         else {
@@ -245,8 +245,8 @@ export default function RouteGuard({ children, allowedRoles }: Props) {
     }
   }, [widgetFrame?.isScript, widgetFrame?.src]);
 
-  // Widget is for doctors and cashiers
-  const shouldShowWidget = !!widgetFrame && (user?.role === 'Doctor' || user?.role === 'Cashier');
+  // Widget is for doctors, cashiers, IT admins, and lab technicians
+  const shouldShowWidget = !!widgetFrame && (user?.role === 'Doctor' || user?.role === 'Cashier' || user?.role === 'ITAdmin' || user?.role === 'LabTech');
 
   console.log('[RouteGuard] Render check - shouldShowWidget:', shouldShowWidget, 'widgetFrame:', widgetFrame ? 'exists' : 'null', 'isScript:', widgetFrame?.isScript, 'user role:', user?.role);
 

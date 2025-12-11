@@ -6,6 +6,35 @@ import { z } from "zod";
 const prisma = new PrismaClient();
 const router = Router();
 
+// Helper function to parse JWT payload
+function parseBearerToken(header: string | undefined): string | null {
+  if (!header) return null;
+  const parts = header.split(" ");
+  if (parts.length !== 2 || parts[0] !== "Bearer") return null;
+  return parts[1];
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length !== 3) throw new Error("Invalid token format");
+  const payload = Buffer.from(parts[1], "base64url").toString("utf8");
+  return JSON.parse(payload);
+}
+
+// Middleware to allow either Cashier or ITAdmin authentication
+function requireCashierOrITAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  return requireAuth(req, res, () => {
+    if (!req.user || (req.user.role !== "Cashier" && req.user.role !== "ITAdmin")) {
+      return res.status(403).json({ error: "Cashier or ITAdmin access required", msg: "Failed" });
+    }
+    return next();
+  });
+}
+
 // Validation schema for cashier agent
 const CashierAgentSchema = z.object({
   cashierId: z.string().uuid(),
@@ -169,8 +198,7 @@ router.post(
 // Billing Assistant API - Returns detailed billing information with patient, doctor, and fee breakdowns
 router.post(
   "/billing-assistant",
-  requireAuth,
-  requireRole("Cashier", "ITAdmin", "AdminAssistant"),
+  requireCashierOrITAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;

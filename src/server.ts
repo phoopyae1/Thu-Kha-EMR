@@ -21,6 +21,7 @@ import patientPortalRouter from './modules/patient-portal/index.js';
 import agentsRouter from './routes/agents.js';
 import doctorAgentRouter from './routes/doctorAgent.js';
 import cashierAgentRouter from './routes/cashierAgent.js';
+import adminAgentRouter from './routes/adminAgent.js';
 
 export const apiRouter = Router();
 
@@ -51,5 +52,6 @@ apiRouter.use(clinicalRouter);
 apiRouter.use('/agents', agentsRouter);
 apiRouter.use('/doctor-agent', doctorAgentRouter);
 apiRouter.use('/cashier-agent', cashierAgentRouter);
+apiRouter.use('/admin-agent', adminAgentRouter);
 
 export default apiRouter;

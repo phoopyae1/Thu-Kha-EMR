@@ -715,7 +715,7 @@ export default function VisitBilling() {
                 />
               </label>
               <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium text-gray-700">Unit Price (SGD)</span>
+                <span className="font-medium text-gray-700">Unit Price (USD)</span>
                 <input
                   type="text"
                   value={itemDraft.unitPrice}
@@ -828,7 +828,7 @@ export default function VisitBilling() {
             <div className="border-b border-gray-200 px-4 py-3">
               <h2 className="text-lg font-semibold text-gray-900">Invoice Adjustments</h2>
               <p className="mt-1 text-sm text-gray-500">
-                Apply invoice-level discount or tax. Amounts are absolute values in SGD.
+                Apply invoice-level discount or tax. Amounts are absolute values in USD.
               </p>
             </div>
             <form className="grid gap-4 px-4 py-4 md:grid-cols-2" onSubmit={handleAdjustmentsSubmit}>
@@ -1043,7 +1043,7 @@ export default function VisitBilling() {
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-sm">
-                  <span className="font-medium text-gray-700">Unit Price (SGD)</span>
+                  <span className="font-medium text-gray-700">Unit Price (USD)</span>
                   <input
                     type="text"
                     value={itemEditDraft.unitPrice}

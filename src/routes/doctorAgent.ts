@@ -10,6 +10,20 @@ import { toDateOnly, toMinutes } from "../utils/time.js";
 const prisma = new PrismaClient();
 const router = Router();
 
+// Middleware to allow either Doctor or ITAdmin authentication
+function requireDoctorOrITAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  return requireAuth(req, res, () => {
+    if (!req.user || (req.user.role !== "Doctor" && req.user.role !== "ITAdmin")) {
+      return res.status(403).json({ error: "Doctor or ITAdmin access required", msg: "Failed" });
+    }
+    return next();
+  });
+}
+
 // Validation schema for medication agent
 const MedicationAgentSchema = z.object({
   doctorId: z.string().uuid(),
@@ -506,8 +520,7 @@ router.post(
 // Create Lab Order API - Allows doctors to create lab orders
 router.post(
   "/lab-order",
-  requireAuth,
-  requireRole("Doctor"),
+  requireDoctorOrITAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
@@ -534,6 +547,7 @@ router.post(
       const doctorId = payload.doctorId;
 
       // For doctors, verify the doctorId in the request matches their own doctorId
+      // ITAdmin can create lab orders for any doctor
       if (user.role === 'Doctor') {
         if (!user.doctorId) {
           return res.status(403).json({
@@ -548,6 +562,7 @@ router.post(
           });
         }
       }
+      // ITAdmin can create lab orders for any doctor - no additional check needed
 
       // Verify the doctorId exists and is valid
       const doctor = await prisma.doctor.findUnique({

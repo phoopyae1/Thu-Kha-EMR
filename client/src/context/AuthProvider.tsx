@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { getAccessToken, setAccessToken, subscribeAccessToken } from '../api/http';
 import { login as apiLogin, type LoginResponse, type Role } from '../api/client';
-import { loginAtenxionUser, logoutAtenxionUser, loginAtenxionDoctor, logoutAtenxionDoctor, loginAtenxionCashier, logoutAtenxionCashier, type AtenxionCredentials, type AtenxionDoctorCredentials, type AtenxionCashierCredentials } from '../api/atenxion';
+import { loginAtenxionUser, logoutAtenxionUser, loginAtenxionDoctor, logoutAtenxionDoctor, loginAtenxionCashier, logoutAtenxionCashier, loginAtenxionITAdmin, logoutAtenxionITAdmin, loginAtenxionLabTech, logoutAtenxionLabTech, type AtenxionCredentials, type AtenxionDoctorCredentials, type AtenxionCashierCredentials, type AtenxionITAdminCredentials, type AtenxionLabTechCredentials } from '../api/atenxion';
 import { fetchAdminIntegrationEmbed } from '../api/patientPortal';
 
 interface User {
@@ -27,7 +27,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     getAccessToken(),
   );
   const [user, setUser] = useState<User | null>(() => decodeAccessToken(getAccessToken()));
-  const [currentUserCredentials, setCurrentUserCredentials] = useState<AtenxionCredentials | AtenxionDoctorCredentials | AtenxionCashierCredentials | null>(null);
+  const [currentUserCredentials, setCurrentUserCredentials] = useState<AtenxionCredentials | AtenxionDoctorCredentials | AtenxionCashierCredentials | AtenxionITAdminCredentials | AtenxionLabTechCredentials | null>(null);
 
   useEffect(() => {
     const unsubscribe = subscribeAccessToken((token) => {
@@ -130,6 +130,84 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error('[AuthProvider] Atenxion cashier login failed:', error);
       }
     }
+    
+    // Call Atenxion login for IT admins
+    if (loggedInUser.role === 'ITAdmin') {
+      try {
+        // Get admin integration embed for IT admins to extract agentId if available
+        const adminEmbed = await fetchAdminIntegrationEmbed('ITAdmin');
+        let agentId: string | undefined;
+        
+        if (adminEmbed?.iframeCode) {
+          // Try agentchainId first (like patients do)
+          let agentIdMatch = adminEmbed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
+          if (agentIdMatch) {
+            agentId = agentIdMatch[1];
+            console.log('[AuthProvider] Extracted agentId from agentchainId for IT admin:', agentId);
+          } else {
+            // Fallback to agentId pattern
+            agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+            if (agentIdMatch) {
+              agentId = agentIdMatch[1];
+              console.log('[AuthProvider] Extracted agentId from embed for IT admin:', agentId);
+            } else {
+              console.warn('[AuthProvider] Could not extract agentId from embed iframeCode for IT admin');
+            }
+          }
+        }
+
+        const itAdminCredentials: AtenxionITAdminCredentials = {
+          itAdminId: loggedInUser.userId,
+          agentId: agentId,
+          userId: loggedInUser.userId,
+        };
+        
+        setCurrentUserCredentials(itAdminCredentials); // Store for logout
+        await loginAtenxionITAdmin(itAdminCredentials);
+        console.log('[AuthProvider] Atenxion IT admin login successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion IT admin login failed:', error);
+      }
+    }
+    
+    // Call Atenxion login for lab technicians
+    if (loggedInUser.role === 'LabTech') {
+      try {
+        // Get admin integration embed for lab technicians to extract agentId if available
+        const adminEmbed = await fetchAdminIntegrationEmbed('LabTech');
+        let agentId: string | undefined;
+        
+        if (adminEmbed?.iframeCode) {
+          // Try agentchainId first (like patients do)
+          let agentIdMatch = adminEmbed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
+          if (agentIdMatch) {
+            agentId = agentIdMatch[1];
+            console.log('[AuthProvider] Extracted agentId from agentchainId for lab tech:', agentId);
+          } else {
+            // Fallback to agentId pattern
+            agentIdMatch = adminEmbed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+            if (agentIdMatch) {
+              agentId = agentIdMatch[1];
+              console.log('[AuthProvider] Extracted agentId from embed for lab tech:', agentId);
+            } else {
+              console.warn('[AuthProvider] Could not extract agentId from embed iframeCode for lab tech');
+            }
+          }
+        }
+
+        const labTechCredentials: AtenxionLabTechCredentials = {
+          labTechId: loggedInUser.userId,
+          agentId: agentId,
+          userId: loggedInUser.userId,
+        };
+        
+        setCurrentUserCredentials(labTechCredentials); // Store for logout
+        await loginAtenxionLabTech(labTechCredentials);
+        console.log('[AuthProvider] Atenxion lab tech login successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion lab tech login failed:', error);
+      }
+    }
   };
 
   const logout = async () => {
@@ -161,6 +239,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         console.log('[AuthProvider] Atenxion cashier logout successful');
       } catch (error) {
         console.error('[AuthProvider] Atenxion cashier logout failed:', error);
+        // Continue with logout even if Atenxion logout fails
+      }
+    }
+    
+    // Call Atenxion logout for IT admins before clearing session
+    if (user?.role === 'ITAdmin' && currentUserCredentials) {
+      try {
+        const itAdminCredentials: AtenxionITAdminCredentials = {
+          itAdminId: user.userId,
+          userId: user.userId,
+          agentId: (currentUserCredentials as AtenxionITAdminCredentials).agentId,
+        };
+        await logoutAtenxionITAdmin(itAdminCredentials);
+        console.log('[AuthProvider] Atenxion IT admin logout successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion IT admin logout failed:', error);
+        // Continue with logout even if Atenxion logout fails
+      }
+    }
+    
+    // Call Atenxion logout for lab technicians before clearing session
+    if (user?.role === 'LabTech' && currentUserCredentials) {
+      try {
+        const labTechCredentials: AtenxionLabTechCredentials = {
+          labTechId: user.userId,
+          userId: user.userId,
+          agentId: (currentUserCredentials as AtenxionLabTechCredentials).agentId,
+        };
+        await logoutAtenxionLabTech(labTechCredentials);
+        console.log('[AuthProvider] Atenxion lab tech logout successful');
+      } catch (error) {
+        console.error('[AuthProvider] Atenxion lab tech logout failed:', error);
         // Continue with logout even if Atenxion logout fails
       }
     }
