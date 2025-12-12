@@ -132,6 +132,19 @@ router.post(
           });
         }
         const data = await labs.createLabOrder(body.doctorId, req.body);
+        
+        // Notify Atenxion agent about lab order creation (admin-specific)
+        if (user.role === 'ITAdmin' && user.userId) {
+          try {
+            const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+            await recordAtenxionTransactionForAdmin(user.userId);
+            console.log("Atenxion transaction recorded for lab order creation (admin):", data.labOrderId);
+          } catch (error) {
+            console.warn("Failed to record Atenxion transaction for lab order creation (admin):", error);
+            // Don't fail the request if Atenxion notification fails
+          }
+        }
+        
         res.json(data);
       }
     } catch (error) {
@@ -295,6 +308,31 @@ router.post(
     try {
       const user = req.user!;
       const data = await labs.enterLabResult(user.userId, req.body);
+      
+      // Notify Atenxion agent about lab result entry (lab tech-specific)
+      if (user.role === 'LabTech' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForLabTech } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForLabTech(user.userId);
+          console.log("Atenxion transaction recorded for lab result entry:", data.labResultId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for lab result entry:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
+      // Notify Atenxion agent about lab result entry (admin-specific)
+      if (user.role === 'ITAdmin' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log("Atenxion transaction recorded for lab result entry (admin):", data.labResultId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for lab result entry (admin):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.json(data);
     } catch (error) {
       next(error);

@@ -144,3 +144,97 @@ export async function recordAtenxionTransactionForCashier(
     throw error;
   }
 }
+
+// Transaction function for admins (ITAdmin) that uses adminId (userId) as userId
+export async function recordAtenxionTransactionForAdmin(
+  adminId: string,
+  token?: string | null
+) {
+  const url = `${ATENXION_API_URL}/api/post-login/new-transaction`;
+
+  const body = {
+    userId: adminId.trim(),
+  };
+
+  let atenxionToken = "";
+  try {
+    // Fetch admin-specific integration embed
+    const latest = await fetchLatestAdminIntegrationEmbed('ITAdmin');
+    const embeddedToken = (latest as any)?.contextKey as string | undefined;
+    if (embeddedToken && embeddedToken.trim().length > 0) {
+      atenxionToken = embeddedToken.trim();
+    }
+  } catch {
+    atenxionToken = "asdf";
+  }
+
+  const headers = {
+    Authorization: `${atenxionToken || ATENXION_API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    console.log("Atenxion transaction API call (Admin):", {
+      url,
+      body,
+      token:
+        atenxionToken || ATENXION_API_TOKEN
+          ? `${(atenxionToken || ATENXION_API_TOKEN).substring(0, 16)}...`
+          : "none",
+    });
+
+    const response = await axios.post(url, body, { headers });
+    console.log("Transaction recorded successfully for admin:", response.data);
+    return true;
+  } catch (error) {
+    console.error("Transaction failed for admin:", error);
+    throw error;
+  }
+}
+
+// Transaction function for lab techs (LabTech) that uses labTechId (userId) as userId
+export async function recordAtenxionTransactionForLabTech(
+  labTechId: string,
+  token?: string | null
+) {
+  const url = `${ATENXION_API_URL}/api/post-login/new-transaction`;
+
+  const body = {
+    userId: labTechId.trim(),
+  };
+
+  let atenxionToken = "";
+  try {
+    // Fetch lab tech-specific integration embed
+    const latest = await fetchLatestAdminIntegrationEmbed('LabTech');
+    const embeddedToken = (latest as any)?.contextKey as string | undefined;
+    if (embeddedToken && embeddedToken.trim().length > 0) {
+      atenxionToken = embeddedToken.trim();
+    }
+  } catch {
+    atenxionToken = "asdf";
+  }
+
+  const headers = {
+    Authorization: `${atenxionToken || ATENXION_API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    console.log("Atenxion transaction API call (LabTech):", {
+      url,
+      body,
+      token:
+        atenxionToken || ATENXION_API_TOKEN
+          ? `${(atenxionToken || ATENXION_API_TOKEN).substring(0, 16)}...`
+          : "none",
+    });
+
+    const response = await axios.post(url, body, { headers });
+    console.log("Transaction recorded successfully for lab tech:", response.data);
+    return true;
+  } catch (error) {
+    console.error("Transaction failed for lab tech:", error);
+    throw error;
+  }
+}

@@ -89,6 +89,18 @@ router.post(
         }
       }
       
+      // Notify Atenxion agent about invoice creation (admin-specific)
+      if (req.user?.role === 'ITAdmin' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(req.user.userId);
+          console.log("Atenxion transaction recorded for invoice creation (admin):", invoice.invoiceId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for invoice creation (admin):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+      
       res.status(201).json(invoice);
     } catch (error) {
       next(error);

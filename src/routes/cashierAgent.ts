@@ -1,7 +1,10 @@
 import { Router, type Response, type NextFunction } from "express";
 import { requireAuth, requireRole, type AuthRequest } from "../modules/auth/index.js";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, PaymentMethod } from "@prisma/client";
 import { z } from "zod";
+import { PostPaymentSchema } from "../validation/billing.js";
+import { postPayment } from "../services/billingService.js";
+import { NotFoundError, BadRequestError } from "../utils/httpErrors.js";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -48,6 +51,32 @@ const BillingAssistantSchema = z.object({
   status: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
+});
+
+// Validation schema for create billing/payment
+const CreateBillingSchema = z.object({
+  patientName: z.string().min(1, "Patient name is required"),
+  date: z.string().min(1, "Date is required").regex(/^\d{4}-\d{2}-\d{2}$/, {
+    message: "Date must be in YYYY-MM-DD format",
+  }),
+  time: z.string().optional().refine((val) => {
+    if (!val) return true; // Optional, so empty is fine
+    // Validate HH:MM or HH:MM:SS format
+    return /^([0-1][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/.test(val);
+  }, {
+    message: "Time must be in HH:MM or HH:MM:SS format",
+  }),
+  amount: z.union([z.string(), z.number()]).transform((value) => {
+    if (typeof value === 'number') {
+      return value.toString();
+    }
+    return value.trim();
+  }).refine((value) => /^-?\d+(\.\d{1,})?$/.test(value), {
+    message: 'Invalid monetary amount',
+  }),
+  method: z.enum(['CASH', 'CARD', 'MOBILE_WALLET', 'BANK_TRANSFER', 'OTHER']),
+  referenceNo: z.string().max(100).optional(),
+  note: z.string().max(500).optional(),
 });
 
 // Cashier Profile API - Returns cashier profile information and statistics
@@ -392,6 +421,297 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to fetch billing information",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Create Billing/Payment API - Creates a payment for an invoice (cash, card, mobile wallet, bank transfer, etc.)
+router.post(
+  "/create-billing",
+  requireCashierOrITAdmin,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = CreateBillingSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { patientName, date, time, amount, method, referenceNo, note } = validationResult.data;
+
+      // Find patient by name (case-insensitive, exact match)
+      const patientRecord = await prisma.patient.findFirst({
+        where: {
+          name: {
+            equals: patientName,
+            mode: 'insensitive',
+          },
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+      });
+
+      if (!patientRecord) {
+        return res.status(404).json({
+          error: `Patient not found with name: ${patientName}`,
+          msg: "Failed",
+        });
+      }
+
+      // Combine date and time to create visitDate
+      let visitDate: Date;
+      try {
+        const dateTimeString = time ? `${date} ${time}` : date;
+        visitDate = new Date(dateTimeString);
+        if (isNaN(visitDate.getTime())) {
+          return res.status(400).json({
+            error: "Invalid date/time format. Date must be YYYY-MM-DD and time must be HH:MM or HH:MM:SS",
+            msg: "Failed",
+          });
+        }
+      } catch (error) {
+        return res.status(400).json({
+          error: "Invalid date/time format. Date must be YYYY-MM-DD and time must be HH:MM or HH:MM:SS",
+          msg: "Failed",
+        });
+      }
+
+      // Find visit by patientId and visitDate (match by date, ignoring time component for date-only inputs)
+      const visitDateStart = new Date(visitDate);
+      visitDateStart.setHours(0, 0, 0, 0);
+      const visitDateEnd = new Date(visitDate);
+      visitDateEnd.setHours(23, 59, 59, 999);
+
+      const visitRecord = await prisma.visit.findFirst({
+        where: {
+          patientId: patientRecord.patientId,
+          visitDate: {
+            gte: visitDateStart,
+            lte: visitDateEnd,
+          },
+        },
+        select: {
+          visitId: true,
+          visitDate: true,
+        },
+        orderBy: {
+          visitDate: 'desc',
+        },
+      });
+
+      if (!visitRecord) {
+        const dateTimeDisplay = time ? `${date} ${time}` : date;
+        return res.status(404).json({
+          error: `Visit not found for patient "${patientName}" on ${dateTimeDisplay}`,
+          msg: "Failed",
+        });
+      }
+
+      // Find invoice by visitId
+      const invoiceRecord = await prisma.invoice.findFirst({
+        where: {
+          visitId: visitRecord.visitId,
+        },
+        select: {
+          invoiceId: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      if (!invoiceRecord) {
+        const dateTimeDisplay = time ? `${date} ${time}` : date;
+        return res.status(404).json({
+          error: `Invoice not found for patient "${patientName}" visit on ${dateTimeDisplay}`,
+          msg: "Failed",
+        });
+      }
+
+      const invoiceId = invoiceRecord.invoiceId;
+
+      // Convert method string to PaymentMethod enum
+      const paymentMethod = method as PaymentMethod;
+
+      // Create payment using billing service
+      const payment = await postPayment(
+        invoiceId,
+        amount,
+        paymentMethod,
+        referenceNo,
+        note
+      );
+
+      // Fetch updated invoice with related data for response
+      const invoice = await prisma.invoice.findUnique({
+        where: { invoiceId },
+        include: {
+          Patient: {
+            select: {
+              patientId: true,
+              name: true,
+              dob: true,
+              gender: true,
+              contact: true,
+              insurance: true,
+            },
+          },
+          Visit: {
+            include: {
+              doctor: {
+                select: {
+                  doctorId: true,
+                  name: true,
+                  department: true,
+                },
+              },
+            },
+          },
+          payments: {
+            select: {
+              paymentId: true,
+              method: true,
+              amount: true,
+              paidAt: true,
+              referenceNo: true,
+              note: true,
+            },
+            orderBy: { paidAt: 'desc' },
+          },
+        },
+      });
+
+      if (!invoice) {
+        return res.status(404).json({
+          error: "Invoice not found",
+          msg: "Failed",
+        });
+      }
+
+      const patient = invoice.Patient;
+      const visit = invoice.Visit;
+      const doctor = visit?.doctor;
+
+      // Build flat response structure
+      const result: any = {
+        msg: "Success",
+        paymentId: payment.paymentId,
+        invoiceId: invoice.invoiceId,
+        invoiceNo: invoice.invoiceNo,
+        searchedPatientName: patientName,
+        searchedDate: date,
+        searchedTime: time || null,
+        paymentMethod: payment.method,
+        paymentAmount: Number(payment.amount),
+        paymentPaidAt: payment.paidAt.toISOString().split("T")[0],
+        paymentPaidTime: payment.paidAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
+        paymentReferenceNo: payment.referenceNo || null,
+        paymentNote: payment.note || null,
+
+        // Invoice Information
+        invoiceStatus: invoice.status,
+        invoiceCurrency: invoice.currency,
+        invoiceCreatedAt: invoice.createdAt.toISOString().split("T")[0],
+        invoiceCreatedTime: invoice.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
+        invoiceNote: invoice.note || null,
+
+        // Financial Summary
+        subTotal: Number(invoice.subTotal),
+        discountAmt: Number(invoice.discountAmt),
+        taxAmt: Number(invoice.taxAmt),
+        grandTotal: Number(invoice.grandTotal),
+        amountPaid: Number(invoice.amountPaid),
+        amountDue: Number(invoice.amountDue),
+
+        // Patient Information
+        patientId: patient.patientId,
+        patientName: patient.name,
+        patientDob: patient.dob.toISOString().split("T")[0],
+        patientGender: patient.gender,
+        patientContact: patient.contact,
+        patientInsurance: patient.insurance || null,
+
+        // Doctor Information
+        doctorId: doctor?.doctorId || null,
+        doctorName: doctor?.name || null,
+        doctorDepartment: doctor?.department || null,
+
+        // Visit Information
+        visitId: visit?.visitId || null,
+        visitDate: visit?.visitDate ? visit.visitDate.toISOString().split("T")[0] : null,
+        visitDepartment: visit?.department || null,
+        visitReason: visit?.reason || null,
+
+        // Cashier Information
+        cashierId: user.userId,
+        cashierEmail: user.email,
+        cashierRole: user.role,
+      };
+
+      // Add all payments for this invoice
+      result.totalPayments = invoice.payments.length;
+      invoice.payments.forEach((pay: any, index: number) => {
+        const prefix = `payment${index + 1}`;
+        result[`${prefix}PaymentId`] = pay.paymentId;
+        result[`${prefix}Method`] = pay.method;
+        result[`${prefix}Amount`] = Number(pay.amount);
+        result[`${prefix}PaidAt`] = pay.paidAt.toISOString().split("T")[0];
+        result[`${prefix}PaidTime`] = pay.paidAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00";
+        if (pay.referenceNo) result[`${prefix}ReferenceNo`] = pay.referenceNo;
+        if (pay.note) result[`${prefix}Note`] = pay.note;
+      });
+
+      // Notify Atenxion agent about payment creation (cashier-specific)
+      if (user.role === 'Cashier' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForCashier } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForCashier(user.userId);
+          console.log("Atenxion transaction recorded for payment creation:", payment.paymentId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for payment creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+
+      res.status(201).json(result);
+    } catch (error) {
+      console.error("Create Billing Error:", error);
+      
+      if (error instanceof NotFoundError) {
+        return res.status(404).json({
+          error: error.message,
+          msg: "Failed",
+        });
+      }
+      
+      if (error instanceof BadRequestError) {
+        return res.status(400).json({
+          error: error.message,
+          msg: "Failed",
+        });
+      }
+
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create payment",
         msg: "Failed",
       });
     }

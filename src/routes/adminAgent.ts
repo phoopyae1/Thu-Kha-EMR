@@ -9,6 +9,20 @@ import { toDateOnly } from "../utils/time.js";
 const prisma = new PrismaClient();
 const router = Router();
 
+// Middleware to allow either LabTech or ITAdmin authentication
+function requireLabTechOrITAdmin(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  return requireAuth(req, res, () => {
+    if (!req.user || (req.user.role !== "LabTech" && req.user.role !== "ITAdmin")) {
+      return res.status(403).json({ error: "LabTech or ITAdmin access required", msg: "Failed" });
+    }
+    return next();
+  });
+}
+
 // Validation schema for admin agent (empty body for simple GET-like POST requests)
 const AdminAgentSchema = z.object({}).optional();
 
@@ -390,6 +404,18 @@ router.post(
         createdTime: created.createdAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
       };
 
+      // Notify Atenxion agent about doctor creation (admin-specific)
+      if (user.role === 'ITAdmin' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log("Atenxion transaction recorded for doctor creation:", created.doctorId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for doctor creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+
       res.status(201).json(result);
     } catch (error) {
       console.error("Admin Agent Create Doctor Error:", error);
@@ -546,6 +572,18 @@ router.post(
         isLinkedToDoctor: true,
       };
 
+      // Notify Atenxion agent about doctor account creation (admin-specific)
+      if (user.role === 'ITAdmin' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log("Atenxion transaction recorded for doctor account creation:", created.userId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for doctor account creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+
       res.status(201).json(result);
     } catch (error) {
       console.error("Admin Agent Create Doctor Account Error:", error);
@@ -651,6 +689,18 @@ router.post(
         doctorId: null,
         isLinkedToDoctor: false,
       };
+
+      // Notify Atenxion agent about user account creation (admin-specific)
+      if (user.role === 'ITAdmin' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log("Atenxion transaction recorded for user account creation:", created.userId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for user account creation:", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
 
       res.status(201).json(result);
     } catch (error) {
@@ -908,21 +958,24 @@ router.post(
         },
       });
 
-      // Notify Atenxion agent about appointment creation
-      try {
-        const { recordAtenxionTransaction } = await import(
-          "../services/atenxion.js"
-        );
-        await recordAtenxionTransaction(patient.patientId);
-        console.log(
-          "Atenxion transaction recorded for appointment creation:",
-          appointment.appointmentId
-        );
-      } catch (error) {
-        console.warn(
-          "Failed to record Atenxion transaction for appointment creation:",
-          error
-        );
+      // Notify Atenxion agent about appointment creation (admin-specific)
+      if (user.role === "ITAdmin" && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import(
+            "../services/atenxion.js"
+          );
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log(
+            "Atenxion transaction recorded for appointment creation:",
+            appointment.appointmentId
+          );
+        } catch (error) {
+          console.warn(
+            "Failed to record Atenxion transaction for appointment creation:",
+            error
+          );
+          // Don't fail the request if Atenxion notification fails
+        }
       }
 
       // Return flat response
@@ -1190,8 +1243,7 @@ router.post(
 // View all lab orders (showing which doctor ordered which tests for which patient)
 router.post(
   "/lab-orders",
-  requireAuth,
-  requireRole("ITAdmin"),
+  requireLabTechOrITAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
@@ -1475,8 +1527,7 @@ router.post(
 // View all lab results (showing which lab engineer entered which results for which patient from which doctor's order)
 router.post(
   "/lab-results",
-  requireAuth,
-  requireRole("ITAdmin"),
+  requireLabTechOrITAdmin,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;

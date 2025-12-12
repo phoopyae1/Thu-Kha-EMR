@@ -22,6 +22,7 @@ import agentsRouter from './routes/agents.js';
 import doctorAgentRouter from './routes/doctorAgent.js';
 import cashierAgentRouter from './routes/cashierAgent.js';
 import adminAgentRouter from './routes/adminAgent.js';
+import labAgentRouter from './routes/labAgent.js';
 
 export const apiRouter = Router();
 
@@ -53,5 +54,6 @@ apiRouter.use('/agents', agentsRouter);
 apiRouter.use('/doctor-agent', doctorAgentRouter);
 apiRouter.use('/cashier-agent', cashierAgentRouter);
 apiRouter.use('/admin-agent', adminAgentRouter);
+apiRouter.use('/lab-agent', labAgentRouter);
 
 export default apiRouter;
