@@ -4,7 +4,8 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { assertCreatable } from "../services/appointmentService.js";
-import { toDateOnly } from "../utils/time.js";
+import { toDateOnly, toMinutes } from "../utils/time.js";
+import * as labService from "../services/labService.js";
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -77,7 +78,7 @@ const CreateAppointmentForPatientSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in format YYYY-MM-DD'),
   time: z.string().optional(), // start time (alternative to startTime)
   startTime: z.string().optional(), // start time
-  endTime: z.string().min(1),
+  endTime: z.string().optional(), // end time (optional, defaults to startTime + 30 minutes if not provided)
   reason: z.string().min(1), // Reason for visit
   location: z.string().optional(),
 }).superRefine((data, ctx) => {
@@ -130,6 +131,28 @@ const ViewAllAppointmentsSchema = z.object({
   endDate: z.string().optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
+});
+
+const CreateLabOrderForPatientSchema = z.object({
+  doctorName: z.string().min(1, "Doctor name is required"),
+  doctorDepartment: z.string().min(1, "Doctor department is required"),
+  patientName: z.string().min(1, "Patient name is required"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, {
+    message: "Date must be in YYYY-MM-DD format",
+  }),
+  visitTime: z.string().min(1, "Visit time is required"), // Time string: 24-hour format (HH:MM, e.g., "16:00") or 12-hour format with AM/PM (e.g., "4:00 PM", "4:00PM", "4:00 AM", "4:00AM")
+  priority: z.string().optional(),
+  notes: z.string().max(500).optional(), // Clinical notes
+  items: z
+    .array(
+      z.object({
+        testCode: z.string().min(1, "Test code is required"),
+        testName: z.string().min(1, "Test name is required"),
+        specimen: z.string().optional(),
+        notes: z.string().max(300).optional(),
+      }),
+    )
+    .min(1, "At least one test item is required"),
 });
 
 function normalizeEmail(value: string): string {
@@ -782,35 +805,74 @@ router.post(
       const patient = matchingPatients[0];
 
       // Find doctor by name and department (case-insensitive)
-      const doctors = await prisma.doctor.findMany({
+      // First, find all doctors matching the name
+      const doctorsByName = await prisma.doctor.findMany({
         where: {
           name: {
             contains: dr.trim(),
-            mode: "insensitive",
-          },
-          department: {
-            contains: drDep.trim(),
             mode: "insensitive",
           },
         },
         select: { doctorId: true, name: true, department: true },
       });
 
-      if (doctors.length === 0) {
+      if (doctorsByName.length === 0) {
         return res.status(404).json({
-          error: `Doctor not found with name: ${dr} and department: ${drDep}`,
+          error: `Doctor not found with name: ${dr}`,
           msg: "Failed",
         });
       }
 
-      if (doctors.length > 1) {
+      // Filter by department (case-insensitive)
+      const trimmedDrDep = drDep.trim();
+      const doctorsByDept = doctorsByName.filter(d => 
+        d.department.toLowerCase().includes(trimmedDrDep.toLowerCase())
+      );
+
+      if (doctorsByDept.length === 0) {
+        // Doctor name found but department doesn't match
+        const availableDepartments = [...new Set(doctorsByName.map(d => d.department))];
+        return res.status(400).json({
+          error: `Doctor "${dr}" found, but department "${drDep}" does not match. Available departments for this doctor: ${availableDepartments.join(', ')}`,
+          msg: "Failed",
+          doctorName: dr,
+          providedDepartment: drDep,
+          availableDepartments: availableDepartments,
+        });
+      }
+
+      if (doctorsByDept.length > 1) {
         return res.status(409).json({
-          error: `Multiple doctors found with name: ${dr} and department: ${drDep}. Please be more specific.`,
+          error: `Multiple doctors found with name "${dr}" and department "${drDep}". Please be more specific.`,
           msg: "Failed",
+          matches: doctorsByDept.map(d => ({
+            doctorId: d.doctorId,
+            name: d.name,
+            department: d.department,
+          })),
         });
       }
 
-      const doctor = doctors[0];
+      const doctor = doctorsByDept[0];
+      
+      // Verify exact match (case-insensitive) to ensure accuracy
+      const nameMatches = doctor.name.toLowerCase().trim() === dr.trim().toLowerCase() || 
+                         doctor.name.toLowerCase().includes(dr.trim().toLowerCase());
+      const deptMatches = doctor.department.toLowerCase().trim() === trimmedDrDep.toLowerCase() ||
+                         doctor.department.toLowerCase().includes(trimmedDrDep.toLowerCase());
+      
+      if (!nameMatches || !deptMatches) {
+        return res.status(400).json({
+          error: `Doctor name "${dr}" and department "${drDep}" combination not found. Found doctor: "${doctor.name}" in department "${doctor.department}". Please verify the doctor name and department.`,
+          msg: "Failed",
+          providedName: dr,
+          providedDepartment: drDep,
+          foundDoctor: {
+            name: doctor.name,
+            department: doctor.department,
+          },
+        });
+      }
 
       // Parse start time (use time or startTime, prefer startTime)
       const startTimeStr = startTime || time;
@@ -834,26 +896,31 @@ router.post(
         });
       }
 
-      // Parse end time
+      // Parse end time (optional, defaults to startTime + 30 minutes if not provided)
       let endTimeMin: number;
-      try {
-        endTimeMin = parseTimeToMinutes(endTime);
-      } catch (timeError) {
-        return res.status(400).json({
-          error:
-            timeError instanceof Error
-              ? timeError.message
-              : "Invalid end time format",
-          msg: "Failed",
-        });
-      }
+      if (endTime) {
+        try {
+          endTimeMin = parseTimeToMinutes(endTime);
+        } catch (timeError) {
+          return res.status(400).json({
+            error:
+              timeError instanceof Error
+                ? timeError.message
+                : "Invalid end time format",
+            msg: "Failed",
+          });
+        }
 
-      // Validate that end time is after start time
-      if (endTimeMin <= startTimeMin) {
-        return res.status(400).json({
-          error: "End time must be after start time",
-          msg: "Failed",
-        });
+        // Validate that end time is after start time
+        if (endTimeMin <= startTimeMin) {
+          return res.status(400).json({
+            error: "End time must be after start time",
+            msg: "Failed",
+          });
+        }
+      } else {
+        // Default to 30 minutes after start time
+        endTimeMin = startTimeMin + 30;
       }
 
       // Convert date to Date object and normalize to date-only
@@ -909,7 +976,7 @@ router.post(
               const conflictEndTime = formatTime(conflictingAppointment.endTimeMin);
               const conflictDate = conflictingAppointment.date.toISOString().split("T")[0];
               
-              return res.status(409).json({
+          return res.status(409).json({
                 error: `Time slot conflicts with an existing appointment. Doctor ${doctor.name} already has an appointment on ${conflictDate} from ${conflictStartTime} to ${conflictEndTime} with patient ${conflictingAppointment.patient.name}.`,
                 msg: "Failed",
                 conflictDetails: {
@@ -960,20 +1027,20 @@ router.post(
 
       // Notify Atenxion agent about appointment creation (admin-specific)
       if (user.role === "ITAdmin" && user.userId) {
-        try {
+      try {
           const { recordAtenxionTransactionForAdmin } = await import(
-            "../services/atenxion.js"
-          );
+          "../services/atenxion.js"
+        );
           await recordAtenxionTransactionForAdmin(user.userId);
-          console.log(
-            "Atenxion transaction recorded for appointment creation:",
-            appointment.appointmentId
-          );
-        } catch (error) {
-          console.warn(
-            "Failed to record Atenxion transaction for appointment creation:",
-            error
-          );
+        console.log(
+          "Atenxion transaction recorded for appointment creation:",
+          appointment.appointmentId
+        );
+      } catch (error) {
+        console.warn(
+          "Failed to record Atenxion transaction for appointment creation:",
+          error
+        );
           // Don't fail the request if Atenxion notification fails
         }
       }
@@ -2368,6 +2435,360 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to fetch appointments",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Create Lab Order API - Allows ITAdmin to create lab orders for patients
+router.post(
+  "/lab-order-create",
+  requireAuth,
+  requireRole("ITAdmin"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({
+          error: "Unauthorized",
+          msg: "Failed",
+        });
+      }
+
+      // Validate request body
+      const validationResult = CreateLabOrderForPatientSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const payload = validationResult.data;
+
+      // Find doctor by name and department (case-insensitive)
+      const doctors = await prisma.doctor.findMany({
+        where: {
+          name: {
+            equals: payload.doctorName.trim(),
+            mode: 'insensitive',
+          },
+          department: {
+            equals: payload.doctorDepartment.trim(),
+            mode: 'insensitive',
+          },
+        },
+        select: { doctorId: true, name: true, department: true },
+      });
+
+      if (doctors.length === 0) {
+        return res.status(404).json({
+          error: `Doctor not found with name "${payload.doctorName}" in department "${payload.doctorDepartment}"`,
+          msg: "Failed",
+        });
+      }
+
+      if (doctors.length > 1) {
+        return res.status(400).json({
+          error: `Multiple doctors found with name "${payload.doctorName}" in department "${payload.doctorDepartment}". Please be more specific.`,
+          msg: "Failed",
+          matches: doctors.map(d => ({
+            doctorId: d.doctorId,
+            name: d.name,
+            department: d.department,
+          })),
+        });
+      }
+
+      const doctor = doctors[0];
+      const doctorId = doctor.doctorId;
+
+      // Find patient by name (case-insensitive exact match)
+      const allPatients = await prisma.patient.findMany({
+        select: { patientId: true, name: true },
+      });
+
+      const trimmedPatientName = payload.patientName.trim();
+      const matchingPatients = allPatients.filter(
+        (p) => p.name.toLowerCase().trim() === trimmedPatientName.toLowerCase()
+      );
+
+      if (matchingPatients.length === 0) {
+        return res.status(404).json({
+          error: `Patient not found with name: ${payload.patientName}`,
+          msg: "Failed",
+        });
+      }
+
+      if (matchingPatients.length > 1) {
+        return res.status(409).json({
+          error: `Multiple patients found with name: ${payload.patientName}. Please use patient ID instead.`,
+          msg: "Failed",
+          matches: matchingPatients.map(p => ({
+            patientId: p.patientId,
+            name: p.name,
+          })),
+        });
+      }
+
+      const patient = matchingPatients[0];
+
+      // Parse date and visit time
+      const visitDate = toDateOnly(payload.date);
+      let visitTimeMin: number;
+      try {
+        visitTimeMin = toMinutes(payload.visitTime);
+      } catch (error) {
+        return res.status(400).json({
+          error: `Invalid time format: ${payload.visitTime}. Please use 24-hour format (HH:MM, e.g., "16:00") or 12-hour format with AM/PM (e.g., "4:00 PM", "4:00PM", "4:00 AM", "4:00AM")`,
+          msg: "Failed",
+        });
+      }
+
+      // Create date range for the day
+      const startOfDay = new Date(visitDate);
+      startOfDay.setUTCHours(0, 0, 0, 0);
+      const endOfDay = new Date(visitDate);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      
+      // Create a date-only version for visit lookup
+      const visitDateOnly = new Date(visitDate);
+      visitDateOnly.setUTCHours(0, 0, 0, 0);
+
+      // Find visit that matches patient, doctor, date, and time
+      // First, try to find appointments for this patient, doctor, and date with matching time
+      let appointments = await prisma.appointment.findMany({
+        where: {
+          patientId: patient.patientId,
+          doctorId: doctorId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+          startTimeMin: visitTimeMin,
+          status: {
+            not: 'Cancelled',
+          },
+        },
+        select: {
+          appointmentId: true,
+          startTimeMin: true,
+          date: true,
+          status: true,
+        },
+      });
+
+      // If no appointment found and time is ambiguous (less than 12 hours and no AM/PM in input),
+      // try the PM version (add 12 hours)
+      if (appointments.length === 0 && !payload.visitTime.toUpperCase().includes('AM') && !payload.visitTime.toUpperCase().includes('PM')) {
+        const hours = Math.floor(visitTimeMin / 60);
+        if (hours < 12) {
+          // Try PM version (add 12 hours)
+          const pmTimeMin = visitTimeMin + 12 * 60;
+          appointments = await prisma.appointment.findMany({
+            where: {
+              patientId: patient.patientId,
+              doctorId: doctorId,
+              date: {
+                gte: startOfDay,
+                lte: endOfDay,
+              },
+              startTimeMin: pmTimeMin,
+              status: {
+                not: 'Cancelled',
+              },
+            },
+            select: {
+              appointmentId: true,
+              startTimeMin: true,
+              date: true,
+              status: true,
+            },
+          });
+          // Update visitTimeMin to the PM version if found
+          if (appointments.length > 0) {
+            visitTimeMin = pmTimeMin;
+          }
+        }
+      }
+
+      // Find visit linked to the appointment or matching the criteria
+      let visit = await prisma.visit.findFirst({
+        where: {
+          patientId: patient.patientId,
+          doctorId: doctorId,
+          visitDate: visitDateOnly,
+        },
+        select: {
+          visitId: true,
+          patientId: true,
+          doctorId: true,
+          visitDate: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      // If no visit found but appointment exists, create a visit
+      if (!visit && appointments.length > 0) {
+        visit = await prisma.visit.create({
+          data: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            visitDate: visitDate,
+            department: doctor.department,
+            reason: null,
+          },
+          select: {
+            visitId: true,
+            patientId: true,
+            doctorId: true,
+            visitDate: true,
+          },
+        });
+      }
+
+      // If still no visit found, check if appointment exists but was cancelled or doesn't match exactly
+      if (!visit) {
+        const allAppointments = await prisma.appointment.findMany({
+          where: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            date: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
+          },
+          select: {
+            status: true,
+            startTimeMin: true,
+            date: true,
+          },
+        });
+
+        const exactMatch = allAppointments.find(apt => apt.startTimeMin === visitTimeMin);
+        const cancelledMatch = exactMatch && exactMatch.status === 'Cancelled';
+
+        if (cancelledMatch) {
+          return res.status(400).json({
+            error: `Appointment for patient "${patient.name}" on ${payload.date} at ${payload.visitTime} is cancelled. Cannot create lab order.`,
+            msg: "Failed",
+          });
+        }
+
+        if (allAppointments.length > 0) {
+          // Appointment exists but time doesn't match exactly
+          const times = allAppointments.map(apt => {
+            const hours = Math.floor(apt.startTimeMin / 60);
+            const minutes = apt.startTimeMin % 60;
+            const period = hours >= 12 ? 'PM' : 'AM';
+            const displayHours = hours > 12 ? hours - 12 : hours === 0 ? 12 : hours;
+            return `${displayHours}:${String(minutes).padStart(2, '0')} ${period}`;
+          }).join(', ');
+          return res.status(400).json({
+            error: `Appointment found for patient "${patient.name}" on ${payload.date}, but time ${payload.visitTime} (parsed as ${visitTimeMin} minutes) doesn't match. Available times: ${times}. Please use 24-hour format (HH:MM) or 12-hour format with AM/PM (e.g., "4:00 PM" or "16:00").`,
+            msg: "Failed",
+          });
+        }
+
+        // Check if there are any appointments for this patient with this doctor on any date
+        const anyAppointments = await prisma.appointment.findMany({
+          where: {
+            patientId: patient.patientId,
+            doctorId: doctorId,
+            status: {
+              not: 'Cancelled',
+            },
+          },
+          select: {
+            date: true,
+            startTimeMin: true,
+            status: true,
+          },
+          take: 5,
+          orderBy: {
+            date: 'desc',
+          },
+        });
+
+        if (anyAppointments.length > 0) {
+          const recentDates = [...new Set(anyAppointments.map(apt => apt.date.toISOString().split('T')[0]))].slice(0, 3);
+          return res.status(404).json({
+            error: `No appointment found for patient "${patient.name}" on ${payload.date} at ${payload.visitTime} with doctor "${doctor.name}". Recent appointment dates: ${recentDates.join(', ')}. Please check the date and time. If using time without AM/PM, use 24-hour format (e.g., "16:00" for 4:00 PM) or include AM/PM (e.g., "4:00 PM").`,
+            msg: "Failed",
+          });
+        }
+
+        return res.status(404).json({
+          error: `No appointment or visit found for patient "${patient.name}" on ${payload.date} at ${payload.visitTime} with doctor "${doctor.name}". Please ensure the appointment exists and is not cancelled. If using time without AM/PM, use 24-hour format (e.g., "16:00" for 4:00 PM) or include AM/PM (e.g., "4:00 PM").`,
+          msg: "Failed",
+        });
+      }
+
+      // Verify visit belongs to the doctor
+      if (visit.doctorId !== doctorId) {
+        return res.status(403).json({
+          error: "Visit does not belong to this doctor",
+          msg: "Failed",
+        });
+      }
+
+      // Create lab order payload with visitId and patientId
+      const labOrderPayload = {
+        visitId: visit.visitId,
+        patientId: patient.patientId,
+        priority: payload.priority,
+        notes: payload.notes,
+        items: payload.items,
+      };
+
+      // Create lab order using the lab service
+      const labOrder = await labService.createLabOrder(doctorId, labOrderPayload);
+
+      // Notify Atenxion agent about lab order creation (admin-specific)
+      if (user.role === 'ITAdmin' && user.userId) {
+        try {
+          const { recordAtenxionTransactionForAdmin } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForAdmin(user.userId);
+          console.log("Atenxion transaction recorded for lab order creation (admin):", labOrder.labOrderId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for lab order creation (admin):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+
+      res.status(201).json({
+        msg: "Success",
+        labOrderId: labOrder.labOrderId,
+        visitId: labOrder.visitId,
+        patientId: labOrder.patientId,
+        patientName: patient.name,
+        doctorId: labOrder.doctorId,
+        doctorName: doctor.name,
+        doctorDepartment: doctor.department,
+        status: labOrder.status,
+        priority: labOrder.priority,
+        notes: labOrder.notes,
+        createdAt: labOrder.createdAt,
+        items: labOrder.items.map((item) => ({
+          labOrderItemId: item.labOrderItemId,
+          testCode: item.testCode,
+          testName: item.testName,
+          status: item.status,
+          specimen: item.specimen,
+          notes: item.notes,
+        })),
+      });
+    } catch (error) {
+      console.error("Admin Agent Create Lab Order Error:", error);
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to create lab order",
         msg: "Failed",
       });
     }

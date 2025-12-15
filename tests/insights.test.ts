@@ -23,13 +23,13 @@ beforeAll(async () => {
   const visitC = await prisma.visit.create({ data: { patientId: patient2Id, doctorId: doctor.doctorId, visitDate: recent, department: 'Gen' } });
   await prisma.diagnosis.create({ data: { visitId: visitB.visitId, diagnosis: 'Condition' } });
   await prisma.medication.create({ data: { visitId: visitB.visitId, drugName: 'Drug', dosage: '10mg' } });
-  await prisma.labResult.create({ data: { visitId: visitA.visitId, testName: 'HbA1c', resultValue: 8.5, unit: '%', testDate: older } });
-  await prisma.labResult.create({ data: { visitId: visitB.visitId, testName: 'HbA1c', resultValue: 9.2, unit: '%', testDate: recent } });
-  await prisma.labResult.create({ data: { visitId: visitC.visitId, testName: 'HbA1c', resultValue: 7.0, unit: '%', testDate: recent } });
+  await prisma.visitLabResult.create({ data: { visitId: visitA.visitId, testName: 'HbA1c', resultValue: 8.5, unit: '%', testDate: older } });
+  await prisma.visitLabResult.create({ data: { visitId: visitB.visitId, testName: 'HbA1c', resultValue: 9.2, unit: '%', testDate: recent } });
+  await prisma.visitLabResult.create({ data: { visitId: visitC.visitId, testName: 'HbA1c', resultValue: 7.0, unit: '%', testDate: recent } });
 });
 
 afterAll(async () => {
-  await prisma.labResult.deleteMany({});
+  await prisma.visitLabResult.deleteMany({});
   await prisma.medication.deleteMany({});
   await prisma.diagnosis.deleteMany({});
   await prisma.visit.deleteMany({});
