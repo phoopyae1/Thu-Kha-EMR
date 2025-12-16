@@ -238,3 +238,50 @@ export async function recordAtenxionTransactionForLabTech(
     throw error;
   }
 }
+
+// Transaction function for pharmacists (Pharmacist) that uses pharmacistId (userId) as userId
+export async function recordAtenxionTransactionForPharmacist(
+  pharmacistId: string,
+  token?: string | null
+) {
+  const url = `${ATENXION_API_URL}/api/post-login/new-transaction`;
+
+  const body = {
+    userId: pharmacistId.trim(),
+  };
+
+  let atenxionToken = "";
+  try {
+    // Fetch pharmacist-specific integration embed
+    const latest = await fetchLatestAdminIntegrationEmbed('Pharmacist');
+    const embeddedToken = (latest as any)?.contextKey as string | undefined;
+    if (embeddedToken && embeddedToken.trim().length > 0) {
+      atenxionToken = embeddedToken.trim();
+    }
+  } catch {
+    atenxionToken = "asdf";
+  }
+
+  const headers = {
+    Authorization: `${atenxionToken || ATENXION_API_TOKEN}`,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    console.log("Atenxion transaction API call (Pharmacist):", {
+      url,
+      body,
+      token:
+        atenxionToken || ATENXION_API_TOKEN
+          ? `${(atenxionToken || ATENXION_API_TOKEN).substring(0, 16)}...`
+          : "none",
+    });
+
+    const response = await axios.post(url, body, { headers });
+    console.log("Transaction recorded successfully for pharmacist:", response.data);
+    return true;
+  } catch (error) {
+    console.error("Transaction failed for pharmacist:", error);
+    throw error;
+  }
+}

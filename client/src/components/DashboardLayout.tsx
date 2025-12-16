@@ -91,7 +91,15 @@ export default function DashboardLayout({
     }
     if (item.key === 'billing') {
       // Commented out 'Doctor' - doctors should not have access to billing
-      return user && ['Cashier', 'ITAdmin', 'Pharmacist'].includes(user.role);
+      return user && ['Cashier', 'ITAdmin'].includes(user.role);
+    }
+    if (item.key === 'appointments') {
+      // Pharmacists and Cashiers should not have access to appointments
+      return user && !['Pharmacist', 'Cashier'].includes(user.role);
+    }
+    if (item.key === 'reports') {
+      // Pharmacists should not have access to reports
+      return user && !['Pharmacist'].includes(user.role);
     }
     if (item.key === 'pharmacy') {
       return (

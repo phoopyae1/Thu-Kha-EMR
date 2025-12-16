@@ -150,7 +150,7 @@ function App() {
       <Route
         path="/admin/:adminId/reports"
         element={
-          <RouteGuard>
+          <RouteGuard allowedRoles={['Doctor', 'AdminAssistant', 'Cashier', 'ITAdmin', 'Nurse', 'LabTech', 'InventoryManager', 'PharmacyTech']}>
             <Reports />
           </RouteGuard>
         }
@@ -182,7 +182,7 @@ function App() {
       <Route
         path="/admin/:adminId/pharmacy/inventory"
         element={
-          <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin']}>
+          <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin', 'Pharmacist']}>
             <PharmacyInventory />
           </RouteGuard>
         }
@@ -190,7 +190,7 @@ function App() {
       <Route
         path="/admin/:adminId/pharmacy/drugs/new"
         element={
-          <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin']}>
+          <RouteGuard allowedRoles={['InventoryManager', 'ITAdmin', 'Pharmacist']}>
             <AddDrug />
           </RouteGuard>
         }
@@ -199,7 +199,7 @@ function App() {
       <Route
         path="/admin/:adminId/billing/workspace"
         element={
-          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Pharmacist']}>
+          <RouteGuard allowedRoles={['Cashier', 'ITAdmin']}>
             <BillingWorkspace />
           </RouteGuard>
         }
@@ -208,7 +208,7 @@ function App() {
       <Route
         path="/admin/:adminId/billing/visit/:visitId"
         element={
-          <RouteGuard allowedRoles={['Cashier', 'ITAdmin', 'Pharmacist']}>
+          <RouteGuard allowedRoles={['Cashier', 'ITAdmin']}>
             <VisitBilling />
           </RouteGuard>
         }

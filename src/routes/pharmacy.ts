@@ -91,7 +91,7 @@ router.use(requireAuth);
 
 router.post(
   '/drugs',
-  requireRole('ITAdmin', 'InventoryManager'),
+  requireRole('ITAdmin', 'InventoryManager', 'Pharmacist'),
   validate({ body: CreateDrugSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -162,7 +162,7 @@ router.get(
 
 router.post(
   '/inventory/adjust',
-  requireRole('ITAdmin', 'InventoryManager'),
+  requireRole('ITAdmin', 'InventoryManager', 'Pharmacist'),
   validate({ body: AdjustStockSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -277,6 +277,18 @@ router.post(
         patientId,
         payload,
       );
+
+      // Notify Atenxion agent about prescription creation (pharmacist-specific)
+      if (req.user?.role === 'Pharmacist' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForPharmacist } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForPharmacist(req.user.userId);
+          console.log("Atenxion transaction recorded for prescription creation (pharmacist):", prescription.prescriptionId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for prescription creation (pharmacist):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
 
       res.status(201).json({ prescription, allergyHits });
     } catch (error) {
@@ -409,6 +421,75 @@ router.patch(
   },
 );
 
+const CreateMedicationOrderSchema = z.object({
+  patientId: z.string().uuid(),
+  prescriptionId: z.string().uuid().optional(),
+  drugName: z.string().trim().min(1).optional(),
+  dosage: z.string().trim().optional(),
+  instructions: z.string().trim().optional(),
+  quantity: z.number().int().positive().optional(),
+  notes: z.string().trim().max(500).optional(),
+});
+
+router.post(
+  '/medication-orders',
+  requireRole('Pharmacist', 'ITAdmin', 'AdminAssistant'),
+  validate({ body: CreateMedicationOrderSchema }),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const payload = req.body as z.infer<typeof CreateMedicationOrderSchema>;
+      
+      // Ensure patient exists
+      const patient = await prisma.patient.findUnique({
+        where: { patientId: payload.patientId },
+        select: { patientId: true },
+      });
+      if (!patient) {
+        return res.status(404).json({ error: 'Patient not found' });
+      }
+
+      const orderData: Prisma.MedicationOrderCreateInput = {
+        patient: { connect: { patientId: payload.patientId } },
+        drugName: payload.drugName ?? null,
+        dosage: payload.dosage ?? null,
+        instructions: payload.instructions ?? null,
+        quantity: payload.quantity ?? null,
+        notes: payload.notes ?? null,
+        status: MedicationOrderStatus.PENDING,
+      };
+
+      if (payload.prescriptionId) {
+        orderData.prescription = { connect: { prescriptionId: payload.prescriptionId } };
+      }
+
+      if (req.user) {
+        orderData.updatedBy = { connect: { userId: req.user.userId } };
+      }
+
+      const order = await prisma.medicationOrder.create({
+        data: orderData,
+        select: medicationOrderSelect,
+      });
+
+      // Notify Atenxion agent about medication order creation (pharmacist-specific)
+      if (req.user?.role === 'Pharmacist' && req.user?.userId) {
+        try {
+          const { recordAtenxionTransactionForPharmacist } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForPharmacist(req.user.userId);
+          console.log("Atenxion transaction recorded for medication order creation (pharmacist):", order.orderId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for medication order creation (pharmacist):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
+
+      res.status(201).json(order);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 router.get(
   '/medication-orders',
   requireRole('Pharmacist', 'PharmacyTech', 'ITAdmin', 'AdminAssistant'),
@@ -491,6 +572,18 @@ router.patch(
         data: updateData,
         select: medicationOrderSelect,
       });
+
+      // Notify Atenxion agent about medication order update (pharmacist-specific)
+      if (req.user?.role === 'Pharmacist' && req.user?.userId && status) {
+        try {
+          const { recordAtenxionTransactionForPharmacist } = await import('../services/atenxion.js');
+          await recordAtenxionTransactionForPharmacist(req.user.userId);
+          console.log("Atenxion transaction recorded for medication order update (pharmacist):", order.orderId);
+        } catch (error) {
+          console.warn("Failed to record Atenxion transaction for medication order update (pharmacist):", error);
+          // Don't fail the request if Atenxion notification fails
+        }
+      }
 
       res.json(order);
     } catch (error) {

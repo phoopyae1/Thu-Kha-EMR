@@ -489,7 +489,7 @@ export default function AddDrug() {
                 )}
               </p>
               <p className="mt-3 text-xs text-gray-500">
-                {t('Only IT Admins and Inventory Managers can add or retire formulary items.')}
+                {t('Only IT Admins, Inventory Managers, and Pharmacists can add or retire formulary items.')}
               </p>
             </div>
           </aside>

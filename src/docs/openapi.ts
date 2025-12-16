@@ -2163,7 +2163,7 @@ addPath('/pharmacy/drugs', 'post', {
       content: { 'application/json': { schema: { $ref: '#/components/schemas/Drug' } } }
     },
     '401': { description: 'Unauthorized' },
-    '403': { description: 'Forbidden - ITAdmin or InventoryManager role required' }
+    '403': { description: 'Forbidden - ITAdmin, InventoryManager, or Pharmacist role required' }
   }
 });
 
@@ -2329,7 +2329,7 @@ addPath('/pharmacy/inventory/adjust', 'post', {
       }
     },
     '401': { description: 'Unauthorized' },
-    '403': { description: 'Forbidden - ITAdmin or InventoryManager role required' }
+    '403': { description: 'Forbidden - ITAdmin, InventoryManager, or Pharmacist role required' }
   }
 });
 

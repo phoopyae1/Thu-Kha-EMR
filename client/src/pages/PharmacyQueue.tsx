@@ -61,7 +61,7 @@ export default function PharmacyQueue() {
   const [updatingOrders, setUpdatingOrders] = useState<Record<string, boolean>>({});
   const [deletingOrders, setDeletingOrders] = useState<Record<string, boolean>>({});
   const canDispense = user ? ['Pharmacist', 'PharmacyTech'].includes(user.role) : false;
-  const canManageInventory = user ? ['InventoryManager', 'ITAdmin'].includes(user.role) : false;
+  const canManageInventory = user ? ['InventoryManager', 'ITAdmin', 'Pharmacist'].includes(user.role) : false;
   const canDeleteOrders = user ? ['ITAdmin', 'AdminAssistant'].includes(user.role) : false;
   const loadQueueRef = useRef<() => Promise<void>>();
 

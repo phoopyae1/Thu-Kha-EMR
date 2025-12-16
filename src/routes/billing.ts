@@ -70,7 +70,7 @@ router.use(requireAuth);
 router.post(
   '/invoices',
   // Commented out 'Doctor' - doctors should not have access to billing
-  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
+  requireRole('Cashier', 'ITAdmin'),
   validate({ body: CreateInvoiceSchema }),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
@@ -111,7 +111,7 @@ router.post(
 router.get(
   '/invoices',
   // Commented out 'Doctor' - doctors should not have access to billing
-  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
+  requireRole('Cashier', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const parsed = ListInvoicesQuerySchema.safeParse(req.query);
@@ -148,7 +148,7 @@ router.get(
 router.get(
   '/invoices/:invoiceId',
   // Commented out 'Doctor' - doctors should not have access to billing
-  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
+  requireRole('Cashier', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const invoice = await prisma.invoice.findUnique({
@@ -374,7 +374,7 @@ router.delete(
 router.get(
   '/services',
   // Commented out 'Doctor' - doctors should not have access to billing services
-  requireRole('ITAdmin', 'Cashier', 'Pharmacist'),
+  requireRole('ITAdmin', 'Cashier'),
   async (_req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const services = await prisma.serviceCatalog.findMany({
@@ -478,7 +478,7 @@ router.post(
 router.get(
   '/invoices/:invoiceId/receipt',
   // Commented out 'Doctor' - doctors should not have access to billing receipts
-  requireRole('Cashier', 'ITAdmin', 'Pharmacist'),
+  requireRole('Cashier', 'ITAdmin'),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const invoice = await prisma.invoice.findUnique({
