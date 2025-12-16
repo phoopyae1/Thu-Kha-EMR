@@ -24,6 +24,20 @@ function requireLabTechOrITAdmin(
   });
 }
 
+// Middleware to allow either ITAdmin or Pharmacist authentication
+function requireITAdminOrPharmacist(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction
+) {
+  return requireAuth(req, res, () => {
+    if (!req.user || (req.user.role !== "ITAdmin" && req.user.role !== "Pharmacist")) {
+      return res.status(403).json({ error: "ITAdmin or Pharmacist access required", msg: "Failed" });
+    }
+    return next();
+  });
+}
+
 // Validation schema for admin agent (empty body for simple GET-like POST requests)
 const AdminAgentSchema = z.object({}).optional();
 
@@ -97,6 +111,8 @@ const ViewAllMedicationOrdersSchema = z.object({
   status: z.string().optional(),
   startDate: z.string().optional(),
   endDate: z.string().optional(),
+  itAdminId: z.string().uuid().optional(),
+  pharmId: z.string().uuid().optional(),
   limit: z.coerce.number().int().positive().max(100).optional().default(50),
   offset: z.coerce.number().int().nonnegative().optional().default(0),
 });
@@ -899,24 +915,24 @@ router.post(
       // Parse end time (optional, defaults to startTime + 30 minutes if not provided)
       let endTimeMin: number;
       if (endTime) {
-        try {
-          endTimeMin = parseTimeToMinutes(endTime);
-        } catch (timeError) {
-          return res.status(400).json({
-            error:
-              timeError instanceof Error
-                ? timeError.message
-                : "Invalid end time format",
-            msg: "Failed",
-          });
-        }
+      try {
+        endTimeMin = parseTimeToMinutes(endTime);
+      } catch (timeError) {
+        return res.status(400).json({
+          error:
+            timeError instanceof Error
+              ? timeError.message
+              : "Invalid end time format",
+          msg: "Failed",
+        });
+      }
 
-        // Validate that end time is after start time
-        if (endTimeMin <= startTimeMin) {
-          return res.status(400).json({
-            error: "End time must be after start time",
-            msg: "Failed",
-          });
+      // Validate that end time is after start time
+      if (endTimeMin <= startTimeMin) {
+        return res.status(400).json({
+          error: "End time must be after start time",
+          msg: "Failed",
+        });
         }
       } else {
         // Default to 30 minutes after start time
@@ -1083,8 +1099,7 @@ router.post(
 // View all medication orders
 router.post(
   "/medication-orders",
-  requireAuth,
-  requireRole("ITAdmin"),
+  requireITAdminOrPharmacist,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user;
@@ -1105,7 +1120,24 @@ router.post(
         });
       }
 
-      const { patientId, status, startDate, endDate, limit, offset } = validationResult.data;
+      const { patientId, status, startDate, endDate, itAdminId, pharmId, limit, offset } = validationResult.data;
+
+      // Verify that if itAdminId or pharmId is provided, it matches the authenticated user
+      if (user.role === 'ITAdmin') {
+        if (itAdminId && itAdminId !== user.userId) {
+          return res.status(403).json({
+            error: "Forbidden: You can only access your own medication orders",
+            msg: "Failed",
+          });
+        }
+      } else if (user.role === 'Pharmacist') {
+        if (pharmId && pharmId !== user.userId) {
+          return res.status(403).json({
+            error: "Forbidden: You can only access your own medication orders",
+            msg: "Failed",
+          });
+        }
+      }
 
       // Build where clause
       const where: any = {};

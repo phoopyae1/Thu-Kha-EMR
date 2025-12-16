@@ -299,7 +299,17 @@ router.get(
         return acc;
       }, []);
 
+      console.log(`[GET /pharmacy/prescriptions] Fetching queue with statuses:`, statuses);
       const queue = await getPharmacyQueue(statuses.length ? statuses : [PrescriptionStatus.PENDING]);
+      console.log(`[GET /pharmacy/prescriptions] Found ${queue.length} prescriptions`);
+      
+      // Log specific prescription if requested
+      const checkPrescriptionId = req.query.checkPrescriptionId as string | undefined;
+      if (checkPrescriptionId) {
+        const found = queue.find(p => p.prescriptionId === checkPrescriptionId);
+        console.log(`[GET /pharmacy/prescriptions] Prescription ${checkPrescriptionId} in queue:`, found ? `YES (status: ${found.status})` : 'NO');
+      }
+      
       res.json({ data: queue });
     } catch (error) {
       next(error);
@@ -345,14 +355,55 @@ router.patch(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const body = req.body as z.infer<typeof CompleteDispenseSchema>;
+      console.log(`[PATCH /dispenses/:dispenseId/complete] Request for dispenseId: ${req.params.dispenseId}, status: ${body.status}`);
+      
       const result = await completeDispense(req.params.dispenseId, body.status);
+      console.log(`[PATCH /dispenses/:dispenseId/complete] Result:`, result);
+      
       let invoiceId: string | null = null;
       if (body.status === 'COMPLETED') {
-        const invoice = await postPharmacyCharges(result.prescriptionId);
-        invoiceId = invoice?.invoiceId ?? null;
+        try {
+          const invoice = await postPharmacyCharges(result.prescriptionId);
+          invoiceId = invoice?.invoiceId ?? null;
+          console.log(`[PATCH /dispenses/:dispenseId/complete] Invoice created: ${invoiceId}`);
+        } catch (invoiceError) {
+          console.error(`[PATCH /dispenses/:dispenseId/complete] Error creating invoice:`, invoiceError);
+          // Don't fail the whole request if invoice creation fails
+        }
       }
-      res.json({ ...result, invoiceId });
+      
+      // Verify the prescription status was actually updated - use a fresh query
+      // Add a small delay to ensure transaction is fully committed
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const verifyPrescription = await prisma.prescription.findUnique({
+        where: { prescriptionId: result.prescriptionId },
+        select: { status: true, updatedAt: true },
+      });
+      
+      console.log(`[PATCH /dispenses/:dispenseId/complete] Verification - prescription status in DB: ${verifyPrescription?.status}, expected: ${result.prescriptionStatus}`);
+      console.log(`[PATCH /dispenses/:dispenseId/complete] Prescription updatedAt: ${verifyPrescription?.updatedAt}`);
+      
+      if (verifyPrescription?.status !== result.prescriptionStatus) {
+        console.error(`[PATCH /dispenses/:dispenseId/complete] MISMATCH! DB has ${verifyPrescription?.status} but expected ${result.prescriptionStatus}`);
+        // Try to update it again directly
+        console.log(`[PATCH /dispenses/:dispenseId/complete] Attempting direct update...`);
+        try {
+          const directUpdate = await prisma.prescription.update({
+            where: { prescriptionId: result.prescriptionId },
+            data: { status: result.prescriptionStatus },
+          });
+          console.log(`[PATCH /dispenses/:dispenseId/complete] Direct update result: ${directUpdate.status}`);
+        } catch (directUpdateError) {
+          console.error(`[PATCH /dispenses/:dispenseId/complete] Direct update failed:`, directUpdateError);
+        }
+      } else {
+        console.log(`[PATCH /dispenses/:dispenseId/complete] Status verification PASSED`);
+      }
+      
+      res.json({ ...result, invoiceId, verifiedStatus: verifyPrescription?.status });
     } catch (error) {
+      console.error(`[PATCH /dispenses/:dispenseId/complete] Error:`, error);
       next(error);
     }
   },

@@ -45,6 +45,13 @@ export interface AtenxionLabTechCredentials {
   agentchainId?: string;
 }
 
+export interface AtenxionPharmacistCredentials {
+  userId: string;
+  pharmacistId: string;
+  agentId?: string;
+  agentchainId?: string;
+}
+
 interface AtenxionRequestBody {
   userId: string;
   patientName: string;
@@ -81,6 +88,14 @@ interface AtenxionITAdminRequestBody {
 interface AtenxionLabTechRequestBody {
   userId: string;
   labTechId: string;
+  Authorization: string;
+  agentId?: string;
+  agentchainId?: string;
+}
+
+interface AtenxionPharmacistRequestBody {
+  userId: string;
+  pharmacistId: string;
   Authorization: string;
   agentId?: string;
   agentchainId?: string;
@@ -258,6 +273,35 @@ function normalizeLabTechCredentials(
   }
   
   console.log('[normalizeLabTechCredentials] agentId in body:', body.agentId, 'from input:', agentId);
+
+  return body;
+}
+
+function normalizePharmacistCredentials(
+  credentials: AtenxionPharmacistCredentials
+): AtenxionPharmacistRequestBody {
+  const pharmacistId = credentials.pharmacistId.trim();
+  const userId = pharmacistId; // userId is the same as pharmacistId for pharmacists
+  const agentId = credentials.agentId?.trim();
+  
+  // Use EMR access token for pharmacists
+  const emrToken = getAccessToken();
+  if (!emrToken) {
+    throw new Error("No access token available for pharmacist authentication");
+  }
+
+  const body: AtenxionPharmacistRequestBody = {
+    userId,
+    pharmacistId,
+    Authorization: `Bearer ${emrToken}`,
+  };
+  
+  // Include agentId if it exists (following patient pattern)
+  if (agentId) {
+    body.agentId = agentId.trim();
+  }
+  
+  console.log('[normalizePharmacistCredentials] agentId in body:', body.agentId, 'from input:', agentId);
 
   return body;
 }
@@ -856,5 +900,129 @@ export async function logoutAtenxionLabTech(
   } catch (error) {
     console.error("Atenxion lab tech logout failed:", error);
     return handleAxiosError(error, "Unable to log out lab technician from Atenxion");
+  }
+}
+
+export async function loginAtenxionPharmacist(
+  credentials: AtenxionPharmacistCredentials,
+) {
+  const url = `${resolveServerUrl()}/api/post-login/user-login`;
+  console.log("Atenxion pharmacist login URL:", url);
+  let resolvedToken = null;
+  // Get token from MongoDB admin integration DB (contextKey)
+  // Use admin integration for pharmacists - get contextKey from MongoDB adminIntegrationSettings_pharmacist collection
+  const embed = await fetchAdminIntegrationEmbed('Pharmacist');
+  resolvedToken = embed?.contextKey;
+
+  if (!resolvedToken) {
+    console.warn("Atenxion pharmacist login: No contextKey found in admin integration embed");
+    // Continue anyway - the API might work without it or return a proper error
+  }
+
+  // Extract agentId from embed if not provided in credentials
+  // Follow the same pattern as doctors - try agentchainId first, then agentId
+  let agentId = credentials.agentId;
+  console.log('[loginAtenxionPharmacist] Initial agentId from credentials:', agentId);
+  
+  if (!agentId) {
+    console.log('[loginAtenxionPharmacist] agentId not in credentials, fetching embed to extract...');
+    const embed = await fetchAdminIntegrationEmbed('Pharmacist');
+    console.log('[loginAtenxionPharmacist] Embed fetched:', embed ? 'found' : 'not found');
+    
+    if (embed?.iframeCode) {
+      console.log('[loginAtenxionPharmacist] iframeCode length:', embed.iframeCode.length);
+      console.log('[loginAtenxionPharmacist] iframeCode preview:', embed.iframeCode.substring(0, 300));
+      
+      // Try agentchainId first (like patients do)
+      let agentIdMatch = embed.iframeCode.match(/agentchainId=([^&"'\s]+)/i);
+      if (agentIdMatch) {
+        agentId = agentIdMatch[1];
+        console.log('[loginAtenxionPharmacist] ✓ Extracted agentId from agentchainId:', agentId);
+      } else {
+        // Try agentId patterns
+        agentIdMatch = embed.iframeCode.match(/agentId=([^"'\s&]+)/i);
+        if (!agentIdMatch) {
+          agentIdMatch = embed.iframeCode.match(/"agentId"\s*:\s*"([^"]+)"/i);
+        }
+        if (!agentIdMatch) {
+          agentIdMatch = embed.iframeCode.match(/'agentId'\s*:\s*'([^']+)'/i);
+        }
+        if (agentIdMatch) {
+          agentId = agentIdMatch[1];
+          console.log('[loginAtenxionPharmacist] ✓ Extracted agentId from embed:', agentId);
+        } else {
+          console.warn('[loginAtenxionPharmacist] ✗ Could not extract agentId from embed iframeCode');
+          console.warn('[loginAtenxionPharmacist] Full iframeCode:', embed.iframeCode);
+        }
+      }
+    } else {
+      console.warn('[loginAtenxionPharmacist] Embed has no iframeCode');
+    }
+  } else {
+    console.log('[loginAtenxionPharmacist] Using agentId from credentials:', agentId);
+  }
+
+  // Ensure agentId is included in credentials
+  const finalAgentId = agentId || credentials.agentId;
+  console.log('[loginAtenxionPharmacist] Final agentId before normalize:', finalAgentId);
+  
+  const credentialsWithAgentId: AtenxionPharmacistCredentials = {
+    ...credentials,
+    agentId: finalAgentId,
+  };
+  
+  console.log('[loginAtenxionPharmacist] credentialsWithAgentId.agentId:', credentialsWithAgentId.agentId);
+
+  const requestBody = normalizePharmacistCredentials(credentialsWithAgentId);
+  
+  // Use MongoDB contextKey in Authorization header (same as doctor login pattern)
+  const headers = getHeaders(resolvedToken) || {};
+
+  console.log("Atenxion pharmacist login API call:", {
+    url,
+    body: requestBody,
+    headers,
+    token: resolvedToken ? resolvedToken.substring(0, 20) + "..." : "none",
+  });
+
+  try {
+    const pp = await axios.post(url, requestBody, { headers });
+    console.log("Atenxion pharmacist login response:", pp);
+    return true;
+  } catch (error) {
+    console.error("Atenxion pharmacist login failed:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("Response status:", error.response?.status);
+      console.error("Response data:", error.response?.data);
+    }
+    return handleAxiosError(error, "Unable to log in pharmacist to Atenxion");
+  }
+}
+
+export async function logoutAtenxionPharmacist(
+  credentials: AtenxionPharmacistCredentials,
+  token?: string | null
+) {
+  const url = `${resolveServerUrl()}/api/post-login/user-logout`;
+  let resolvedToken = token;
+  if (!resolvedToken) {
+    // Use admin integration for pharmacists - get contextKey from MongoDB adminIntegrationSettings_pharmacist collection
+    const embed = await fetchAdminIntegrationEmbed('Pharmacist');
+    resolvedToken = embed?.contextKey;
+  }
+  const body = normalizePharmacistCredentials(credentials);
+  const headers = getHeaders(resolvedToken) || {};
+  try {
+    console.log("Atenxion pharmacist logout API call:", {
+      url,
+      body,
+      headers,
+      token: resolvedToken ? `${resolvedToken.substring(0, 16)}...` : "none",
+    });
+    await axios.post(url, body, { headers });
+    return true;
+  } catch (error) {
+    console.error("Atenxion pharmacist logout failed:", error);
+    return handleAxiosError(error, "Unable to log out pharmacist from Atenxion");
   }
 }

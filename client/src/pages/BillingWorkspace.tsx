@@ -24,6 +24,9 @@ interface InvoiceSummary {
   amountPaid?: string;
   amountDue: string;
   updatedAt?: string;
+  Patient?: {
+    name: string;
+  } | null;
 }
 
 interface PaymentDraft {
@@ -66,6 +69,15 @@ function formatMoney(value: string, currency = 'USD') {
     minimumFractionDigits: 2,
     maximumFractionDigits: 20, // Allow more decimal places to preserve exact values
   }).format(numeric);
+}
+
+function formatTimeFromMinutes(minutes: number): string {
+  const clamped = Math.max(0, Math.min(24 * 60, minutes));
+  const hours = Math.floor(clamped / 60);
+  const mins = clamped % 60;
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = ((hours + 11) % 12) + 1;
+  return `${displayHours}:${mins.toString().padStart(2, '0')} ${period}`;
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
@@ -705,7 +717,18 @@ export default function BillingWorkspace() {
                           >
                             <div className="flex items-center justify-between gap-3">
                               <div>
-                                <div className="font-medium text-gray-900">{new Date(visit.visitDate).toLocaleString()}</div>
+                                <div className="font-medium text-gray-900">
+                                  {new Date(visit.visitDate).toLocaleDateString(undefined, {
+                                    year: 'numeric',
+                                    month: 'numeric',
+                                    day: 'numeric',
+                                  })}
+                                  {(visit as any).appointment?.startTimeMin !== undefined && (
+                                    <span className="ml-2 text-gray-600">
+                                      {formatTimeFromMinutes((visit as any).appointment.startTimeMin)}
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-xs text-gray-500">{visit.doctor?.name ?? '—'} • {visit.department}</div>
                               </div>
                               <span className="text-xs font-semibold text-blue-600">Load visit</span>
@@ -757,7 +780,18 @@ export default function BillingWorkspace() {
                     </div>
                     <div className="flex justify-between">
                       <dt>Visit date</dt>
-                      <dd>{new Date(visitDetails.visitDate).toLocaleString()}</dd>
+                      <dd>
+                        {new Date(visitDetails.visitDate).toLocaleDateString(undefined, {
+                          year: 'numeric',
+                          month: 'numeric',
+                          day: 'numeric',
+                        })}
+                        {(visitDetails as any).appointment?.startTimeMin !== undefined && (
+                          <span className="ml-2 text-gray-600">
+                            {formatTimeFromMinutes((visitDetails as any).appointment.startTimeMin)}
+                          </span>
+                        )}
+                      </dd>
                     </div>
                     <div className="flex justify-between">
                       <dt>Reason</dt>
@@ -926,6 +960,7 @@ export default function BillingWorkspace() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-2 text-left font-medium text-gray-600">Invoice</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Patient</th>
                   <th className="px-4 py-2 text-left font-medium text-gray-600">Visit</th>
                   <th className="px-4 py-2 text-left font-medium text-gray-600">Status</th>
                   <th className="px-4 py-2 text-right font-medium text-gray-600">Grand total</th>
@@ -937,6 +972,7 @@ export default function BillingWorkspace() {
                 {invoiceList.map((invoice) => (
                   <tr key={invoice.invoiceId}>
                     <td className="px-4 py-2 font-medium text-gray-900">{invoice.invoiceNo}</td>
+                    <td className="px-4 py-2 text-gray-700">{invoice.Patient?.name ?? 'Unknown patient'}</td>
                     <td className="px-4 py-2 text-gray-700">{invoice.visitId}</td>
                     <td className="px-4 py-2 text-gray-700">
                       <InvoiceStatusBadge status={invoice.status} />

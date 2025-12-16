@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import {
   listPharmacyQueue,
@@ -46,6 +46,7 @@ function formatStatusLabel(status: MedicationOrderStatus) {
 export default function PharmacyQueue() {
   const { user } = useAuth();
   const adminBasePath = useAdminBasePath();
+  const location = useLocation();
   const [status, setStatus] = useState<PharmacyQueueStatus>('PENDING');
   const [data, setData] = useState<PharmacyQueueItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -62,31 +63,64 @@ export default function PharmacyQueue() {
   const canDispense = user ? ['Pharmacist', 'PharmacyTech'].includes(user.role) : false;
   const canManageInventory = user ? ['InventoryManager', 'ITAdmin'].includes(user.role) : false;
   const canDeleteOrders = user ? ['ITAdmin', 'AdminAssistant'].includes(user.role) : false;
+  const loadQueueRef = useRef<() => Promise<void>>();
+
+  const loadQueue = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Add a small delay to ensure any pending database transactions are committed
+      await new Promise(resolve => setTimeout(resolve, 200));
+      const queue = await listPharmacyQueue(status);
+      setData(queue);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load queue');
+    } finally {
+      setLoading(false);
+    }
+  }, [status]);
 
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const queue = await listPharmacyQueue(status);
-        if (!cancelled) setData(queue);
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Unable to load queue');
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
+    loadQueueRef.current = loadQueue;
+  }, [loadQueue]);
 
-    load();
-    return () => {
-      cancelled = true;
+  useEffect(() => {
+    loadQueue();
+  }, [loadQueue]);
+
+  // Refresh data when navigating back to this page or when page becomes visible
+  useEffect(() => {
+    // Add a delay to ensure any pending database transactions are committed
+    // Also refresh when query parameters change (e.g., refresh timestamp)
+    const timeoutId = setTimeout(() => {
+      if (loadQueueRef.current) {
+        loadQueueRef.current();
+      }
+    }, 500);
+    return () => clearTimeout(timeoutId);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && loadQueueRef.current) {
+        loadQueueRef.current();
+      }
     };
-  }, [status]);
+
+    const handleFocus = () => {
+      if (loadQueueRef.current) {
+        loadQueueRef.current();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -242,6 +276,15 @@ export default function PharmacyQueue() {
                 Manage inventory
               </Link>
             ) : null}
+            <button
+              type="button"
+              onClick={() => loadQueue()}
+              disabled={loading}
+              className="rounded-full border border-gray-200 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Refresh queue"
+            >
+              {loading ? 'Refreshing...' : 'Refresh'}
+            </button>
             <select
               value={status}
               onChange={(event) => setStatus(event.target.value as PharmacyQueueStatus)}
@@ -278,7 +321,7 @@ export default function PharmacyQueue() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs uppercase tracking-wide text-blue-600">
-                      Rx #{item.prescriptionId.slice(0, 8)}
+                      Rx #{item.prescriptionId}
                     </div>
                     <h2 className="text-base font-semibold text-gray-900">{item.patient?.name ?? 'Patient'}</h2>
                     <p className="text-xs text-gray-500">Ordered by {item.doctor?.name ?? 'Doctor'}</p>
@@ -378,7 +421,7 @@ export default function PharmacyQueue() {
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div>
                         <div className="text-xs font-semibold uppercase tracking-wide text-blue-600">
-                          Order #{order.orderId.slice(0, 8)}
+                          Order #{order.orderId}
                         </div>
                         <h3 className="mt-1 text-base font-semibold text-gray-900">
                           {order.patient?.name ?? 'Patient order'}

@@ -123,7 +123,44 @@ router.get('/patients/:id/visits', requireAuth, async (req: Request, res: Respon
     orderBy: { visitDate: 'desc' },
     include: { doctor: { select: { doctorId: true, name: true, department: true } } },
   });
-  res.json(visits);
+
+  // Fetch appointments for each visit to get time information
+  const visitsWithAppointments = await Promise.all(
+    visits.map(async (visit) => {
+      // Find matching appointment by patientId, doctorId, and date
+      const visitDateOnly = new Date(visit.visitDate);
+      visitDateOnly.setHours(0, 0, 0, 0);
+      const nextDay = new Date(visitDateOnly);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const appointment = await prisma.appointment.findFirst({
+        where: {
+          patientId: visit.patientId,
+          doctorId: visit.doctorId,
+          date: {
+            gte: visitDateOnly,
+            lt: nextDay,
+          },
+          status: { in: ['Completed', 'InProgress', 'CheckedIn'] },
+        },
+        select: {
+          startTimeMin: true,
+          endTimeMin: true,
+        },
+        orderBy: { startTimeMin: 'asc' },
+      });
+
+      return {
+        ...visit,
+        appointment: appointment ? {
+          startTimeMin: appointment.startTimeMin,
+          endTimeMin: appointment.endTimeMin,
+        } : null,
+      };
+    })
+  );
+
+  res.json(visitsWithAppointments);
 });
 
 router.get('/visits/:id', requireAuth, async (req: Request, res: Response) => {

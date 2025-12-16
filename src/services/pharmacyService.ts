@@ -1,4 +1,4 @@
-import { PrismaClient, PrescriptionStatus, type DispenseStatus } from '@prisma/client';
+import { PrismaClient, PrescriptionStatus, DispenseStatus } from '@prisma/client';
 import type {
   AdjustStockInput,
   CreateRxInput,
@@ -214,7 +214,10 @@ export async function completeDispense(
   dispenseId: string,
   status: Extract<DispenseStatus, 'COMPLETED' | 'PARTIAL'>,
 ) {
-  return prisma.$transaction(async (tx) => {
+  console.log(`[completeDispense] Starting for dispenseId: ${dispenseId}, status: ${status}`);
+  
+  try {
+    const result = await prisma.$transaction(async (tx) => {
     const dispense = await tx.dispense.findUnique({
       where: { dispenseId },
       include: {
@@ -226,9 +229,14 @@ export async function completeDispense(
     });
 
     if (!dispense) {
+      console.error(`[completeDispense] Dispense not found: ${dispenseId}`);
       throw new Error('NOT_FOUND');
     }
 
+    console.log(`[completeDispense] Found dispense for prescriptionId: ${dispense.prescriptionId}, current prescription status: ${dispense.prescription.status}`);
+    console.log(`[completeDispense] Dispense items count: ${dispense.items.length}`);
+
+    // Update stock for allocated items
     for (const item of dispense.items) {
       if (!item.stockItemId) continue;
       const updated = await tx.stockItem.update({
@@ -236,19 +244,14 @@ export async function completeDispense(
         data: { qtyOnHand: { decrement: item.quantity } },
       });
       if (updated.qtyOnHand < 0) {
+        console.error(`[completeDispense] Out of stock for stockItemId: ${item.stockItemId}`);
         throw new Error('OUT_OF_STOCK_RACE');
       }
     }
 
-    await tx.dispense.update({
-      where: { dispenseId },
-      data: {
-        status,
-        dispensedAt: new Date(),
-      },
-    });
-
-    const totals = await tx.dispenseItem.groupBy({
+    // Calculate totals across all dispenses for this prescription FIRST
+    // This includes the current dispense items before we update the dispense status
+    const totalsBefore = await tx.dispenseItem.groupBy({
       by: ['prescriptionItemId'],
       _sum: { quantity: true },
       where: {
@@ -257,19 +260,99 @@ export async function completeDispense(
         },
       },
     });
+    console.log(`[completeDispense] Totals before status update:`, totalsBefore);
 
+    // Update dispense status
+    await tx.dispense.update({
+      where: { dispenseId },
+      data: {
+        status,
+        dispensedAt: new Date(),
+      },
+    });
+    console.log(`[completeDispense] Updated dispense status to: ${status}`);
+
+    // Use the totals we calculated before updating status
+    const totals = totalsBefore;
+
+    console.log(`[completeDispense] Totals calculated:`, totals);
+
+    // Check if all prescription items are fully met
     const allMet = dispense.prescription.items.every((rxItem) => {
       const sum = totals.find((t) => t.prescriptionItemId === rxItem.itemId)?._sum.quantity ?? 0;
-      return sum >= rxItem.quantityPrescribed;
+      const met = sum >= rxItem.quantityPrescribed;
+      console.log(`[completeDispense] Item ${rxItem.itemId}: required ${rxItem.quantityPrescribed}, dispensed ${sum}, met: ${met}`);
+      return met;
     });
 
-    const finalStatus = allMet ? PrescriptionStatus.DISPENSED : PrescriptionStatus.PARTIAL;
+    // Determine final status based on dispense status and items met
+    // If dispense status is COMPLETED and all items are met, mark as DISPENSED
+    // Otherwise mark as PARTIAL
+    let finalStatus: PrescriptionStatus;
+    if (status === DispenseStatus.COMPLETED && allMet) {
+      finalStatus = PrescriptionStatus.DISPENSED;
+    } else {
+      finalStatus = PrescriptionStatus.PARTIAL;
+    }
+    
+    console.log(`[completeDispense] Dispense status: ${status}, all items met: ${allMet}, final prescription status will be: ${finalStatus}`);
 
-    await tx.prescription.update({
+    // Always update prescription status when dispense is completed
+    console.log(`[completeDispense] Updating prescription status from ${dispense.prescription.status} to ${finalStatus}`);
+    
+    const updatedPrescription = await tx.prescription.update({
       where: { prescriptionId: dispense.prescriptionId },
-      data: { status: finalStatus },
+      data: { 
+        status: finalStatus,
+        // Explicitly set updatedAt to ensure the record is marked as updated
+        updatedAt: new Date(),
+      },
     });
 
-    return { ok: true, prescriptionStatus: finalStatus, prescriptionId: dispense.prescriptionId };
-  });
+    console.log(`[completeDispense] Prescription status updated to ${updatedPrescription.status}`);
+
+    // Verify the update succeeded - read it back within the transaction
+    const verifyInTx = await tx.prescription.findUnique({
+      where: { prescriptionId: dispense.prescriptionId },
+      select: { status: true },
+    });
+
+    if (!verifyInTx || verifyInTx.status !== finalStatus) {
+      console.error(`[completeDispense] Prescription status update FAILED within transaction! Expected ${finalStatus}, got ${verifyInTx?.status}`);
+      throw new Error(`Status update failed: expected ${finalStatus}, got ${verifyInTx?.status || 'null'}`);
+    }
+
+    console.log(`[completeDispense] Verified prescription status is ${finalStatus} within transaction`);
+
+      return { ok: true, prescriptionStatus: finalStatus, prescriptionId: dispense.prescriptionId };
+    }, {
+      timeout: 10000, // 10 second timeout
+      isolationLevel: 'ReadCommitted', // Ensure we can see committed changes
+    });
+
+    console.log(`[completeDispense] Transaction completed successfully. Result:`, result);
+    
+    // Double-check the status was actually saved after transaction commits
+    const finalCheck = await prisma.prescription.findUnique({
+      where: { prescriptionId: result.prescriptionId },
+      select: { status: true, updatedAt: true },
+    });
+    
+    console.log(`[completeDispense] Final check after transaction: status=${finalCheck?.status}, updatedAt=${finalCheck?.updatedAt}`);
+    
+    if (finalCheck?.status !== result.prescriptionStatus) {
+      console.error(`[completeDispense] CRITICAL: Status mismatch after transaction! Expected ${result.prescriptionStatus}, got ${finalCheck?.status}`);
+      // Try one more time to update
+      const retryUpdate = await prisma.prescription.update({
+        where: { prescriptionId: result.prescriptionId },
+        data: { status: result.prescriptionStatus },
+      });
+      console.log(`[completeDispense] Retry update result: ${retryUpdate.status}`);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error(`[completeDispense] Transaction failed:`, error);
+    throw error;
+  }
 }

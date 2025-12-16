@@ -73,8 +73,8 @@ const CreateBillingSchema = z.object({
     return value.trim();
   }).refine((value) => /^-?\d+(\.\d{1,})?$/.test(value), {
     message: 'Invalid monetary amount',
-  }),
-  method: z.enum(['CASH', 'CARD', 'MOBILE_WALLET', 'BANK_TRANSFER', 'OTHER']),
+  }).optional(),
+  method: z.enum(['CASH', 'CARD', 'CREDIT_CARD', 'DEBIT_CARD', 'MOBILE_WALLET', 'BANK_TRANSFER', 'OTHER']),
   referenceNo: z.string().max(100).optional(),
   note: z.string().max(500).optional(),
 });
@@ -593,6 +593,7 @@ router.post(
         },
         select: {
           invoiceId: true,
+          amountDue: true,
         },
         orderBy: {
           createdAt: 'desc',
@@ -609,13 +610,34 @@ router.post(
 
       const invoiceId = invoiceRecord.invoiceId;
 
+      // Auto-calculate amount if not provided (use invoice amountDue)
+      let paymentAmount: string;
+      if (!amount) {
+        paymentAmount = invoiceRecord.amountDue.toString();
+        // Check if there's an amount due
+        if (Number(invoiceRecord.amountDue) <= 0) {
+          return res.status(400).json({
+            error: `No amount due for this invoice. Current amount due: ${invoiceRecord.amountDue}`,
+            msg: "Failed",
+          });
+        }
+      } else {
+        paymentAmount = amount;
+      }
+
       // Convert method string to PaymentMethod enum
-      const paymentMethod = method as PaymentMethod;
+      // Map CREDIT_CARD and DEBIT_CARD to CARD for database storage
+      let paymentMethod: PaymentMethod;
+      if (method === 'CREDIT_CARD' || method === 'DEBIT_CARD') {
+        paymentMethod = 'CARD';
+      } else {
+        paymentMethod = method as PaymentMethod;
+      }
 
       // Create payment using billing service
       const payment = await postPayment(
         invoiceId,
-        amount,
+        paymentAmount,
         paymentMethod,
         referenceNo,
         note
@@ -680,8 +702,11 @@ router.post(
         searchedPatientName: patientName,
         searchedDate: date,
         searchedTime: time || null,
-        paymentMethod: payment.method,
+        paymentMethod: payment.method, // Stored as 'CARD' in database
+        paymentMethodRequested: method, // Original method from request (CREDIT_CARD, DEBIT_CARD, etc.)
         paymentAmount: Number(payment.amount),
+        paymentAmountRequested: amount || null, // Original amount from request (null if auto-calculated)
+        paymentAmountAutoCalculated: !amount, // Flag indicating if amount was auto-calculated
         paymentPaidAt: payment.paidAt.toISOString().split("T")[0],
         paymentPaidTime: payment.paidAt.toISOString().split("T")[1]?.split(".")[0] || "00:00:00",
         paymentReferenceNo: payment.referenceNo || null,

@@ -106,14 +106,24 @@ export default function DispenseDetail() {
   async function handleComplete(nextStatus: 'COMPLETED' | 'PARTIAL') {
     if (!dispense) return;
     try {
-      await fetchJSON(`/pharmacy/dispenses/${dispense.dispenseId}/complete`, {
+      const result = await fetchJSON(`/pharmacy/dispenses/${dispense.dispenseId}/complete`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
       });
-      window.alert('Dispense saved.');
-      navigate(`${adminBasePath}/pharmacy/queue`);
+      
+      // Log the result for debugging
+      console.log('Dispense completion result:', result);
+      
+      window.alert(`Dispense saved. Prescription status updated to ${result.prescriptionStatus || 'PARTIAL'}.`);
+      
+      // Longer delay to ensure database transaction is fully committed and propagated
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // Force a hard refresh by adding a timestamp to the URL
+      navigate(`${adminBasePath}/pharmacy/queue?refresh=${Date.now()}`);
     } catch (err) {
+      console.error('Error completing dispense:', err);
       window.alert(err instanceof Error ? err.message : 'Unable to complete dispense');
     }
   }
