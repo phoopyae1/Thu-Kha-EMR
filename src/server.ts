@@ -24,6 +24,7 @@ import cashierAgentRouter from './routes/cashierAgent.js';
 import adminAgentRouter from './routes/adminAgent.js';
 import labAgentRouter from './routes/labAgent.js';
 import pharmAgentRouter from './routes/pharmAgent.js';
+import publicAgentRouter from './routes/publicAgent.js';
 
 export const apiRouter = Router();
 
@@ -31,6 +32,7 @@ export const apiRouter = Router();
 apiRouter.use(docsRouter);
 apiRouter.use('/patient-portal', patientPortalRouter);
 apiRouter.use('/auth', authRouter);
+apiRouter.use('/public-agent', publicAgentRouter);
 
 // Protected routes
 apiRouter.use(visitsRouter);

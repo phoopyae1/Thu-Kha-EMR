@@ -22,11 +22,11 @@ function requireITAdminOrPharmacist(
 }
 
 // Schema for updating medication order status
-// Accepts simple status names: pending, approve, deliver, cancel
+// Accepts simple status names: pending, approve, deliver, cancel, shipped
 const UpdateMedicationOrderStatusSchema = z.object({
   orderId: z.string().uuid("orderId must be a valid UUID"),
-  status: z.enum(["pending", "approve", "deliver", "cancel"], {
-    errorMap: () => ({ message: "Status must be one of: pending, approve, deliver, cancel" }),
+  status: z.enum(["pending", "approve", "deliver", "cancel", "shipped"], {
+    errorMap: () => ({ message: "Status must be one of: pending, approve, deliver, cancel, shipped" }),
   }),
   notes: z.string().max(500).optional(),
   pharmacistId: z.string().uuid("pharmacistId must be a valid UUID").optional(),
@@ -67,6 +67,7 @@ function mapStatusToEnum(status: string): MedicationOrderStatus {
     approve: MedicationOrderStatus.APPROVED,
     deliver: MedicationOrderStatus.DELIVERED,
     cancel: MedicationOrderStatus.CANCELLED,
+    shipped: MedicationOrderStatus.SHIPPED,
   };
   return statusMap[status.toLowerCase()] || MedicationOrderStatus.PENDING;
 }

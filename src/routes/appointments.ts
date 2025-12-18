@@ -492,6 +492,15 @@ router.get(
       const end = new Date(start);
       end.setUTCDate(end.getUTCDate() + windowDays);
 
+      // Log query parameters for debugging
+      console.log('Doctor queue query:', {
+        doctorId,
+        windowDays,
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0],
+        statuses: ['Scheduled', 'CheckedIn', 'InProgress'],
+      });
+
       const appointments = await prisma.appointment.findMany({
         where: {
           doctorId,
