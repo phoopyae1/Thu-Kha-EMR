@@ -15,6 +15,8 @@ const PublicAppointmentBookingSchema = z.object({
   doctor: z.string().min(1, "Doctor name is required"),
   doctordepartment: z.string().min(1, "Doctor department is required"),
   gender: z.enum(["M", "F"], { required_error: "Gender is required" }), // Required gender: "M" for Male, "F" for Female
+  reason: z.string().optional(), // Optional appointment reason
+  location: z.string().optional(), // Optional location
 });
 
 // Helper function to parse time string to minutes
@@ -51,7 +53,7 @@ router.post(
         });
       }
 
-      const { patientName, date, time, doctor, doctordepartment, gender } = validationResult.data;
+      const { patientName, date, time, doctor, doctordepartment, gender, reason, location } = validationResult.data;
 
       // Find or create patient by name
       let patient = await prisma.patient.findFirst({
@@ -180,8 +182,8 @@ router.post(
           date: appointmentDate.toISOString().split("T")[0],
           startTimeMin,
           endTimeMin,
-          reason: undefined,
-          location: undefined,
+          reason: reason || undefined,
+          location: location || undefined,
         });
       } catch (validationError: any) {
         // Handle specific validation errors
@@ -220,8 +222,8 @@ router.post(
           startTimeMin,
           endTimeMin,
           status: 'Scheduled', // Explicitly set status to ensure it appears in queue
-          reason: null,
-          location: null,
+          reason: reason || null,
+          location: location || null,
         },
         include: {
           patient: { select: { patientId: true, name: true } },
@@ -261,6 +263,8 @@ router.post(
         endTime: formatTime(appointment.endTimeMin),
         duration: "30 minutes",
         appointmentStatus: appointment.status,
+        reason: appointment.reason,
+        location: appointment.location,
         createdAt: appointment.createdAt.toISOString(),
         message: "Appointment booked successfully",
         queueVisibility: daysUntilAppointment <= 1 
