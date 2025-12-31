@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
-import { assertCreatable } from "../services/appointmentService.js";
+import { assertCreatable, assertUpdatable } from "../services/appointmentService.js";
 import { toDateOnly, toMinutes } from "../utils/time.js";
 
 const prisma = new PrismaClient();
@@ -292,6 +292,15 @@ const PatientAppointmentsQuerySchema = z.object({
   patientId: z.string().uuid("patientId must be a valid UUID"),
 });
 
+// Schema for rescheduling appointment
+const RescheduleAppointmentSchema = z.object({
+  name: z.string().min(1, "Patient name is required"),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in format YYYY-MM-DD"),
+  time: z.string().min(1, "Time is required"), // Accepts formats like "14:30" or "2:30pm"
+  doctorname: z.string().min(1, "Doctor name is required"),
+  department: z.string().min(1, "Doctor department is required"),
+});
+
 // Public endpoint for patients to view their appointments (no authentication required)
 router.post(
   "/patient-appointment",
@@ -373,6 +382,408 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to retrieve patient appointments",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Helper function to find doctor (reused from booking endpoint)
+async function findDoctorByNameAndDepartment(doctorName: string, department: string) {
+  // Try exact match first
+  let doctorRecord = await prisma.doctor.findFirst({
+    where: {
+      name: {
+        equals: doctorName.trim(),
+        mode: "insensitive",
+      },
+      department: {
+        equals: department.trim(),
+        mode: "insensitive",
+      },
+    },
+    select: {
+      doctorId: true,
+      name: true,
+      department: true,
+    },
+  });
+
+  // If exact match fails, try partial match
+  if (!doctorRecord) {
+    doctorRecord = await prisma.doctor.findFirst({
+      where: {
+        name: {
+          contains: doctorName.trim(),
+          mode: "insensitive",
+        },
+        department: {
+          equals: department.trim(),
+          mode: "insensitive",
+        },
+      },
+      select: {
+        doctorId: true,
+        name: true,
+        department: true,
+      },
+    });
+  }
+
+  return doctorRecord;
+}
+
+// Public endpoint for rescheduling appointments (no authentication required)
+router.post(
+  "/reschedule-appointment",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Validate request body
+      const validationResult = RescheduleAppointmentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { name, date, time, doctorname, department } = validationResult.data;
+
+      // Find patient by name
+      const patient = await prisma.patient.findFirst({
+        where: {
+          name: {
+            equals: name.trim(),
+            mode: "insensitive",
+          },
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+      });
+
+      if (!patient) {
+        return res.status(404).json({
+          error: "Patient not found",
+          msg: "Failed",
+        });
+      }
+
+      // Find the most recent scheduled appointment for this patient
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.patientId,
+          status: {
+            in: ["Scheduled", "CheckedIn"],
+          },
+        },
+        orderBy: [
+          { date: "desc" },
+          { startTimeMin: "desc" },
+        ],
+        select: {
+          appointmentId: true,
+          patientId: true,
+          doctorId: true,
+          date: true,
+          startTimeMin: true,
+          endTimeMin: true,
+        },
+      });
+
+      if (!existingAppointment) {
+        return res.status(404).json({
+          error: "No scheduled appointment found for this patient",
+          msg: "Failed",
+        });
+      }
+
+      // Find doctor by name and department
+      const doctorRecord = await findDoctorByNameAndDepartment(doctorname, department);
+
+      if (!doctorRecord) {
+        // Try to find all doctors in the department to help with debugging
+        const doctorsInDept = await prisma.doctor.findMany({
+          where: {
+            department: {
+              equals: department.trim(),
+              mode: "insensitive",
+            },
+          },
+          select: {
+            doctorId: true,
+            name: true,
+            department: true,
+          },
+        });
+
+        return res.status(404).json({
+          error: `Doctor not found with name: "${doctorname}" in department: "${department}"`,
+          msg: "Failed",
+          availableDoctors: doctorsInDept.length > 0
+            ? doctorsInDept.map((d) => ({ name: d.name, department: d.department }))
+            : `No doctors found in department "${department}"`,
+        });
+      }
+
+      // Parse time to minutes
+      let startTimeMin: number;
+      try {
+        startTimeMin = parseTimeToMinutes(time);
+      } catch (timeError) {
+        return res.status(400).json({
+          error:
+            timeError instanceof Error
+              ? timeError.message
+              : "Invalid time format",
+          msg: "Failed",
+        });
+      }
+
+      // Default appointment duration: 30 minutes
+      const endTimeMin = startTimeMin + 30;
+
+      // Convert date to Date object and normalize to date-only
+      const appointmentDate = toDateOnly(date);
+
+      // Validate the new appointment slot (availability, blackouts, overlaps)
+      try {
+        await assertUpdatable(prisma as any, existingAppointment.appointmentId, {
+          doctorId: doctorRecord.doctorId,
+          department: department,
+          date: appointmentDate.toISOString().split("T")[0],
+          startTimeMin,
+          endTimeMin,
+        });
+      } catch (validationError: any) {
+        // Handle specific validation errors
+        const statusCode = validationError.status || validationError.statusCode;
+
+        if (statusCode === 404) {
+          return res.status(404).json({
+            error: validationError.message || "Resource not found",
+            msg: "Failed",
+          });
+        }
+        if (statusCode === 409) {
+          return res.status(409).json({
+            error: validationError.message || "Time slot is already occupied",
+            msg: "Failed",
+          });
+        }
+        if (statusCode === 422) {
+          return res.status(422).json({
+            error: validationError.message || "Time slot is not available",
+            msg: "Failed",
+          });
+        }
+        // Re-throw unexpected errors
+        throw validationError;
+      }
+
+      // Update the appointment
+      const updatedAppointment = await prisma.appointment.update({
+        where: { appointmentId: existingAppointment.appointmentId },
+        data: {
+          doctorId: doctorRecord.doctorId,
+          department: department,
+          date: appointmentDate,
+          startTimeMin,
+          endTimeMin,
+          status: "Scheduled", // Ensure status is Scheduled
+        },
+        include: {
+          patient: { select: { patientId: true, name: true } },
+          doctor: { select: { doctorId: true, name: true, department: true } },
+        },
+      });
+
+      // Format response
+      const appointmentDateStr = updatedAppointment.date.toISOString().split("T")[0];
+      const daysUntilAppointment = Math.ceil(
+        (updatedAppointment.date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
+      );
+
+      res.status(200).json({
+        msg: "Success",
+        appointmentId: updatedAppointment.appointmentId,
+        patientId: updatedAppointment.patientId,
+        patientName: updatedAppointment.patient.name,
+        doctorId: updatedAppointment.doctorId,
+        doctorName: updatedAppointment.doctor.name,
+        department: updatedAppointment.department,
+        appointmentDate: appointmentDateStr,
+        startTime: formatTime(updatedAppointment.startTimeMin),
+        endTime: formatTime(updatedAppointment.endTimeMin),
+        duration: "30 minutes",
+        appointmentStatus: updatedAppointment.status,
+        reason: updatedAppointment.reason,
+        location: updatedAppointment.location,
+        message: "Appointment rescheduled successfully",
+        queueVisibility: daysUntilAppointment <= 1
+          ? "This appointment should appear in today's queue"
+          : `This appointment is ${daysUntilAppointment} days away. To view it in the doctor queue, use /appointments/queue?doctorId=${updatedAppointment.doctorId}&days=${Math.max(daysUntilAppointment + 1, 7)}`,
+      });
+    } catch (error: unknown) {
+      console.error("Public Appointment Reschedule Error:", error);
+
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to reschedule appointment",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Public endpoint for canceling/deleting appointments (no authentication required)
+router.post(
+  "/cancel-appointment",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Validate request body
+      const validationResult = RescheduleAppointmentSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { name, date, time, doctorname, department } = validationResult.data;
+
+      // Find patient by name
+      const patient = await prisma.patient.findFirst({
+        where: {
+          name: {
+            equals: name.trim(),
+            mode: "insensitive",
+          },
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+      });
+
+      if (!patient) {
+        return res.status(404).json({
+          error: "Patient not found",
+          msg: "Failed",
+        });
+      }
+
+      // Find doctor by name and department
+      const doctorRecord = await findDoctorByNameAndDepartment(doctorname, department);
+
+      if (!doctorRecord) {
+        // Try to find all doctors in the department to help with debugging
+        const doctorsInDept = await prisma.doctor.findMany({
+          where: {
+            department: {
+              equals: department.trim(),
+              mode: "insensitive",
+            },
+          },
+          select: {
+            doctorId: true,
+            name: true,
+            department: true,
+          },
+        });
+
+        return res.status(404).json({
+          error: `Doctor not found with name: "${doctorname}" in department: "${department}"`,
+          msg: "Failed",
+          availableDoctors: doctorsInDept.length > 0
+            ? doctorsInDept.map((d) => ({ name: d.name, department: d.department }))
+            : `No doctors found in department "${department}"`,
+        });
+      }
+
+      // Parse time to minutes
+      let startTimeMin: number;
+      try {
+        startTimeMin = parseTimeToMinutes(time);
+      } catch (timeError) {
+        return res.status(400).json({
+          error:
+            timeError instanceof Error
+              ? timeError.message
+              : "Invalid time format",
+          msg: "Failed",
+        });
+      }
+
+      // Convert date to Date object and normalize to date-only
+      const appointmentDate = toDateOnly(date);
+
+      // Find the specific appointment matching all criteria
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: {
+          patientId: patient.patientId,
+          doctorId: doctorRecord.doctorId,
+          date: appointmentDate,
+          startTimeMin: startTimeMin,
+          status: {
+            in: ["Scheduled", "CheckedIn"],
+          },
+        },
+        include: {
+          patient: { select: { patientId: true, name: true } },
+          doctor: { select: { doctorId: true, name: true, department: true } },
+        },
+      });
+
+      if (!existingAppointment) {
+        return res.status(404).json({
+          error: "No matching scheduled appointment found. Please verify the appointment date, time, doctor, and department.",
+          msg: "Failed",
+        });
+      }
+
+      // Cancel the appointment (set status to Cancelled)
+      const cancelledAppointment = await prisma.appointment.update({
+        where: { appointmentId: existingAppointment.appointmentId },
+        data: {
+          status: "Cancelled",
+        },
+        include: {
+          patient: { select: { patientId: true, name: true } },
+          doctor: { select: { doctorId: true, name: true, department: true } },
+        },
+      });
+
+      // Format response
+      const appointmentDateStr = cancelledAppointment.date.toISOString().split("T")[0];
+
+      res.status(200).json({
+        msg: "Success",
+        appointmentId: cancelledAppointment.appointmentId,
+        patientId: cancelledAppointment.patientId,
+        patientName: cancelledAppointment.patient.name,
+        doctorId: cancelledAppointment.doctorId,
+        doctorName: cancelledAppointment.doctor.name,
+        department: cancelledAppointment.department,
+        appointmentDate: appointmentDateStr,
+        startTime: formatTime(cancelledAppointment.startTimeMin),
+        endTime: formatTime(cancelledAppointment.endTimeMin),
+        appointmentStatus: cancelledAppointment.status,
+        message: "Appointment cancelled successfully",
+      });
+    } catch (error: unknown) {
+      console.error("Public Appointment Cancel Error:", error);
+
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to cancel appointment",
         msg: "Failed",
       });
     }
