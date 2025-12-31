@@ -1,0 +1,405 @@
+{
+  "tools": [
+    {
+      "name": "book_public_appointment",
+      "description": "Public endpoint to book an appointment without authentication. Automatically creates a patient if not found. Finds doctor by name and department. No authentication required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "patientName": {
+            "type": "string",
+            "description": "Full name of the patient. If patient doesn't exist, a new patient will be created with default DOB (2000-01-01).",
+            "minLength": 1
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Appointment date in YYYY-MM-DD format (e.g., '2024-12-25')"
+          },
+          "time": {
+            "type": "string",
+            "description": "Appointment time. Accepts 24-hour format (e.g., '14:30') or 12-hour format with AM/PM (e.g., '2:30pm', '9:00am')",
+            "minLength": 1
+          },
+          "doctor": {
+            "type": "string",
+            "description": "Doctor's name. Partial match supported (case-insensitive). Examples: 'Dr. Johnson', 'Dr Smith'",
+            "minLength": 1
+          },
+          "doctordepartment": {
+            "type": "string",
+            "description": "Doctor's department name (case-insensitive). Examples: 'Pediatrics', 'Cardiology', 'General Medicine'",
+            "minLength": 1
+          },
+          "gender": {
+            "type": "string",
+            "enum": ["M", "F"],
+            "description": "Patient gender: 'M' for Male, 'F' for Female. Required when creating new patient."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for the appointment (e.g., 'Annual checkup', 'Follow-up consultation')"
+          },
+          "location": {
+            "type": "string",
+            "description": "Optional location for the appointment (e.g., 'Main Clinic - Room 101', 'Building A - Floor 2')"
+          }
+        },
+        "required": [
+          "patientName",
+          "date",
+          "time",
+          "doctor",
+          "doctordepartment",
+          "gender"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "msg": {
+            "type": "string",
+            "enum": ["Success", "Failed"],
+            "description": "Response status message"
+          },
+          "appointmentId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Auto-generated UUID for the appointment"
+          },
+          "patientId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Patient UUID. Always returned in the response. If patient didn't exist, a new patient record is created and this is the newly generated UUID. If patient already existed, this is the existing patient's UUID."
+          },
+          "patientName": {
+            "type": "string",
+            "description": "Patient's full name. Always returned in the response. This matches the patientName provided in the request."
+          },
+          "doctorId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Doctor UUID"
+          },
+          "doctorName": {
+            "type": "string",
+            "description": "Doctor's full name"
+          },
+          "department": {
+            "type": "string",
+            "description": "Department name"
+          },
+          "appointmentDate": {
+            "type": "string",
+            "format": "date",
+            "description": "Appointment date in YYYY-MM-DD format"
+          },
+          "startTime": {
+            "type": "string",
+            "format": "time",
+            "pattern": "^\\d{2}:\\d{2}$",
+            "description": "Start time in HH:MM format (24-hour)"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "time",
+            "pattern": "^\\d{2}:\\d{2}$",
+            "description": "End time in HH:MM format (24-hour)"
+          },
+          "duration": {
+            "type": "string",
+            "enum": ["30 minutes"],
+            "description": "Appointment duration (always '30 minutes')"
+          },
+          "appointmentStatus": {
+            "type": "string",
+            "enum": ["Scheduled", "CheckedIn", "InProgress", "Completed", "Cancelled"],
+            "description": "Current appointment status (always 'Scheduled' for new appointments)"
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Reason for the appointment (if provided, otherwise null)"
+          },
+          "location": {
+            "type": ["string", "null"],
+            "description": "Location for the appointment (if provided, otherwise null)"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO 8601 timestamp when appointment was created"
+          },
+          "message": {
+            "type": "string",
+            "description": "Human-readable success message"
+          },
+          "queueVisibility": {
+            "type": "string",
+            "description": "Information about when the appointment will appear in the doctor queue. For appointments more than 1 day away, includes instructions on how to view them."
+          }
+        },
+        "required": [
+          "msg",
+          "appointmentId",
+          "patientId",
+          "patientName",
+          "doctorId",
+          "doctorName",
+          "department",
+          "appointmentDate",
+          "startTime",
+          "endTime",
+          "duration",
+          "appointmentStatus",
+          "createdAt",
+          "message",
+          "queueVisibility"
+        ]
+      }
+    },
+    {
+      "name": "view_patient_appointments",
+      "description": "Public endpoint for patients to view their appointments using their patient ID. Returns appointment date, doctor name, department, and time for all appointments. No authentication required.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "patientId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Patient UUID to retrieve appointments for"
+          }
+        },
+        "required": ["patientId"],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "msg": {
+            "type": "string",
+            "enum": ["Success", "Failed"],
+            "description": "Response status message"
+          },
+          "patientId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Patient UUID"
+          },
+          "patientName": {
+            "type": "string",
+            "description": "Patient's full name"
+          },
+          "appointments": {
+            "type": "array",
+            "description": "List of appointments for the patient, ordered by date (most recent first)",
+            "items": {
+              "type": "object",
+              "properties": {
+                "appointmentId": {
+                  "type": "string",
+                  "format": "uuid",
+                  "description": "Appointment UUID"
+                },
+                "appointmentDate": {
+                  "type": "string",
+                  "format": "date",
+                  "description": "Appointment date in YYYY-MM-DD format"
+                },
+                "doctorName": {
+                  "type": "string",
+                  "description": "Doctor's full name"
+                },
+                "department": {
+                  "type": "string",
+                  "description": "Department name"
+                },
+                "startTime": {
+                  "type": "string",
+                  "format": "time",
+                  "pattern": "^\\d{2}:\\d{2}$",
+                  "description": "Start time in HH:MM format (24-hour)"
+                },
+                "endTime": {
+                  "type": "string",
+                  "format": "time",
+                  "pattern": "^\\d{2}:\\d{2}$",
+                  "description": "End time in HH:MM format (24-hour)"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["Scheduled", "CheckedIn", "InProgress", "Completed", "Cancelled"],
+                  "description": "Current appointment status"
+                },
+                "reason": {
+                  "type": ["string", "null"],
+                  "description": "Reason for the appointment (if provided, otherwise null)"
+                },
+                "location": {
+                  "type": ["string", "null"],
+                  "description": "Location for the appointment (if provided, otherwise null)"
+                }
+              },
+              "required": [
+                "appointmentId",
+                "appointmentDate",
+                "doctorName",
+                "department",
+                "startTime",
+                "endTime",
+                "status"
+              ]
+            }
+          },
+          "totalAppointments": {
+            "type": "integer",
+            "description": "Total number of appointments found",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "msg",
+          "patientId",
+          "patientName",
+          "appointments",
+          "totalAppointments"
+        ]
+      }
+    }
+  ],
+  "endpoints": {
+    "book_public_appointment": {
+      "method": "POST",
+      "path": "/api/public-agent/appointment-booking",
+      "authentication": "none",
+      "rateLimit": "Standard API rate limits apply"
+    },
+    "view_patient_appointments": {
+      "method": "POST",
+      "path": "/api/public-agent/patient-appointment",
+      "authentication": "none",
+      "rateLimit": "Standard API rate limits apply"
+    }
+  },
+  "examples": {
+    "book_public_appointment": {
+      "request": {
+        "patientName": "Jane Smith",
+        "date": "2024-12-25",
+        "time": "2:30pm",
+        "doctor": "Dr. Johnson",
+        "doctordepartment": "Pediatrics",
+        "gender": "F",
+        "reason": "Annual checkup",
+        "location": "Main Clinic - Room 101"
+      },
+      "successResponse": {
+        "msg": "Success",
+        "appointmentId": "123e4567-e89b-12d3-a456-426614174000",
+        "patientId": "987fcdeb-51a2-43d7-9f8e-123456789abc",
+        "patientName": "Jane Smith",
+        "doctorId": "456e7890-e89b-12d3-a456-426614174001",
+        "doctorName": "Dr. Johnson",
+        "department": "Pediatrics",
+        "appointmentDate": "2024-12-25",
+        "startTime": "14:30",
+        "endTime": "15:00",
+        "duration": "30 minutes",
+        "appointmentStatus": "Scheduled",
+        "reason": "Annual checkup",
+        "location": "Main Clinic - Room 101",
+        "createdAt": "2024-12-20T10:00:00.000Z",
+        "message": "Appointment booked successfully",
+        "queueVisibility": "This appointment should appear in today's queue"
+      },
+      "errorResponse": {
+        "400": {
+          "error": "Invalid request body",
+          "details": [
+            {
+              "code": "invalid_type",
+              "path": ["date"],
+              "message": "Date must be in format YYYY-MM-DD"
+            }
+          ],
+          "msg": "Failed"
+        },
+        "404": {
+          "error": "Doctor not found with name: \"Dr. Unknown\" in department: \"Pediatrics\"",
+          "msg": "Failed",
+          "availableDoctors": [
+            {
+              "name": "Dr. Johnson",
+              "department": "Pediatrics"
+            }
+          ]
+        },
+        "409": {
+          "error": "Time slot is already occupied",
+          "msg": "Failed"
+        },
+        "422": {
+          "error": "Time slot is not available",
+          "msg": "Failed"
+        }
+      }
+    },
+    "view_patient_appointments": {
+      "request": {
+        "patientId": "987fcdeb-51a2-43d7-9f8e-123456789abc"
+      },
+      "successResponse": {
+        "msg": "Success",
+        "patientId": "987fcdeb-51a2-43d7-9f8e-123456789abc",
+        "patientName": "Jane Smith",
+        "appointments": [
+          {
+            "appointmentId": "123e4567-e89b-12d3-a456-426614174000",
+            "appointmentDate": "2024-12-25",
+            "doctorName": "Dr. Johnson",
+            "department": "Pediatrics",
+            "startTime": "14:30",
+            "endTime": "15:00",
+            "status": "Scheduled",
+            "reason": "Annual checkup",
+            "location": "Main Clinic - Room 101"
+          },
+          {
+            "appointmentId": "223e4567-e89b-12d3-a456-426614174001",
+            "appointmentDate": "2024-12-20",
+            "doctorName": "Dr. Smith",
+            "department": "Cardiology",
+            "startTime": "10:00",
+            "endTime": "10:30",
+            "status": "Completed",
+            "reason": "Follow-up",
+            "location": null
+          }
+        ],
+        "totalAppointments": 2
+      },
+      "errorResponse": {
+        "400": {
+          "error": "Invalid request body",
+          "details": [
+            {
+              "code": "invalid_type",
+              "path": ["patientId"],
+              "message": "patientId must be a valid UUID"
+            }
+          ],
+          "msg": "Failed"
+        },
+        "404": {
+          "error": "Patient not found",
+          "msg": "Failed"
+        },
+        "500": {
+          "error": "Failed to retrieve patient appointments",
+          "msg": "Failed"
+        }
+      }
+    }
+  }
+}

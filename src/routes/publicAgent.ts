@@ -240,6 +240,8 @@ router.post(
 
       console.log('Public appointment created:', {
         appointmentId: appointment.appointmentId,
+        patientId: appointment.patientId,
+        patientName: appointment.patient.name,
         doctorId: appointment.doctorId,
         doctorName: appointment.doctor.name,
         appointmentDate: appointmentDateStr,
@@ -279,6 +281,98 @@ router.post(
           error instanceof Error
             ? error.message
             : "Failed to book appointment",
+        msg: "Failed",
+      });
+    }
+  }
+);
+
+// Schema for patient appointments query
+const PatientAppointmentsQuerySchema = z.object({
+  patientId: z.string().uuid("patientId must be a valid UUID"),
+});
+
+// Public endpoint for patients to view their appointments (no authentication required)
+router.post(
+  "/patient-appointment",
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      // Validate request body
+      const validationResult = PatientAppointmentsQuerySchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({
+          error: "Invalid request body",
+          details: validationResult.error.errors,
+          msg: "Failed",
+        });
+      }
+
+      const { patientId } = validationResult.data;
+
+      // Verify patient exists
+      const patient = await prisma.patient.findUnique({
+        where: { patientId },
+        select: { patientId: true, name: true },
+      });
+
+      if (!patient) {
+        return res.status(404).json({
+          error: "Patient not found",
+          msg: "Failed",
+        });
+      }
+
+      // Fetch all appointments for this patient
+      const appointments = await prisma.appointment.findMany({
+        where: {
+          patientId,
+        },
+        include: {
+          doctor: {
+            select: {
+              doctorId: true,
+              name: true,
+              department: true,
+            },
+          },
+        },
+        orderBy: [
+          { date: "desc" },
+          { startTimeMin: "desc" },
+        ],
+      });
+
+      // Format appointments with requested fields
+      const formattedAppointments = appointments.map((appointment) => {
+        const appointmentDateStr = appointment.date.toISOString().split("T")[0];
+        return {
+          appointmentId: appointment.appointmentId,
+          appointmentDate: appointmentDateStr,
+          doctorName: appointment.doctor.name,
+          department: appointment.doctor.department,
+          startTime: formatTime(appointment.startTimeMin),
+          endTime: formatTime(appointment.endTimeMin),
+          status: appointment.status,
+          reason: appointment.reason,
+          location: appointment.location,
+        };
+      });
+
+      res.status(200).json({
+        msg: "Success",
+        patientId: patient.patientId,
+        patientName: patient.name,
+        appointments: formattedAppointments,
+        totalAppointments: formattedAppointments.length,
+      });
+    } catch (error: unknown) {
+      console.error("Public Patient Appointments Error:", error);
+
+      res.status(500).json({
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to retrieve patient appointments",
         msg: "Failed",
       });
     }

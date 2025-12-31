@@ -25,6 +25,7 @@ import adminAgentRouter from './routes/adminAgent.js';
 import labAgentRouter from './routes/labAgent.js';
 import pharmAgentRouter from './routes/pharmAgent.js';
 import publicAgentRouter from './routes/publicAgent.js';
+import mcpRouter from './routes/mcp.js';
 
 export const apiRouter = Router();
 
@@ -33,6 +34,7 @@ apiRouter.use(docsRouter);
 apiRouter.use('/patient-portal', patientPortalRouter);
 apiRouter.use('/auth', authRouter);
 apiRouter.use('/public-agent', publicAgentRouter);
+apiRouter.use('/mcp', mcpRouter);
 
 // Protected routes
 apiRouter.use(visitsRouter);
