@@ -10,8 +10,9 @@ const router = Router();
 // Schema for public appointment booking
 const PublicAppointmentBookingSchema = z.object({
   patientName: z.string().min(1, "Patient name is required"),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in format YYYY-MM-DD"),
-  time: z.string().min(1, "Time is required"), // Accepts formats like "14:30" or "2:30pm"
+  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in format YYYY-MM-DD"),
+  appointmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Appointment date must be in format YYYY-MM-DD"),
+  appointmentTime: z.string().min(1, "Appointment time is required"), // Accepts formats like "14:30" or "2:30pm"
   doctor: z.string().min(1, "Doctor name is required"),
   doctordepartment: z.string().min(1, "Doctor department is required"),
   gender: z.enum(["M", "F"], { required_error: "Gender is required" }), // Required gender: "M" for Male, "F" for Female
@@ -52,15 +53,15 @@ router.post(
         });
       }
 
-      const { patientName, date, time, doctor, doctordepartment, gender, reason } = validationResult.data;
+      const { patientName, dob, appointmentDate, appointmentTime, doctor, doctordepartment, gender, reason } = validationResult.data;
 
       // Always create a new patient to avoid mixing appointments between patients with the same name
       // This ensures each booking creates a separate patient record, even if names are identical
-      const defaultDob = new Date("2000-01-01");
+      const dobDate = toDateOnly(dob);
       const patient = await prisma.patient.create({
         data: {
           name: patientName,
-          dob: defaultDob,
+          dob: dobDate,
           gender: gender, // Gender is required from request body
         },
         select: {
@@ -138,7 +139,7 @@ router.post(
       // Parse time to minutes
       let startTimeMin: number;
       try {
-        startTimeMin = parseTimeToMinutes(time);
+        startTimeMin = parseTimeToMinutes(appointmentTime);
       } catch (timeError) {
         return res.status(400).json({
           error:
@@ -153,13 +154,13 @@ router.post(
       const endTimeMin = startTimeMin + 30;
 
       // Convert date to Date object and normalize to date-only
-      const appointmentDate = toDateOnly(date);
+      const appointmentDateObj = toDateOnly(appointmentDate);
 
       // Check if the time slot is unique (no exact duplicate)
       try {
         await assertUniqueTimeSlot(
           doctorRecord.doctorId,
-          appointmentDate,
+          appointmentDateObj,
           startTimeMin
         );
       } catch (uniqueError: any) {
@@ -179,7 +180,7 @@ router.post(
           patientId: patient.patientId,
           doctorId: doctorRecord.doctorId,
           department: doctordepartment,
-          date: appointmentDate.toISOString().split("T")[0],
+          date: appointmentDateObj.toISOString().split("T")[0],
           startTimeMin,
           endTimeMin,
           reason: reason || undefined,
@@ -218,7 +219,7 @@ router.post(
           patientId: patient.patientId,
           doctorId: doctorRecord.doctorId,
           department: doctordepartment,
-          date: appointmentDate,
+          date: appointmentDateObj,
           startTimeMin,
           endTimeMin,
           status: 'Scheduled', // Explicitly set status to ensure it appears in queue
@@ -288,7 +289,10 @@ router.post(
 
 // Schema for patient appointments query
 const PatientAppointmentsQuerySchema = z.object({
-  patientId: z.string().uuid("patientId must be a valid UUID"),
+  patientName: z.string().min(1, "Patient name is required"),
+  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in format YYYY-MM-DD"),
+  doctorname: z.string().min(1, "Doctor name is required"),
+  department: z.string().min(1, "Doctor department is required"),
 });
 
 // Schema for doctor availability query
@@ -298,82 +302,46 @@ const DoctorAvailabilitySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in format YYYY-MM-DD").optional(), // Optional date, defaults to today
 });
 
-// Schema for rescheduling appointment - supports two formats:
-// Format 1: patientId + date (old) + time (old) + newDate + newTime
-// Format 2: name + oldDate + oldTime + newDate + newTime
+// Schema for rescheduling appointment
+// Uses patientName + dob to identify patient, then finds scheduled appointment
+// with the specified doctor/department and reschedules it
+// If oldDate and oldTime are provided, finds that specific appointment; otherwise finds the most recent one
 const RescheduleAppointmentSchema = z.object({
-  // Format 1 fields
-  patientId: z.string().uuid("patientId must be a valid UUID").optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in format YYYY-MM-DD").optional(), // old date (format 1)
-  time: z.string().min(1, "Time is required").optional(), // old time (format 1)
-  // Format 2 fields
-  name: z.string().min(1, "Patient name is required").optional(),
-  oldDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "oldDate must be in format YYYY-MM-DD").optional(), // old date (format 2)
-  oldTime: z.string().min(1, "oldTime is required").optional(), // old time (format 2)
-  // Common fields
-  newDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "newDate must be in format YYYY-MM-DD"),
-  newTime: z.string().min(1, "newTime is required"), // Accepts formats like "14:30" or "2:30pm"
-  // Optional fields for changing doctor
-  doctorname: z.string().min(1, "Doctor name is required").optional(),
-  department: z.string().min(1, "Doctor department is required").optional(),
+  patientName: z.string().min(1, "Patient name is required"),
+  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in format YYYY-MM-DD"),
+  doctorname: z.string().min(1, "Doctor name is required"), // Required for patient identity verification
+  department: z.string().min(1, "Doctor department is required"), // Required for patient identity verification
+  // Optional: specify which appointment to reschedule
+  oldDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "oldDate must be in format YYYY-MM-DD").optional(),
+  oldTime: z.string().min(1, "oldTime is required").optional(), // Accepts formats like "14:30" or "2:30pm"
+  // At least one of newDate or newTime must be provided
+  newDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "newDate must be in format YYYY-MM-DD").optional(),
+  newTime: z.string().min(1, "newTime is required").optional(), // Accepts formats like "14:30" or "2:30pm"
 }).refine(
   (data) => {
-    // Must have either patientId or name
-    const hasPatientId = !!data.patientId;
-    const hasName = !!data.name;
-    if (!hasPatientId && !hasName) {
-      return false;
-    }
-    // If patientId, must have date and time (old date/time)
-    if (hasPatientId && (!data.date || !data.time)) {
-      return false;
-    }
-    // If name, must have oldDate and oldTime
-    if (hasName && (!data.oldDate || !data.oldTime)) {
+    // At least one of newDate or newTime must be provided
+    if (!data.newDate && !data.newTime) {
       return false;
     }
     return true;
   },
   {
-    message: "Must provide either (patientId + date + time) or (name + oldDate + oldTime)",
+    message: "At least one of newDate or newTime must be provided",
   }
 );
 
 // Schema for canceling appointment
+// Uses patientName + dob to identify patient, then finds scheduled appointment
+// with the specified doctor/department and cancels it
+// If appointmentDate and appointmentTime are provided, cancels that specific appointment; otherwise cancels the most recent one
 const CancelAppointmentSchema = z.object({
-  // Format 1: Using patientId
-  patientId: z.string().uuid("patientId must be a valid UUID").optional(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be in format YYYY-MM-DD").optional(),
-  time: z.string().min(1, "Time is required").optional(),
-  // Format 2: Using patient name
-  name: z.string().min(1, "Patient name is required").optional(),
-  oldDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "oldDate must be in format YYYY-MM-DD").optional(),
-  oldTime: z.string().min(1, "oldTime is required").optional(),
-  // Required fields for identifying appointment
-  doctorname: z.string().min(1, "Doctor name is required"),
-  department: z.string().min(1, "Doctor department is required"),
-}).refine(
-  (data) => {
-    // Must have either patientId or name
-    const hasPatientId = !!data.patientId;
-    const hasName = !!data.name;
-    if (!hasPatientId && !hasName) {
-      return false;
-    }
-    // If patientId, must have date and time
-    if (hasPatientId && (!data.date || !data.time)) {
-      return false;
-    }
-    // If name, must have oldDate and oldTime
-    if (hasName && (!data.oldDate || !data.oldTime)) {
-      return false;
-    }
-    return true;
-  },
-  {
-    message: "Must provide either (patientId + date + time) or (name + oldDate + oldTime)",
-  }
-);
+  patientName: z.string().min(1, "Patient name is required"),
+  dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date of birth must be in format YYYY-MM-DD"),
+  doctorname: z.string().min(1, "Doctor name is required"), // Required for patient identity verification
+  department: z.string().min(1, "Doctor department is required"), // Required for patient identity verification
+  appointmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Appointment date must be in format YYYY-MM-DD").optional(), // Optional: specific appointment date
+  appointmentTime: z.string().min(1, "Appointment time is required").optional(), // Optional: specific appointment time (e.g., "14:30" or "2:30pm")
+});
 
 // Public endpoint for patients to view their appointments (no authentication required)
 router.post(
@@ -390,25 +358,72 @@ router.post(
         });
       }
 
-      const { patientId } = validationResult.data;
+      const { patientName, dob, doctorname, department } = validationResult.data;
 
-      // Verify patient exists
-      const patient = await prisma.patient.findUnique({
-        where: { patientId },
+      // Convert dob to Date object for patient lookup
+      const dobDate = toDateOnly(dob);
+
+      // Find ALL patients by name and date of birth
+      // Since booking endpoint always creates a new patient, there might be multiple records
+      const patients = await prisma.patient.findMany({
+        where: {
+          name: {
+            equals: patientName.trim(),
+            mode: "insensitive",
+          },
+          dob: dobDate,
+        },
         select: { patientId: true, name: true },
+        orderBy: { createdAt: "desc" }, // Most recent first
       });
 
-      if (!patient) {
+      if (patients.length === 0) {
         return res.status(404).json({
-          error: "Patient not found",
+          error: "Patient not found with the provided name and date of birth",
           msg: "Failed",
         });
       }
 
-      // Fetch all appointments for this patient
+      // Use the most recent patient (or all of them for appointment lookup)
+      const patient = patients[0];
+      const patientIds = patients.map(p => p.patientId);
+
+      // Find doctor by name and department
+      const doctorRecord = await findDoctorByNameAndDepartment(doctorname, department);
+
+      if (!doctorRecord) {
+        // Try to find all doctors in the department to help with debugging
+        const doctorsInDept = await prisma.doctor.findMany({
+          where: {
+            department: {
+              equals: department.trim(),
+              mode: "insensitive",
+            },
+          },
+          select: {
+            doctorId: true,
+            name: true,
+            department: true,
+          },
+        });
+
+        return res.status(404).json({
+          error: `Doctor not found with name: "${doctorname}" in department: "${department}"`,
+          msg: "Failed",
+          availableDoctors: doctorsInDept.length > 0
+            ? doctorsInDept.map((d) => ({ name: d.name, department: d.department }))
+            : `No doctors found in department "${department}"`,
+        });
+      }
+
+      // Fetch appointments for ALL patients with this name+dob with the specified doctor
+      // Since booking creates new patients, we need to check all patient records
       const appointments = await prisma.appointment.findMany({
         where: {
-          patientId,
+          patientId: {
+            in: patientIds, // Check all patients with this name+dob
+          },
+          doctorId: doctorRecord.doctorId,
         },
         include: {
           doctor: {
@@ -671,93 +686,108 @@ router.post(
 
       const data = validationResult.data;
 
-      // Determine which format is being used
-      const isFormat1 = !!(data.patientId && data.date && data.time);
-      const isFormat2 = !!(data.name && data.oldDate && data.oldTime);
+      // Convert dob to Date object for patient lookup
+      const dobDate = toDateOnly(data.dob);
 
-      let patient: { patientId: string; name: string } | null = null;
-      let oldDate: string;
-      let oldTime: string;
-      const newDate = data.newDate;
-      const newTime = data.newTime;
+      // Find ALL patients by name and date of birth
+      // Since booking endpoint always creates a new patient, there might be multiple records
+      const patients = await prisma.patient.findMany({
+        where: {
+          name: {
+            equals: data.patientName.trim(),
+            mode: "insensitive",
+          },
+          dob: dobDate,
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+        orderBy: { createdAt: "desc" }, // Most recent first
+      });
 
-      // Handle Format 1: patientId + date (old) + time (old) + newDate + newTime
-      if (isFormat1 && data.patientId && data.date && data.time) {
-        // Verify patient exists
-        patient = await prisma.patient.findUnique({
-          where: { patientId: data.patientId },
-          select: { patientId: true, name: true },
+      if (patients.length === 0) {
+        return res.status(404).json({
+          error: "Patient not found with the provided name and date of birth",
+          msg: "Failed",
         });
-
-        if (!patient) {
-          return res.status(404).json({
-            error: "Patient not found",
-            msg: "Failed",
-          });
-        }
-
-        oldDate = data.date;
-        oldTime = data.time;
       }
-      // Handle Format 2: name + oldDate + oldTime + newDate + newTime
-      else if (isFormat2 && data.name && data.oldDate && data.oldTime) {
-        // Find patient by name
-        patient = await prisma.patient.findFirst({
+
+      // Use the most recent patient (or all of them for appointment lookup)
+      const patient = patients[0];
+      const patientIds = patients.map(p => p.patientId);
+
+      // Find doctor by name and department (for verification)
+      const doctorname = data.doctorname;
+      const dept = data.department;
+      const doctorRecord = await findDoctorByNameAndDepartment(doctorname, dept);
+
+      if (!doctorRecord) {
+        // Try to find all doctors in the department to help with debugging
+        const doctorsInDept = await prisma.doctor.findMany({
           where: {
-            name: {
-              equals: data.name.trim(),
+            department: {
+              equals: dept.trim(),
               mode: "insensitive",
             },
           },
           select: {
-            patientId: true,
+            doctorId: true,
             name: true,
+            department: true,
           },
         });
 
-        if (!patient) {
-          return res.status(404).json({
-            error: "Patient not found",
+        return res.status(404).json({
+          error: `Doctor not found with name: "${doctorname}" in department: "${dept}"`,
+          msg: "Failed",
+          availableDoctors: doctorsInDept.length > 0
+            ? doctorsInDept.map((d) => ({ name: d.name, department: d.department }))
+            : `No doctors found in department "${dept}"`,
+        });
+      }
+
+      // Build where clause for finding appointment
+      const appointmentWhere: any = {
+        patientId: {
+          in: patientIds, // Check all patients with this name+dob
+        },
+        doctorId: doctorRecord.doctorId,
+        status: {
+          in: ["Scheduled", "CheckedIn"],
+        },
+      };
+
+      // If oldDate and oldTime are provided, find that specific appointment
+      if (data.oldDate && data.oldTime) {
+        const oldAppointmentDate = toDateOnly(data.oldDate);
+        let oldStartTimeMin: number;
+        try {
+          oldStartTimeMin = parseTimeToMinutes(data.oldTime);
+        } catch (timeError) {
+          return res.status(400).json({
+            error:
+              timeError instanceof Error
+                ? `Invalid old time format: ${timeError.message}`
+                : "Invalid old time format",
             msg: "Failed",
           });
         }
 
-        oldDate = data.oldDate;
-        oldTime = data.oldTime;
-      } else {
-        return res.status(400).json({
-          error: "Invalid request format. Must provide either (patientId + date + time) or (name + oldDate + oldTime)",
-          msg: "Failed",
-        });
+        appointmentWhere.date = oldAppointmentDate;
+        appointmentWhere.startTimeMin = oldStartTimeMin;
       }
 
-      // Parse old time to minutes for finding the appointment
-      let oldStartTimeMin: number;
-      try {
-        oldStartTimeMin = parseTimeToMinutes(oldTime);
-      } catch (timeError) {
-        return res.status(400).json({
-          error:
-            timeError instanceof Error
-              ? `Invalid old time format: ${timeError.message}`
-              : "Invalid old time format",
-          msg: "Failed",
-        });
-      }
-
-      // Convert old date to Date object
-      const oldAppointmentDate = toDateOnly(oldDate);
-
-      // Find the specific appointment by patient, old date, and old time
+      // Find the scheduled appointment
+      // If oldDate/oldTime provided, finds that specific appointment; otherwise finds the most recent one
       const existingAppointment = await prisma.appointment.findFirst({
-        where: {
-          patientId: patient.patientId,
-          date: oldAppointmentDate,
-          startTimeMin: oldStartTimeMin,
-          status: {
-            in: ["Scheduled", "CheckedIn"],
-          },
-        },
+        where: appointmentWhere,
+        orderBy: data.oldDate && data.oldTime
+          ? undefined // No ordering needed if searching for specific appointment
+          : [
+              { date: "desc" },
+              { startTimeMin: "desc" },
+            ],
         select: {
           appointmentId: true,
           patientId: true,
@@ -770,69 +800,89 @@ router.post(
       });
 
       if (!existingAppointment) {
-        return res.status(404).json({
-          error: `No scheduled appointment found for this patient on ${oldDate} at ${oldTime}`,
-          msg: "Failed",
-        });
+        // If searching for specific appointment, provide more helpful error
+        if (data.oldDate && data.oldTime) {
+          // Find all appointments for this patient/doctor to show what exists
+          const allAppointments = await prisma.appointment.findMany({
+            where: {
+              patientId: { in: patientIds },
+              doctorId: doctorRecord.doctorId,
+              status: { in: ["Scheduled", "CheckedIn"] },
+            },
+            select: {
+              date: true,
+              startTimeMin: true,
+              status: true,
+            },
+            orderBy: [
+              { date: "desc" },
+              { startTimeMin: "desc" },
+            ],
+            take: 5, // Show up to 5 recent appointments
+          });
+
+          const formattedAppointments = allAppointments.map(apt => ({
+            date: apt.date.toISOString().split("T")[0],
+            time: formatTime(apt.startTimeMin),
+            status: apt.status,
+          }));
+
+          return res.status(404).json({
+            error: `No scheduled appointment found for ${data.oldDate} at ${data.oldTime}. Please verify the date and time.`,
+            msg: "Failed",
+            requestedOldDate: data.oldDate,
+            requestedOldTime: data.oldTime,
+            availableAppointments: formattedAppointments.length > 0
+              ? formattedAppointments
+              : "No scheduled appointments found for this patient with this doctor",
+          });
+        } else {
+          return res.status(404).json({
+            error: `No scheduled appointment found for this patient with doctor "${doctorname}" in department "${dept}"`,
+            msg: "Failed",
+          });
+        }
       }
 
-      // Parse new time to minutes
+      // Use existing doctor and department (cannot be changed)
+      const doctorId: string = existingAppointment.doctorId;
+      const department: string = existingAppointment.department;
+
+      // Determine new date: use newDate if provided, otherwise keep old date
+      const newAppointmentDate = data.newDate ? toDateOnly(data.newDate) : existingAppointment.date;
+
+      // Determine new time: use newTime if provided, otherwise keep old time
       let newStartTimeMin: number;
-      try {
-        newStartTimeMin = parseTimeToMinutes(newTime);
-      } catch (timeError) {
-        return res.status(400).json({
-          error:
-            timeError instanceof Error
-              ? `Invalid new time format: ${timeError.message}`
-              : "Invalid new time format",
-          msg: "Failed",
-        });
+      if (data.newTime) {
+        try {
+          newStartTimeMin = parseTimeToMinutes(data.newTime);
+        } catch (timeError) {
+          return res.status(400).json({
+            error:
+              timeError instanceof Error
+                ? `Invalid new time format: ${timeError.message}`
+                : "Invalid new time format",
+            msg: "Failed",
+          });
+        }
+      } else {
+        // Keep the old time
+        newStartTimeMin = existingAppointment.startTimeMin;
       }
 
       // Default appointment duration: 30 minutes
       const newEndTimeMin = newStartTimeMin + 30;
 
-      // Convert new date to Date object and normalize to date-only
-      const newAppointmentDate = toDateOnly(newDate);
+      // Check if date or time actually changed
+      const dateChanged = data.newDate && newAppointmentDate.getTime() !== existingAppointment.date.getTime();
+      const timeChanged = data.newTime && newStartTimeMin !== existingAppointment.startTimeMin;
 
-      // Determine doctor and department (use existing if not provided, or find new one)
-      let doctorId: string = existingAppointment.doctorId;
-      let department: string = existingAppointment.department;
-
-      // If new doctor info is provided, find the new doctor
-      if (data.doctorname && data.department) {
-        const doctorname = data.doctorname;
-        const dept = data.department;
-        const doctorRecord = await findDoctorByNameAndDepartment(doctorname, dept);
-
-        if (!doctorRecord) {
-          // Try to find all doctors in the department to help with debugging
-          const doctorsInDept = await prisma.doctor.findMany({
-            where: {
-              department: {
-                equals: dept.trim(),
-                mode: "insensitive",
-              },
-            },
-            select: {
-              doctorId: true,
-              name: true,
-              department: true,
-            },
-          });
-
-          return res.status(404).json({
-            error: `Doctor not found with name: "${doctorname}" in department: "${dept}"`,
-            msg: "Failed",
-            availableDoctors: doctorsInDept.length > 0
-              ? doctorsInDept.map((d) => ({ name: d.name, department: d.department }))
-              : `No doctors found in department "${dept}"`,
-          });
-        }
-
-        doctorId = doctorRecord.doctorId;
-        department = dept;
+      // If nothing changed, return early
+      if (!dateChanged && !timeChanged) {
+        return res.status(400).json({
+          error: "No changes detected. Please provide at least one of newDate or newTime with a different value.",
+          msg: "Failed",
+        });
       }
 
       // Check if the new time slot is unique (no exact duplicate)
@@ -963,83 +1013,36 @@ router.post(
 
       const data = validationResult.data;
 
-      // Determine which format is being used
-      const isFormat1 = !!(data.patientId && data.date && data.time);
-      const isFormat2 = !!(data.name && data.oldDate && data.oldTime);
+      // Convert dob to Date object for patient lookup
+      const dobDate = toDateOnly(data.dob);
 
-      let patient: { patientId: string; name: string } | null = null;
-      let appointmentDate: Date;
-      let startTimeMin: number;
-
-      // Handle Format 1: patientId + date + time
-      if (isFormat1 && data.patientId && data.date && data.time) {
-        // Verify patient exists
-        patient = await prisma.patient.findUnique({
-          where: { patientId: data.patientId },
-          select: { patientId: true, name: true },
-        });
-
-        if (!patient) {
-          return res.status(404).json({
-            error: "Patient not found",
-            msg: "Failed",
-          });
-        }
-
-        appointmentDate = toDateOnly(data.date);
-        try {
-          startTimeMin = parseTimeToMinutes(data.time);
-        } catch (timeError) {
-          return res.status(400).json({
-            error:
-              timeError instanceof Error
-                ? timeError.message
-                : "Invalid time format",
-            msg: "Failed",
-          });
-        }
-      }
-      // Handle Format 2: name + oldDate + oldTime
-      else if (isFormat2 && data.name && data.oldDate && data.oldTime) {
-        // Find patient by name
-        patient = await prisma.patient.findFirst({
-          where: {
-            name: {
-              equals: data.name.trim(),
-              mode: "insensitive",
-            },
+      // Find ALL patients by name and date of birth
+      // Since booking endpoint always creates a new patient, there might be multiple records
+      const patients = await prisma.patient.findMany({
+        where: {
+          name: {
+            equals: data.patientName.trim(),
+            mode: "insensitive",
           },
-          select: {
-            patientId: true,
-            name: true,
-          },
-        });
+          dob: dobDate,
+        },
+        select: {
+          patientId: true,
+          name: true,
+        },
+        orderBy: { createdAt: "desc" }, // Most recent first
+      });
 
-        if (!patient) {
-          return res.status(404).json({
-            error: "Patient not found",
-            msg: "Failed",
-          });
-        }
-
-        appointmentDate = toDateOnly(data.oldDate);
-        try {
-          startTimeMin = parseTimeToMinutes(data.oldTime);
-        } catch (timeError) {
-          return res.status(400).json({
-            error:
-              timeError instanceof Error
-                ? timeError.message
-                : "Invalid time format",
-            msg: "Failed",
-          });
-        }
-      } else {
-        return res.status(400).json({
-          error: "Invalid request format. Must provide either (patientId + date + time) or (name + oldDate + oldTime)",
+      if (patients.length === 0) {
+        return res.status(404).json({
+          error: "Patient not found with the provided name and date of birth",
           msg: "Failed",
         });
       }
+
+      // Use the most recent patient (or all of them for appointment lookup)
+      const patient = patients[0];
+      const patientIds = patients.map(p => p.patientId);
 
       // Find doctor by name and department
       const doctorname = data.doctorname;
@@ -1071,17 +1074,47 @@ router.post(
         });
       }
 
-      // Find the specific appointment matching all criteria
-      const existingAppointment = await prisma.appointment.findFirst({
-        where: {
-          patientId: patient.patientId,
-          doctorId: doctorRecord.doctorId,
-          date: appointmentDate,
-          startTimeMin: startTimeMin,
-          status: {
-            in: ["Scheduled", "CheckedIn"],
-          },
+      // Build where clause for finding appointment
+      const appointmentWhere: any = {
+        patientId: {
+          in: patientIds, // Check all patients with this name+dob
         },
+        doctorId: doctorRecord.doctorId,
+        status: {
+          in: ["Scheduled", "CheckedIn"],
+        },
+      };
+
+      // If appointmentDate and appointmentTime are provided, find that specific appointment
+      if (data.appointmentDate && data.appointmentTime) {
+        const appointmentDateObj = toDateOnly(data.appointmentDate);
+        let startTimeMin: number;
+        try {
+          startTimeMin = parseTimeToMinutes(data.appointmentTime);
+        } catch (timeError) {
+          return res.status(400).json({
+            error:
+              timeError instanceof Error
+                ? `Invalid time format: ${timeError.message}`
+                : "Invalid time format",
+            msg: "Failed",
+          });
+        }
+
+        appointmentWhere.date = appointmentDateObj;
+        appointmentWhere.startTimeMin = startTimeMin;
+      }
+
+      // Find the scheduled appointment
+      // If appointmentDate/appointmentTime provided, finds that specific appointment; otherwise finds the most recent one
+      const existingAppointment = await prisma.appointment.findFirst({
+        where: appointmentWhere,
+        orderBy: data.appointmentDate && data.appointmentTime
+          ? undefined // No ordering needed if searching for specific appointment
+          : [
+              { date: "desc" },
+              { startTimeMin: "desc" },
+            ],
         include: {
           patient: { select: { patientId: true, name: true } },
           doctor: { select: { doctorId: true, name: true, department: true } },
@@ -1089,10 +1122,48 @@ router.post(
       });
 
       if (!existingAppointment) {
-        return res.status(404).json({
-          error: "No matching scheduled appointment found. Please verify the appointment date, time, doctor, and department.",
-          msg: "Failed",
-        });
+        // If searching for specific appointment, provide more helpful error
+        if (data.appointmentDate && data.appointmentTime) {
+          // Find all appointments for this patient/doctor to show what exists
+          const allAppointments = await prisma.appointment.findMany({
+            where: {
+              patientId: { in: patientIds },
+              doctorId: doctorRecord.doctorId,
+              status: { in: ["Scheduled", "CheckedIn"] },
+            },
+            select: {
+              date: true,
+              startTimeMin: true,
+              status: true,
+            },
+            orderBy: [
+              { date: "desc" },
+              { startTimeMin: "desc" },
+            ],
+            take: 5, // Show up to 5 recent appointments
+          });
+
+          const formattedAppointments = allAppointments.map(apt => ({
+            date: apt.date.toISOString().split("T")[0],
+            time: formatTime(apt.startTimeMin),
+            status: apt.status,
+          }));
+
+          return res.status(404).json({
+            error: `No scheduled appointment found for ${data.appointmentDate} at ${data.appointmentTime}. Please verify the date and time.`,
+            msg: "Failed",
+            requestedDate: data.appointmentDate,
+            requestedTime: data.appointmentTime,
+            availableAppointments: formattedAppointments.length > 0
+              ? formattedAppointments
+              : "No scheduled appointments found for this patient with this doctor",
+          });
+        } else {
+          return res.status(404).json({
+            error: `No scheduled appointment found for this patient with doctor "${data.doctorname}" in department "${data.department}"`,
+            msg: "Failed",
+          });
+        }
       }
 
       // Cancel the appointment (set status to Cancelled)
