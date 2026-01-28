@@ -996,7 +996,8 @@ router.post(
   }
 );
 
-// Public endpoint for canceling/deleting appointments (no authentication required)
+// Public endpoint for deleting appointments (no authentication required)
+// When called, the appointment is completely deleted from the database and will not appear in the UI
 router.post(
   "/cancel-appointment",
   async (req: Request, res: Response, next: NextFunction) => {
@@ -1166,12 +1167,10 @@ router.post(
         }
       }
 
-      // Cancel the appointment (set status to Cancelled)
-      const cancelledAppointment = await prisma.appointment.update({
+      // Delete the appointment completely from the database
+      // This will remove it from all queries and it will not appear in the UI
+      const deletedAppointment = await prisma.appointment.delete({
         where: { appointmentId: existingAppointment.appointmentId },
-        data: {
-          status: "Cancelled",
-        },
         include: {
           patient: { select: { patientId: true, name: true } },
           doctor: { select: { doctorId: true, name: true, department: true } },
@@ -1179,21 +1178,20 @@ router.post(
       });
 
       // Format response
-      const appointmentDateStr = cancelledAppointment.date.toISOString().split("T")[0];
+      const appointmentDateStr = deletedAppointment.date.toISOString().split("T")[0];
 
       res.status(200).json({
         msg: "Success",
-        appointmentId: cancelledAppointment.appointmentId,
-        patientId: cancelledAppointment.patientId,
-        patientName: cancelledAppointment.patient.name,
-        doctorId: cancelledAppointment.doctorId,
-        doctorName: cancelledAppointment.doctor.name,
-        department: cancelledAppointment.department,
+        appointmentId: deletedAppointment.appointmentId,
+        patientId: deletedAppointment.patientId,
+        patientName: deletedAppointment.patient.name,
+        doctorId: deletedAppointment.doctorId,
+        doctorName: deletedAppointment.doctor.name,
+        department: deletedAppointment.department,
         appointmentDate: appointmentDateStr,
-        startTime: formatTime(cancelledAppointment.startTimeMin),
-        endTime: formatTime(cancelledAppointment.endTimeMin),
-        appointmentStatus: cancelledAppointment.status,
-        message: "Appointment cancelled successfully",
+        startTime: formatTime(deletedAppointment.startTimeMin),
+        endTime: formatTime(deletedAppointment.endTimeMin),
+        message: "Appointment cancelled and deleted successfully",
       });
     } catch (error: unknown) {
       console.error("Public Appointment Cancel Error:", error);
